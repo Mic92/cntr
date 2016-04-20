@@ -1,0 +1,22 @@
+use libc;
+use std::ffi::CStr;
+use nix::sys::signal;
+use std::fmt;
+use std::str::from_utf8_unchecked;
+
+extern "C" {
+    fn strsignal(sig: libc::c_int) -> *mut libc::c_char;
+}
+
+pub struct Signal {
+    pub n: signal::SigNum,
+}
+
+impl fmt::Display for Signal {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        // not reentrant safe in glibc
+        write!(f,
+               "{}",
+               unsafe { from_utf8_unchecked(CStr::from_ptr(strsignal(self.n)).to_bytes()) })
+    }
+}
