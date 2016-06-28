@@ -39,7 +39,7 @@
       -> cntr's FUSE will be not visible anymore (reason: linked library); set environ as in the container (see Design goals 4.)
 
 Problems:
-  1. find out how to access /dev/fuse within the container (is an open file descriptor to /dev/fuse from the host sufficient?)
+  1. ~~find out how to access /dev/fuse within the container (is an open file descriptor to /dev/fuse from the host sufficient?)~~ solved
   2. selinux/apparmor profiles probably forbid to access host filesystem, so these cannot be applied to the fuse process
   3. container fs mounted at `/tmp/tmp.XXXXX/c` may use different uids/gids because of user namespaces (newuidmap):
     - this can be solved, if access to /c is also proxied through cntr's FUSE implementation
