@@ -48,3 +48,4 @@ Problems:
 # Evaluation
 
 - performance of FUSE; should be fast enough
+- take the 10 top container images from hub.docker.com and strip down everything not needed for execution
