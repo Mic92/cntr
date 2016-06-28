@@ -1,0 +1,50 @@
+# Motivation
+
+- see abstract (https://gist.github.com/Mic92/b83db1702d1e940cda26ca08396db6d3)
+- developer/admin may have dotfiles; want persistent shell history
+
+# Design Goals
+
+1. should not assume a specific container technology
+2. should be able to attach to a running container without requiring a special configuration
+3. application started from host's rootfs should be able to access container filesystem, live within its namespaces, should
+   be able to interact with container processes
+4. application started in container's rootfs should only see their rootfs and
+  should have the same restrictions as if they were started from within the
+  container (important for reproducibility of configuration problems)
+
+# Implementation
+
+1. obtain namespace / cgroups / seccomp / selinux|apparmor of target process
+  (for convience in this step the pid the container's init process can be
+  resolved via the name of container - this depends on the container
+  implementation; take a look how sysdig does this)
+2. change to container namespaces
+3. create a new nested mount namespace within the container
+4. mount itself as a FUSE to /tmp/tmp.XXXXXX/
+5. move within all existing mounts except /proc, /dev, /sys to /tmp/tmp.XXXXX/c
+   -> access to container namespace will not go through fuse -> native performance (but see problems 3.)
+6. bind mount /proc,/dev,/sys to /tmp/tmp.XXXXXX/{proc,dev,sys}
+7. fork()
+8.
+  - child:
+    - chroot /tmp/tmp.XXXXXX
+    - execve shell or userdefined program
+  - parent
+    - 1.thread: serve FUSE redirect any file operation to "/" using openat/renameat/unlinkat/...
+    - 2.thread:
+    - setup ptrace(PTRACE_O_TRACEEXEC|PTRACE_O_TRACEVFORK) on child
+    - on execve check path of process (PTRACE_GETREG, PTRACE_PEEKUSER -> 2 bytes are sufficient)
+    - if path starts with /c restore origin mount namespace
+      -> cntr's FUSE will be not visible anymore (reason: linked library); set environ as in the container (see Design goals 4.)
+
+Problems:
+  1. find out how to access /dev/fuse within the container (is an open file descriptor to /dev/fuse from the host sufficient?)
+  2. selinux/apparmor profiles probably forbid to access host filesystem, so these cannot be applied to the fuse process
+  3. container fs mounted at `/tmp/tmp.XXXXX/c` may use different uids/gids because of user namespaces (newuidmap):
+    - this can be solved, if access to /c is also proxied through cntr's FUSE implementation
+  4. get the correct environment
+
+# Evaluation
+
+- performance of FUSE; should be fast enough
