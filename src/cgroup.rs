@@ -1,10 +1,10 @@
 use libc;
-use types::{Error, Result};
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::io::Write;
-use std::collections::HashMap;
 use std::path::PathBuf;
+use types::{Error, Result};
 
 fn get_subsystems() -> Result<Vec<String>> {
     let path = "/proc/cgroups";

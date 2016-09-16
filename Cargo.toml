@@ -5,12 +5,32 @@ authors = ["Jörg Thalheim <joerg@higgsboson.tk>"]
 
 [dependencies]
 argparse = "0.2.*"
-libc = "0.2.8"
 log = "*"
+time = "*"
+void = "*"
+libc = { git = "https://github.com/Mic92/libc", branch = "master" }
 
 [dependencies.nix]
-git = "https://github.com/nix-rust/nix"
 features = ["signalfd"]
+path = "src/nix"
 
 [dependencies.fuse]
-git = "https://github.com/zargony/rust-fuse"
+path = "src/rust-fuse"
+
+[[bin]]
+name = "cntr"
+path = "src/bin/main.rs"
+
+[lib]
+name = "cntr"
+path = "src/lib.rs"
+
+[[bin]]
+name = "cntrfs-test"
+path = "tests/cntrfs.rs"
+doc = false
+
+[[bin]]
+name = "unserns-test"
+path = "tests/userns.rs"
+doc = false

@@ -1,10 +1,10 @@
 use libc;
 use nix;
 use nix::errno;
-use sigstr::Signal;
-use nix::sys::wait::{WaitStatus, wait, waitpid};
 use nix::sys::ptrace::*;
 use nix::sys::ptrace::ptrace::*;
+use nix::sys::wait::{WaitStatus, wait, waitpid};
+use sigstr;
 use std::ptr;
 use types::{Error, Result};
 
@@ -15,8 +15,8 @@ pub fn install(pid: libc::pid_t) -> Result<()> {
             return errfmt!(format!("process exited prematurely with {}", rc));
         }
         WaitStatus::Signaled(_, signal, _) => {
-            return errfmt!(format!("process was terminated with signal {}",
-                                   Signal { n: signal }));
+            return errfmt!(format!("process was terminated with signal {:}",
+                                   sigstr::Signal { n: signal }));
         }
         WaitStatus::Continued(_) => {
             return errfmt!(format!("BUG: process was continued by someone"));

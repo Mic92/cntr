@@ -1,13 +1,13 @@
 use libc;
-use types::{Error, Result};
 use nix::{self, unistd};
 use nix::errno::Errno;
-use nix::sys::termios::*;
 use nix::sys::select;
+use nix::sys::termios::*;
 use std::{mem, ptr};
 use std::fs::File;
-use std::os::unix::prelude::*;
 use std::io::{Read, Write};
+use std::os::unix::prelude::*;
+use types::{Error, Result};
 
 #[link(name = "c")]
 extern "C" {

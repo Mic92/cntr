@@ -1,14 +1,14 @@
 use libc;
+use namespace;
 use nix::unistd;
+use std::env;
 use std::ffi::{CString, OsStr};
-use std::path::PathBuf;
 use std::fs::File;
-use types::{Error, Result};
 use std::io::{BufRead, BufReader};
 use std::os::unix::ffi::OsStrExt;
-use std::env;
-use namespace;
-use trace;
+use std::path::PathBuf;
+use types::{Error, Result};
+use void;
 
 fn read_environ(pid: libc::pid_t) -> Result<Vec<CString>> {
     let mut buf = PathBuf::from("/proc/");
@@ -20,11 +20,11 @@ fn read_environ(pid: libc::pid_t) -> Result<Vec<CString>> {
                     path.to_str().unwrap());
     let reader = BufReader::new(f);
     reader.split(b'\0')
-          .map(|var| {
-              let r = tryfmt!(var, "failed to read");
-              Ok(CString::new(r).unwrap())
-          })
-          .collect()
+        .map(|var| {
+            let r = tryfmt!(var, "failed to read");
+            Ok(CString::new(r).unwrap())
+        })
+        .collect()
 }
 
 fn setns(pid: libc::pid_t) -> Result<()> {
@@ -57,14 +57,14 @@ fn inherit_path(pid: libc::pid_t) -> Result<()> {
     Ok(())
 }
 
-pub fn exec(pid: libc::pid_t) -> Result<()> {
+pub fn exec(pid: libc::pid_t) -> Result<void::Void> {
     let arg0 = CString::new("/bin/sh").unwrap();
     let arg1 = CString::new("-l").unwrap();
     tryfmt!(setns(pid), "failed to enter namespace");
 
-    tryfmt!(trace::me(), "ptrace(PTRACE_TRACME) failed");
     // Ok(tryfmt!(unistd::execvpe(&arg0, &[arg0.clone(), arg1], env.as_slice()),
     //           "failed to execute shell"))
+    #[allow(unreachable_patterns)]
     Ok(tryfmt!(unistd::execvp(&arg0, &[arg0.clone(), arg1]),
                "failed to execute shell"))
 }

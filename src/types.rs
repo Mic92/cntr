@@ -1,7 +1,7 @@
+use log;
+use nix;
 use std::{error, fmt, io, result};
 use std::boxed::Box;
-use nix;
-use log;
 
 pub struct Error {
     pub desc: String,

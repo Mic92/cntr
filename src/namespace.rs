@@ -1,40 +1,33 @@
 use libc;
-use types::{Error, Result};
-use std::path::PathBuf;
+use nix::sched;
 use std::fs::{self, File};
 use std::os::unix::io::IntoRawFd;
-use nix::sched;
+use std::path::PathBuf;
+use types::{Error, Result};
 
 pub const MOUNT: Kind = Kind {
     name: "mnt",
-    flag: libc::CLONE_NEWNS,
 };
 pub const UTS: Kind = Kind {
     name: "uts",
-    flag: libc::CLONE_NEWUTS,
 };
 pub const USER: Kind = Kind {
     name: "user",
-    flag: libc::CLONE_NEWUSER,
 };
 pub const PID: Kind = Kind {
     name: "pid",
-    flag: libc::CLONE_NEWPID,
 };
 pub const NET: Kind = Kind {
     name: "net",
-    flag: libc::CLONE_NEWNET,
 };
 pub const IPC: Kind = Kind {
     name: "ipc",
-    flag: libc::CLONE_NEWIPC,
 };
 
 pub static ALL: &'static [Kind] = &[UTS, USER, PID, NET, IPC, MOUNT];
 
 pub struct Kind {
     pub name: &'static str,
-    flag: i32,
 }
 
 pub fn supported_namespaces<'a>() -> Result<Vec<&'a Kind>> {
