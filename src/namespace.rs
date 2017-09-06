@@ -1,4 +1,4 @@
-use libc;
+use nix::unistd;
 use nix::sched;
 use std::fs::{self, File};
 use std::os::unix::io::IntoRawFd;
@@ -46,7 +46,7 @@ pub fn supported_namespaces<'a>() -> Result<Vec<&'a Kind>> {
 }
 
 impl Kind {
-    pub fn open(&'static self, pid: libc::pid_t) -> Result<Namespace> {
+    pub fn open(&'static self, pid: unistd::Pid) -> Result<Namespace> {
         let buf = self.path(pid);
         let path = buf.to_str().unwrap();
         let file = tryfmt!(File::open(path), "failed to open namespace file '{}'", path);
@@ -55,9 +55,9 @@ impl Kind {
             file: file,
         });
     }
-    pub fn is_same(&self, pid: libc::pid_t) -> bool {
+    pub fn is_same(&self, pid: unistd::Pid) -> bool {
         let path = self.path(pid);
-        let path2 = self.path(unsafe { libc::getpid() });
+        let path2 = self.path(unistd::getpid());
         match fs::read_link(path) {
             Ok(dest) => {
                 match fs::read_link(path2) {
@@ -68,7 +68,7 @@ impl Kind {
             _ => false,
         }
     }
-    fn path(&self, pid: libc::pid_t) -> PathBuf {
+    fn path(&self, pid: unistd::Pid) -> PathBuf {
         let mut buf = PathBuf::from("/proc/");
         buf.push(pid.to_string());
         buf.push("ns");

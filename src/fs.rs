@@ -6,7 +6,7 @@ use nix::{self, unistd, fcntl, dirent};
 use nix::sys::stat;
 use nix::sys::time::{TimeSpec as NixTimeSpec, TimeValLike};
 use nix::sys::uio::{pread, pwrite};
-use std::{io, u32, u64};
+use std::{u32, u64};
 use std::collections::HashMap;
 use std::ffi::{CStr, OsStr, OsString};
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
@@ -37,6 +37,8 @@ impl Drop for Fd {
 struct Inode {
     magic: char,
     fd: Fd,
+    // path_fd: Fd,
+    // read_fd: Option<Fd>,
     ino: u64,
     dev: u64,
     nlookup: u64
@@ -50,9 +52,9 @@ struct InodeKey {
 
 struct DirP {
     magic: char,
-    dp: dirent::Dir,
+    dp: dirent::DirectoryStream,
     offset: c_long,
-    entry: Option<libc::dirent>,
+    entry: Option<libc::dirent64>,
 }
 
 struct Fh {
@@ -77,9 +79,10 @@ macro_rules! tryfuse {
     ($result:expr, $reply:expr)  => (match $result {
         Ok(val) => val,
         Err(err) => {
-            let rc = match io::Error::from(err).raw_os_error() {
-                Some(errno) => errno,
-                None => 0
+            let rc = match err {
+                nix::Error::Sys(errno) => errno as i32,
+                // InvalidPath, InvalidUtf8, UnsupportedOperation
+                _ => libc::EINVAL
             };
             return $reply.error(rc);
         }
@@ -225,7 +228,7 @@ fn fstat(fd: RawFd) -> nix::Result<(FileAttr, u64)> {
     }
 }
 
-pub fn readlinkat<'a>(fd: RawFd) -> io::Result<OsString> {
+pub fn readlinkat<'a>(fd: RawFd) -> nix::Result<OsString> {
     let mut buf = Vec::with_capacity(256);
     loop {
         match fcntl::readlinkat(fd, "", &mut buf) {
@@ -233,7 +236,7 @@ pub fn readlinkat<'a>(fd: RawFd) -> io::Result<OsString> {
                 return Ok(OsString::from(target));
             }
             Err(nix::Error::Sys(nix::Errno::ENAMETOOLONG)) => {}
-            Err(e) => return Err(io::Error::from(e)),
+            Err(e) => return Err(e),
         };
         // Trigger the internal buffer resizing logic of `Vec` by requiring
         // more space than the current capacity. The length is guaranteed to be
@@ -249,7 +252,7 @@ impl Filesystem for CntrFs {
             let parent_inode = self.inode(parent);
             fcntl::openat(parent_inode.fd.raw(),
                           name,
-                          fcntl::O_RDONLY | fcntl::O_NOFOLLOW,
+                          fcntl::O_PATH | fcntl::O_NOFOLLOW,
                           stat::Mode::empty())
         };
         let newfd = tryfuse!(res, reply);
@@ -307,7 +310,10 @@ impl Filesystem for CntrFs {
         }
 
         if uid.is_some() || gid.is_some() {
-            tryfuse!(unistd::fchown(fd, uid, gid), reply);
+            let _uid = uid.map(|u| unistd::Uid::from_raw(u));
+            let _gid = gid.map(|g| unistd::Gid::from_raw(g));
+
+            tryfuse!(unistd::fchown(fd, _uid, _gid), reply);
         }
 
         if let Some(size) = _size {
@@ -337,7 +343,7 @@ impl Filesystem for CntrFs {
              reply: ReplyEntry) {
         let kind = stat::SFlag::from_bits_truncate(mode);
         let perm = stat::Mode::from_bits_truncate(mode);
-        tryfuse!(stat::mknodat(self.inode(parent).fd.raw(),
+        tryfuse!(stat::mknodat(&self.inode(parent).fd.raw(),
                                name,
                                kind,
                                perm,
@@ -464,7 +470,7 @@ impl Filesystem for CntrFs {
         };
     }
 
-    fn fsync(&mut self, _req: &Request, _ino: u64, fh: u64, _datasync: bool, reply: ReplyEmpty) {
+    fn fsync(&mut self, _req: &Request, _ino: u64, fh: u64, datasync: bool, reply: ReplyEmpty) {
         let handle = get_filehandle(fh);
 
         let fd = handle.fd.raw();
@@ -533,7 +539,7 @@ impl Filesystem for CntrFs {
     fn releasedir(&mut self, _req: &Request, _ino: u64, fh: u64, _flags: u32, reply: ReplyEmpty) {
         let dirp = unsafe { Box::from_raw(fh as *mut DirP) };
         assert!(dirp.magic == DIRP_MAGIC);
-        let d = dirp.dp as dirent::Dir;
+        let _ = dirp.dp as dirent::DirectoryStream;
         reply.ok();
     }
 
@@ -545,7 +551,7 @@ impl Filesystem for CntrFs {
                 reply: ReplyEmpty) {
         let dirp = unsafe { &mut (*(fh as *mut DirP)) };
         assert!(dirp.magic == DIRP_MAGIC);
-        let fd = tryfuse!(dirent::dirfd(&dirp.dp), reply);
+        let fd = tryfuse!(dirent::dirfd(&mut dirp.dp), reply);
         if datasync {
             tryfuse!(unistd::fsync(fd), reply);
         } else {

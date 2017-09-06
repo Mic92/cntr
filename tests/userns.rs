@@ -2,7 +2,9 @@ extern crate fuse;
 extern crate libc;
 extern crate cntr;
 extern crate log;
+extern crate nix;
 
+use nix::unistd;
 use std::fs::read_link;
 use std::process::{Command, Stdio, self};
 use std::io::{Write, Read};
@@ -17,7 +19,7 @@ fn testname_space() -> (process::ChildStdin, process::ChildStdout) {
         .stdout(Stdio::piped())
         .spawn()
         .unwrap();
-    let pid = child.id() as libc::pid_t;
+    let pid = unistd::Pid::from_raw(child.id() as libc::pid_t);
 
     // synchronize with cat
     let mut buf = [b't'];

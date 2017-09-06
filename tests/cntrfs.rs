@@ -37,14 +37,14 @@ fn main() {
     }
     let buf = PathBuf::from(args[2].clone());
     match CntrFs::new(&args[1]) {
-        Ok(cntr) => fuse::mount(cntr, &buf, &[]),
+        Ok(cntr) => fuse::mount(cntr, &buf, &[]).unwrap(),
         Err(err) => {
             let _ = writeln!(&mut std::io::stderr(), "{}", err);
             process::exit(1);
         }
     };
 
-    
+
     //let output = Command::new("xfstests-check")
     //    .arg("-overlay")
     //    .env("TEST_DIR", "./tests/dest-mnt")

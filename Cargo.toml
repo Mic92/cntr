@@ -8,10 +8,9 @@ argparse = "0.2.*"
 log = "*"
 time = "*"
 void = "*"
-libc = { git = "https://github.com/Mic92/libc", branch = "master" }
+libc = { git = "https://github.com/rust-lang/libc", branch = "master" }
 
 [dependencies.nix]
-features = ["signalfd"]
 path = "src/nix"
 
 [dependencies.fuse]

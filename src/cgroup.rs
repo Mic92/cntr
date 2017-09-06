@@ -1,4 +1,4 @@
-use libc;
+use nix::unistd;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -54,7 +54,7 @@ fn get_mounts() -> Result<HashMap<String, String>> {
     return Ok(mountpoints);
 }
 
-fn get_cgroups(pid: libc::pid_t) -> Result<Vec<String>> {
+fn get_cgroups(pid: unistd::Pid) -> Result<Vec<String>> {
     let path = format!("/proc/{}/cgroup", pid);
     let f = tryfmt!(File::open(&path), "failed to read {}", path);
     let reader = BufReader::new(f);
@@ -85,7 +85,7 @@ fn cgroup_path(cgroup: &str, mountpoints: &HashMap<String, String>) -> Option<Pa
 // TODO add implementation for unified cgroups, cgmanager, lxcfs
 // -> on the long run everything will be done with unified cgroups hopefully
 
-pub fn move_to(pid: libc::pid_t, target_pid: libc::pid_t) -> Result<()> {
+pub fn move_to(pid: unistd::Pid, target_pid: unistd::Pid) -> Result<()> {
     let cgroups = tryfmt!(get_cgroups(target_pid),
                           "failed to get cgroups of {}",
                           target_pid);

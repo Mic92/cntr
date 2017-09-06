@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use types::{Error, Result};
 use void;
 
-fn read_environ(pid: libc::pid_t) -> Result<Vec<CString>> {
+fn read_environ(pid: unistd::Pid) -> Result<Vec<CString>> {
     let mut buf = PathBuf::from("/proc/");
     buf.push(pid.to_string());
     buf.push("environ");
@@ -27,7 +27,7 @@ fn read_environ(pid: libc::pid_t) -> Result<Vec<CString>> {
         .collect()
 }
 
-fn setns(pid: libc::pid_t) -> Result<()> {
+fn setns(pid: unistd::Pid) -> Result<()> {
     let supported = tryfmt!(namespace::supported_namespaces(),
                             "can not get supported namespaces");
     let mut namespaces = Vec::new();
@@ -43,7 +43,7 @@ fn setns(pid: libc::pid_t) -> Result<()> {
     Ok(())
 }
 
-fn inherit_path(pid: libc::pid_t) -> Result<()> {
+fn inherit_path(pid: unistd::Pid) -> Result<()> {
     let env = tryfmt!(read_environ(pid),
                       "failed to get environment variables of target process {}",
                       pid);
@@ -57,7 +57,7 @@ fn inherit_path(pid: libc::pid_t) -> Result<()> {
     Ok(())
 }
 
-pub fn exec(pid: libc::pid_t) -> Result<void::Void> {
+pub fn exec(pid: unistd::Pid) -> Result<void::Void> {
     let arg0 = CString::new("/bin/sh").unwrap();
     let arg1 = CString::new("-l").unwrap();
     tryfmt!(setns(pid), "failed to enter namespace");

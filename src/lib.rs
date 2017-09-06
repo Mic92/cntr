@@ -9,7 +9,6 @@ extern crate void;
 
 use nix::unistd;
 use pty::PtyFork;
-use std::thread;
 use types::{Error, Result};
 
 #[macro_use]
@@ -25,21 +24,14 @@ mod xattr;
 pub mod fs;
 
 pub struct Options {
-    pub pid: libc::pid_t,
+    pub pid: unistd::Pid,
     pub mountpoint: String,
 }
 
 #[allow(unused_variables)]
 fn run_parent(pty: PtyFork, opts: Options) -> Result<()> {
-    if let PtyFork::Parent { .. } = pty {
-        let child = thread::spawn(move || {
-            if let PtyFork::Parent { ref pty_master, .. } = pty {
-                pty::forward(pty_master)
-            }
-        });
-        if let Err(_) = child.join() {
-            return errfmt!("pty thread died");
-        };
+    if let PtyFork::Parent { ref pty_master, .. } = pty {
+        pty::forward(pty_master)
     }
     return Ok(());
 }

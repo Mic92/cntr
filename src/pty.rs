@@ -1,26 +1,21 @@
 use libc;
-use nix::{self, unistd};
+use nix::{self, unistd, fcntl};
+use nix::sys::stat;
 use nix::errno::Errno;
 use nix::sys::select;
 use nix::sys::termios::*;
-use std::{mem, ptr};
+use nix::sys::termios::SpecialCharacterIndices::*;
+use nix::pty::*;
+use std::mem;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::os::unix::prelude::*;
 use types::{Error, Result};
 
-#[link(name = "c")]
-extern "C" {
-    pub fn posix_openpt(flags: libc::c_int) -> libc::c_int;
-    pub fn grantpt(fd: libc::c_int) -> libc::c_int;
-    pub fn unlockpt(fd: libc::c_int) -> libc::c_int;
-    pub fn ptsname(fd: libc::c_int) -> *mut libc::c_schar;
-}
-
 pub enum PtyFork {
     Parent {
-        pid: libc::pid_t,
-        pty_master: File,
+        pid: unistd::Pid,
+        pty_master: PtyMaster,
         stdin_attr: Option<Termios>,
     },
     Child,
@@ -140,41 +135,46 @@ fn shovel(pairs: &mut [FilePair]) {
     }
 }
 
-pub fn forward(pty: &File) {
+pub fn forward(pty: &PtyMaster) {
     let stdin: File = unsafe { File::from_raw_fd(libc::STDIN_FILENO) };
     let stdout: File = unsafe { File::from_raw_fd(libc::STDOUT_FILENO) };
-    shovel(&mut [FilePair::new(&stdin, pty), FilePair::new(pty, &stdout)]);
+    let pty_file: File = unsafe { File::from_raw_fd(pty.as_raw_fd()) };
+    shovel(&mut [FilePair::new(&stdin, &pty_file), FilePair::new(&pty_file, &stdout)]);
     mem::forget(stdin);
     mem::forget(stdout);
+    mem::forget(pty_file);
+}
+
+pub fn reset_stdin(pty: &PtyFork) {
+    if let &PtyFork::Parent { ref stdin_attr, .. } = pty {
+        if let &Some(ref attr) = stdin_attr {
+            match tcsetattr(libc::STDIN_FILENO,
+                            SetArg::TCSANOW,
+                            &attr) {
+                Err(err) => warn!("failed to restore stdin tty: {}", err),
+                _ => {}
+            };
+        }
+    }
 }
 
 impl Drop for PtyFork {
     fn drop(&mut self) {
-        match self {
-            &mut PtyFork::Parent { ref stdin_attr, .. } => {
-                if stdin_attr.is_some() {
-                    match tcsetattr(libc::STDIN_FILENO, SetArg::TCSANOW, &stdin_attr.unwrap()) {
-                        Err(err) => warn!("failed to restore stdin tty: {}", err),
-                        _ => {}
-                    };
-                }
-            }
-            _ => {}
-        }
+        reset_stdin(self)
     }
 }
 
 fn set_tty_raw(fd: RawFd) -> Result<Termios> {
     let orig_attr = tryfmt!(tcgetattr(fd), "failed to get termios attributes");
 
-    let mut attr = orig_attr;
-    attr.c_iflag.remove(IGNBRK | BRKINT | PARMRK | ISTRIP | INLCR | IGNCR | ICRNL | IXON);
-    attr.c_oflag.remove(OPOST);
-    attr.c_lflag.remove(ECHO | ECHONL | ICANON | ISIG | IEXTEN);
-    attr.c_cflag.remove(CSIZE | PARENB);
-    attr.c_cflag.insert(CS8);
-    attr.c_cc[VMIN] = 1; // One character-at-a-time input
-    attr.c_cc[VTIME] = 0; // with blocking read
+    let mut attr = orig_attr.clone();
+    attr.input_flags.remove(IGNBRK | BRKINT | PARMRK | ISTRIP | INLCR | IGNCR | ICRNL | IXON);
+    attr.output_flags.remove(OPOST);
+    attr.local_flags.remove(ECHO | ECHONL | ICANON | ISIG | IEXTEN);
+    attr.control_flags.remove(CSIZE | PARENB);
+    attr.control_flags.insert(CS8);
+    attr.control_chars[VMIN as usize] = 1; // One character-at-a-time input
+    attr.control_chars[VTIME as usize] = 0; // with blocking read
 
     tryfmt!(tcsetattr(fd, SetArg::TCSAFLUSH, &attr),
             "failed to set termios attributes");
@@ -219,7 +219,7 @@ fn get_winsize(term_fd: RawFd) -> winsize {
 }
 
 
-fn resize_pty(pty_master: &File) {
+fn resize_pty(pty_master: &PtyMaster) {
     unsafe {
         libc::ioctl(pty_master.as_raw_fd(),
                     libc::TIOCSWINSZ,
@@ -227,10 +227,10 @@ fn resize_pty(pty_master: &File) {
     }
 }
 
-fn setup_parent(pid: libc::pid_t, pty_master: libc::c_int) -> Result<PtyFork> {
+fn setup_parent(pid: unistd::Pid, pty_master: PtyMaster) -> Result<PtyFork> {
     let mut parent = PtyFork::Parent {
         pid: pid,
-        pty_master: unsafe { File::from_raw_fd(pty_master) },
+        pty_master: pty_master,
         stdin_attr: None,
     };
 
@@ -247,27 +247,22 @@ fn setup_parent(pid: libc::pid_t, pty_master: libc::c_int) -> Result<PtyFork> {
     return Ok(parent);
 }
 
-fn open_ptm() -> Result<RawFd> {
-    let pty_master = unsafe_try!(posix_openpt(libc::O_RDWR), "posix_openpt()");
+fn open_ptm() -> Result<PtyMaster> {
+    let pty_master = tryfmt!(posix_openpt(fcntl::O_RDWR), "posix_openpt()");
 
-    unsafe_try!(grantpt(pty_master), "grantpt()");
-    unsafe_try!(unlockpt(pty_master), "unlockpt()");
+    tryfmt!(grantpt(&pty_master), "grantpt()");
+    tryfmt!(unlockpt(&pty_master), "unlockpt()");
 
-    Ok(pty_master as RawFd)
+    Ok(pty_master)
 }
 
-fn attach_pts(pty_master: libc::c_int) -> Result<()> {
-    let pts_name = unsafe { ptsname(pty_master) };
+fn attach_pts(pty_master: PtyMaster) -> Result<()> {
+    let pts_name = tryfmt!(ptsname_r(&pty_master), "ptsname()");
 
-    if (pts_name as *const i32) == ptr::null() {
-        return errfmt!(nix::Error::Sys(Errno::last()), "ptsname()");
-    }
-
-    tryfmt!(unistd::close(pty_master), "cannot close master pty");
     unsafe_try!(libc::setsid(), "setsid()");
 
-    let pty_slave = unsafe_try!(libc::open(pts_name, libc::O_RDWR, 0),
-                                "cannot open slave pty");
+    let pty_slave = tryfmt!(fcntl::open(pts_name.as_str(), fcntl::O_RDWR, stat::Mode::empty()),
+                            "cannot open slave pty");
 
     tryfmt!(unistd::dup2(pty_slave, libc::STDIN_FILENO),
             "cannot set pty as stdin");
