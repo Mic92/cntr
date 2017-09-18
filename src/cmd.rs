@@ -1,4 +1,3 @@
-use libc;
 use namespace;
 use nix::unistd;
 use std::env;
