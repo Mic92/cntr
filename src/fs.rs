@@ -393,9 +393,9 @@ impl Filesystem for CntrFs {
                name: &OsStr,
                link: &Path,
                reply: ReplyEntry) {
-        let res = unistd::symlinkat(name,
+        let res = unistd::symlinkat(link,
                                     self.inode(parent).fd.raw(),
-                                    link);
+                                    name);
         tryfuse!(res, reply);
         self.lookup(req, parent, name, reply);
     }
