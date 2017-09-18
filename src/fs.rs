@@ -239,7 +239,7 @@ fn fstat(fd: RawFd) -> nix::Result<(FileAttr, u64)> {
 }
 
 pub fn readlinkat<'a>(fd: RawFd) -> nix::Result<OsString> {
-    let mut buf = Vec::with_capacity(256);
+    let mut buf = vec![0; (libc::PATH_MAX + 1) as usize];
     loop {
         match fcntl::readlinkat(fd, "", &mut buf) {
             Ok(target) => {
