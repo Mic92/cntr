@@ -4,7 +4,7 @@ extern crate cntr;
 extern crate log;
 extern crate nix;
 
-use std::path::PathBuf;
+use std::path::Path;
 use std::process;
 use std::io::Write;
 use std::env;
@@ -35,15 +35,13 @@ fn main() {
     if let unistd::ForkResult::Parent{..} = unistd::fork().unwrap() {
         return
     }
-    let buf = PathBuf::from(args[2].clone());
     match CntrFs::new(&args[1]) {
-        Ok(cntr) => fuse::mount(cntr, &buf, &[]).unwrap(),
+        Ok(cntr) => cntr.mount(Path::new(&args[2])).unwrap(),
         Err(err) => {
             let _ = writeln!(&mut std::io::stderr(), "{}", err);
             process::exit(1);
         }
     };
-
 
     //let output = Command::new("xfstests-check")
     //    .arg("-overlay")
@@ -52,6 +50,6 @@ fn main() {
     //    .spawn()
     //    .unwrap();
 
-    //println!("works!");
+    println!("works!");
 	//fs::read_dir("from/abc").unwrap();
 }

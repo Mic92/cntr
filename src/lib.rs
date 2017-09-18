@@ -9,6 +9,7 @@ extern crate void;
 
 use nix::unistd;
 use pty::PtyFork;
+use std::path::Path;
 use types::{Error, Result};
 
 #[macro_use]
@@ -46,7 +47,9 @@ fn run_child(opts: Options) -> Result<()> {
         let namespace = tryfmt!(kind.open(opts.pid), "failed to open namespace");
         tryfmt!(namespace.apply(), "failed to apply namespace");
     }
-    fuse::mount(cntr, &opts.mountpoint, &[]);
+
+    tryfmt!(cntr.mount(&Path::new(&opts.mountpoint)), "");
+
     #[allow(unreachable_patterns)]
     let _ = tryfmt!(cmd::exec(opts.pid), "");
     Ok(())

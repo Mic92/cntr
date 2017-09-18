@@ -69,6 +69,7 @@ impl Fh {
 }
 
 pub struct CntrFs {
+    prefix: String,
     root_inode: Box<Inode>,
     inodes: HashMap<InodeKey, Box<Inode>>,
 }
@@ -99,6 +100,7 @@ impl CntrFs {
             return errfmt!(format!("cannot obtain filename of mountpoint: '{}'", prefix));
         }
         Ok(CntrFs {
+            prefix: String::from(prefix),
             root_inode: Box::new(Inode {
                 magic: INODE_MAGIC,
                 fd: Fd(fd),
@@ -108,6 +110,13 @@ impl CntrFs {
             }),
             inodes: HashMap::new(),
         })
+    }
+
+    pub fn mount(self, mountpoint: &Path) -> Result<()> {
+        let subtype: &OsStr = OsStr::new("-osubtype=cntr");
+        let fsname = format!("-ofsname={}", self.prefix.as_str());
+        tryfmt!(fuse::mount(self, &mountpoint, &[OsStr::new(fsname.as_str()), subtype]), "fuse");
+        Ok(())
     }
 
     fn inode(&mut self, ino: u64) -> &mut Inode {
