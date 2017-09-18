@@ -80,6 +80,7 @@ macro_rules! tryfuse {
     ($result:expr, $reply:expr)  => (match $result {
         Ok(val) => val,
         Err(err) => {
+            debug!("return error {} on {}:{}", err, file!(), line!());
             let rc = match err {
                 nix::Error::Sys(errno) => errno as i32,
                 // InvalidPath, InvalidUtf8, UnsupportedOperation
