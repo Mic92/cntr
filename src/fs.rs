@@ -222,7 +222,7 @@ fn attr_from_stat(attr: stat::FileStat) -> FileAttr {
         uid: attr.st_uid,
         gid: attr.st_gid,
         perm: attr.st_mode as u16,
-        kind: inode_kind(stat::SFlag::from_bits(attr.st_mode & libc::S_IFMT).unwrap()),
+        kind: inode_kind(stat::SFlag::from_bits_truncate(attr.st_mode & libc::S_IFMT)),
         nlink: attr.st_nlink as u32,
         rdev: attr.st_rdev as u32,
         // Flags (OS X only, see chflags(2))
@@ -252,7 +252,9 @@ pub fn readlinkat<'a>(fd: RawFd) -> nix::Result<OsString> {
         // the same as the capacity due to the if statement above.
         buf.reserve(1)
     }
+
 }
+
 
 impl Filesystem for CntrFs {
     fn lookup(&mut self, _req: &Request, parent: u64, name: &OsStr, reply: ReplyEntry) {
@@ -314,7 +316,7 @@ impl Filesystem for CntrFs {
                reply: ReplyAttr) {
         let fd = self.inode(ino).fd.raw();
         if let Some(mode) = _mode {
-            let mode = stat::Mode::from_bits(mode & !libc::S_IFMT).unwrap();
+            let mode = stat::Mode::from_bits_truncate(mode & !libc::S_IFMT);
             tryfuse!(stat::fchmod(fd, mode), reply);
         }
 
@@ -427,7 +429,7 @@ impl Filesystem for CntrFs {
     }
 
     fn open(&mut self, _req: &Request, ino: u64, flags: u32, reply: ReplyOpen) {
-        let oflags = fcntl::OFlag::from_bits(flags as i32).unwrap();
+        let oflags = fcntl::OFlag::from_bits_truncate(flags as i32);
         let path = fd_path(&self.inode(ino).fd.raw());
         let res = tryfuse!(fcntl::open(Path::new(&path),
                                        oflags,
@@ -624,7 +626,7 @@ impl Filesystem for CntrFs {
 
     fn access(&mut self, _req: &Request, ino: u64, mask: u32, reply: ReplyEmpty) {
         let fd = self.inode(ino).fd.raw();
-        let mode = unistd::AccessMode::from_bits(mask as i32).unwrap();
+        let mode = unistd::AccessMode::from_bits_truncate(mask as i32);
         tryfuse!(unistd::access(fd_path(&fd).as_str(), mode), reply);
         reply.ok();
     }
@@ -637,19 +639,19 @@ impl Filesystem for CntrFs {
               flags: u32,
               reply: ReplyCreate) {
         let parent_fd = self.inode(parent).fd.raw();
-        let oflag = fcntl::OFlag::from_bits(flags as i32).unwrap();
-        let create_mode = stat::Mode::from_bits(mode).unwrap();
+
+        let oflag = fcntl::OFlag::from_bits_truncate(flags as i32);
+        let create_mode = stat::Mode::from_bits_truncate(mode);
         let fd = tryfuse!(fcntl::openat(parent_fd,
                                         name,
                                         oflag | fcntl::O_NOFOLLOW,
                                         create_mode),
                           reply);
-        let path_fd = tryfuse!(fcntl::open(fd_path(&fd).as_str(),
-                                     fcntl::O_RDONLY | fcntl::O_NOFOLLOW,
-                                     stat::Mode::all()),
-                               reply);
-        let attr = tryfuse!(self.lookup_from_fd(path_fd), reply);
         let fh = Fh::new(Fd(fd));
+
+        let newfd = tryfuse!(unistd::dup(fd), reply);
+        let attr = tryfuse!(self.lookup_from_fd(newfd), reply);
+
         let fp = Box::into_raw(fh) as u64; // freed by close
         reply.created(&TTL, &attr, 0, fp, flags);
     }
