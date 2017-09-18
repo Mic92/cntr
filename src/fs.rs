@@ -213,7 +213,7 @@ fn inode_kind(mode: stat::SFlag) -> FileType {
 fn attr_from_stat(attr: stat::FileStat) -> FileAttr {
     let ctime = Timespec::new(attr.st_ctime, attr.st_ctime_nsec as i32);
     FileAttr {
-        ino: 0, // replaced by ino pointer
+        ino: attr.st_ino, // replaced by ino pointer
         size: attr.st_size,
         blocks: attr.st_blocks as u64,
         atime: Timespec::new(attr.st_atime, attr.st_atime_nsec as i32),
