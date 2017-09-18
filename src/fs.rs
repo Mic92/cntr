@@ -482,6 +482,11 @@ impl Filesystem for CntrFs {
         };
     }
 
+    fn release (&mut self, _req: &Request, _ino: u64, fh: u64, _flags: u32, _lock_owner: u64, _flush: bool, reply: ReplyEmpty) {
+        unsafe { drop(Box::from_raw(fh as *mut Fh)) };
+        reply.ok();
+    }
+
     fn fsync(&mut self, _req: &Request, _ino: u64, fh: u64, datasync: bool, reply: ReplyEmpty) {
         let handle = get_filehandle(fh);
 
