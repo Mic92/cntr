@@ -315,7 +315,13 @@ impl Filesystem for CntrFs {
                _bkuptime: Option<Timespec>, // only mac os x
                _flags: Option<u32>, // only mac os x
                reply: ReplyAttr) {
-        let fd = self.inode(ino).fd.raw();
+
+        let fd = if let Some(fh) = _fh {
+            get_filehandle(fh).fd.raw()
+        } else {
+            self.inode(ino).fd.raw()
+        };
+
         if let Some(mode) = _mode {
             let mode = stat::Mode::from_bits_truncate(mode & !libc::S_IFMT);
             tryfuse!(stat::fchmod(fd, mode), reply);
