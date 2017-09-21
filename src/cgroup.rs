@@ -86,9 +86,11 @@ fn cgroup_path(cgroup: &str, mountpoints: &HashMap<String, String>) -> Option<Pa
 // -> on the long run everything will be done with unified cgroups hopefully
 
 pub fn move_to(pid: unistd::Pid, target_pid: unistd::Pid) -> Result<()> {
-    let cgroups = tryfmt!(get_cgroups(target_pid),
-                          "failed to get cgroups of {}",
-                          target_pid);
+    let cgroups = tryfmt!(
+        get_cgroups(target_pid),
+        "failed to get cgroups of {}",
+        target_pid
+    );
     let mountpoints = tryfmt!(get_mounts(), "failed to get cgroup mountpoints");
     for cgroup in cgroups {
         let p = cgroup_path(&cgroup, &mountpoints);
@@ -96,9 +98,11 @@ pub fn move_to(pid: unistd::Pid, target_pid: unistd::Pid) -> Result<()> {
             let path = p.unwrap();
             match File::create(&path) {
                 Ok(mut buffer) => {
-                    tryfmt!(write!(buffer, "{}", pid),
-                            "failed to enter {} cgroup",
-                            cgroup);
+                    tryfmt!(
+                        write!(buffer, "{}", pid),
+                        "failed to enter {} cgroup",
+                        cgroup
+                    );
                 }
                 Err(err) => {
                     warn!("failed to enter {} namespace: {}", cgroup, err);

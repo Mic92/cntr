@@ -15,8 +15,10 @@ pub fn install(pid: libc::pid_t) -> Result<()> {
             return errfmt!(format!("process exited prematurely with {}", rc));
         }
         WaitStatus::Signaled(_, signal, _) => {
-            return errfmt!(format!("process was terminated with signal {:}",
-                                   sigstr::Signal { n: signal }));
+            return errfmt!(format!(
+                "process was terminated with signal {:}",
+                sigstr::Signal { n: signal }
+            ));
         }
         WaitStatus::Continued(_) => {
             return errfmt!(format!("BUG: process was continued by someone"));
@@ -28,11 +30,13 @@ pub fn install(pid: libc::pid_t) -> Result<()> {
     }
 
     let opts = PTRACE_O_TRACESECCOMP | PTRACE_O_TRACESYSGOOD | PTRACE_O_TRACEFORK |
-               PTRACE_O_TRACEVFORK | PTRACE_O_TRACECLONE | PTRACE_O_TRACEEXEC |
-               PTRACE_O_TRACEVFORKDONE | PTRACE_O_TRACEEXIT;
+        PTRACE_O_TRACEVFORK | PTRACE_O_TRACECLONE | PTRACE_O_TRACEEXEC |
+        PTRACE_O_TRACEVFORKDONE | PTRACE_O_TRACEEXIT;
     tryfmt!(ptrace_setoptions(pid, opts), "failed to ptrace process");
-    tryfmt!(ptrace(PTRACE_CONT, pid, ptr::null_mut(), ptr::null_mut()),
-            "failed to resume tracee");
+    tryfmt!(
+        ptrace(PTRACE_CONT, pid, ptr::null_mut(), ptr::null_mut()),
+        "failed to resume tracee"
+    );
     Ok(())
 }
 

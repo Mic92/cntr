@@ -39,10 +39,14 @@ fn run_parent(pty: PtyFork, opts: Options) -> Result<()> {
 
 fn run_child(opts: Options) -> Result<()> {
     let cntr = tryfmt!(fs::CntrFs::new("/"), "cannot mount filesystem");
-    tryfmt!(cgroup::move_to(unistd::getpid(), opts.pid),
-            "failed to change cgroup");
-    let kinds = tryfmt!(namespace::supported_namespaces(),
-                        "failed to list namespaces");
+    tryfmt!(
+        cgroup::move_to(unistd::getpid(), opts.pid),
+        "failed to change cgroup"
+    );
+    let kinds = tryfmt!(
+        namespace::supported_namespaces(),
+        "failed to list namespaces"
+    );
     for kind in kinds {
         let namespace = tryfmt!(kind.open(opts.pid), "failed to open namespace");
         tryfmt!(namespace.apply(), "failed to apply namespace");

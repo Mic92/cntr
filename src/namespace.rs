@@ -1,30 +1,19 @@
-use nix::unistd;
 use nix::sched;
+use nix::unistd;
 use std::fs::{self, File};
 use std::os::unix::io::IntoRawFd;
 use std::path::PathBuf;
 use types::{Error, Result};
 
-pub const MOUNT: Kind = Kind {
-    name: "mnt",
-};
-pub const UTS: Kind = Kind {
-    name: "uts",
-};
-pub const USER: Kind = Kind {
-    name: "user",
-};
-pub const PID: Kind = Kind {
-    name: "pid",
-};
-pub const NET: Kind = Kind {
-    name: "net",
-};
-pub const IPC: Kind = Kind {
-    name: "ipc",
-};
+pub const MOUNT: Kind = Kind { name: "mnt" };
+pub const UTS: Kind = Kind { name: "uts" };
+pub const USER: Kind = Kind { name: "user" };
+pub const PID: Kind = Kind { name: "pid" };
+pub const NET: Kind = Kind { name: "net" };
+pub const IPC: Kind = Kind { name: "ipc" };
 
-pub static ALL: &'static [Kind] = &[UTS, USER, PID, NET, IPC, MOUNT];
+//pub static ALL: &'static [Kind] = &[UTS, USER, PID, NET, IPC, MOUNT];
+pub static ALL: &'static [Kind] = &[UTS, PID, NET, IPC, MOUNT];
 
 pub struct Kind {
     pub name: &'static str,
@@ -32,8 +21,10 @@ pub struct Kind {
 
 pub fn supported_namespaces<'a>() -> Result<Vec<&'a Kind>> {
     let mut namespaces = Vec::new();
-    let entries = tryfmt!(fs::read_dir(PathBuf::from("/proc/self/ns")),
-                          "failed to list /proc/self/ns");
+    let entries = tryfmt!(
+        fs::read_dir(PathBuf::from("/proc/self/ns")),
+        "failed to list /proc/self/ns"
+    );
     for entry in entries {
         let entry = tryfmt!(entry, "failed to list /proc/self/ns");
         for ns in ALL {
@@ -84,8 +75,10 @@ pub struct Namespace {
 
 impl Namespace {
     pub fn apply(self) -> Result<()> {
-        tryfmt!(sched::setns(self.file.into_raw_fd(), sched::CloneFlags::empty()),
-                "setns");
+        tryfmt!(
+            sched::setns(self.file.into_raw_fd(), sched::CloneFlags::empty()),
+            "setns"
+        );
         Ok(())
     }
 }

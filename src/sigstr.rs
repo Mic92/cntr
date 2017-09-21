@@ -15,8 +15,8 @@ pub struct Signal {
 impl fmt::Display for Signal {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         // not reentrant safe in glibc
-        write!(f,
-               "{}",
-               unsafe { from_utf8_unchecked(CStr::from_ptr(strsignal(self.n as i32)).to_bytes()) })
+        write!(f, "{}", unsafe {
+            from_utf8_unchecked(CStr::from_ptr(strsignal(self.n as i32)).to_bytes())
+        })
     }
 }
