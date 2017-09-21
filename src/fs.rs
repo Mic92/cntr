@@ -122,7 +122,11 @@ macro_rules! tryfuse {
 impl CntrFs {
     pub fn new(prefix: &str) -> Result<CntrFs> {
         let fd = tryfmt!(
-            fcntl::open(prefix, fcntl::O_RDONLY, stat::Mode::all()),
+            fcntl::open(
+                prefix,
+                fcntl::O_RDONLY | fcntl::O_CLOEXEC,
+                stat::Mode::all(),
+            ),
             "failed to open backing filesystem '{}'",
             prefix
         );
@@ -302,7 +306,7 @@ impl Filesystem for CntrFs {
             fcntl::openat(
                 parent_inode.fd.raw(),
                 name,
-                fcntl::O_PATH | fcntl::O_NOFOLLOW,
+                fcntl::O_PATH | fcntl::O_NOFOLLOW | fcntl::O_CLOEXEC,
                 stat::Mode::empty(),
             )
         };
@@ -494,7 +498,11 @@ impl Filesystem for CntrFs {
         let oflags = fcntl::OFlag::from_bits_truncate(flags as i32);
         let path = fd_path(&self.inode(ino).fd.raw());
         let res = tryfuse!(
-            fcntl::open(Path::new(&path), oflags, stat::Mode::empty()),
+            fcntl::open(
+                Path::new(&path),
+                oflags | fcntl::O_CLOEXEC,
+                stat::Mode::empty(),
+            ),
             reply
         );
         let fh = Fh::new(Fd(res));
@@ -731,7 +739,12 @@ impl Filesystem for CntrFs {
         let oflag = fcntl::OFlag::from_bits_truncate(flags as i32);
         let create_mode = stat::Mode::from_bits_truncate(mode);
         let fd = tryfuse!(
-            fcntl::openat(parent_fd, name, oflag | fcntl::O_NOFOLLOW, create_mode),
+            fcntl::openat(
+                parent_fd,
+                name,
+                oflag | fcntl::O_NOFOLLOW | fcntl::O_CLOEXEC,
+                create_mode,
+            ),
             reply
         );
         let fh = Fh::new(Fd(fd));
