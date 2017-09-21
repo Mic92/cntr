@@ -6,6 +6,7 @@ use nix::{self, unistd, fcntl, dirent};
 use nix::sys::stat;
 use nix::sys::time::{TimeSpec as NixTimeSpec, TimeValLike};
 use nix::sys::uio::{pread, pwrite};
+use statvfs::fstatvfs;
 use std::{u32, u64};
 use std::collections::HashMap;
 use std::ffi::{CStr, OsStr, OsString};
@@ -14,7 +15,6 @@ use std::os::unix::io::RawFd;
 use std::path::Path;
 use time::Timespec;
 use types::{Error, Result};
-use statvfs::fstatvfs;
 use xattr::{fsetxattr, fgetxattr, fremovexattr};
 
 const INODE_MAGIC: char = 'I';
@@ -37,11 +37,36 @@ impl Drop for Fd {
 struct Inode {
     magic: char,
     fd: Fd,
-    // path_fd: Fd,
-    // read_fd: Option<Fd>,
+    fd_is_mutable: bool,
+    open_flags: fcntl::OFlag,
     ino: u64,
     dev: u64,
-    nlookup: u64
+    nlookup: u64,
+}
+
+// returns a new file descriptor pointing to the same file
+// NOTE: does not work for symlinks
+fn reopen_fd(fd: &mut Fd, open_flags: fcntl::OFlag) -> nix::Result<Fd> {
+    let path = fd_path(&fd.raw());
+    let fd = try!(fcntl::open(
+        Path::new(&path),
+        open_flags | fcntl::O_CLOEXEC,
+        stat::Mode::empty(),
+    ));
+    return Ok(Fd(fd));
+}
+
+impl Inode {
+    fn get_mutable_fd(&mut self) -> nix::Result<&Fd> {
+        if self.fd_is_mutable {
+            return Ok(&self.fd);
+        }
+
+        self.fd = try!(reopen_fd(&mut self.fd, self.open_flags));
+        self.fd_is_mutable = true;
+
+        return Ok(&self.fd);
+    }
 }
 
 #[derive(Hash, Eq, PartialEq)]
@@ -64,7 +89,10 @@ struct Fh {
 
 impl Fh {
     fn new(fd: Fd) -> Box<Self> {
-        Box::new(Fh { magic: FH_MAGIC, fd: fd })
+        Box::new(Fh {
+            magic: FH_MAGIC,
+            fd: fd,
+        })
     }
 }
 
@@ -93,18 +121,25 @@ macro_rules! tryfuse {
 
 impl CntrFs {
     pub fn new(prefix: &str) -> Result<CntrFs> {
-        let fd = tryfmt!(fcntl::open(prefix, fcntl::O_RDONLY, stat::Mode::all()),
-                         "failed to open backing filesystem '{}'",
-                         prefix);
+        let fd = tryfmt!(
+            fcntl::open(prefix, fcntl::O_RDONLY, stat::Mode::all()),
+            "failed to open backing filesystem '{}'",
+            prefix
+        );
         let name = Path::new(prefix).file_name();
         if name.is_none() {
-            return errfmt!(format!("cannot obtain filename of mountpoint: '{}'", prefix));
+            return errfmt!(format!(
+                "cannot obtain filename of mountpoint: '{}'",
+                prefix
+            ));
         }
         Ok(CntrFs {
             prefix: String::from(prefix),
             root_inode: Box::new(Inode {
                 magic: INODE_MAGIC,
                 fd: Fd(fd),
+                fd_is_mutable: true,
+                open_flags: fcntl::O_RDONLY,
                 ino: fuse::FUSE_ROOT_ID,
                 dev: fuse::FUSE_ROOT_ID,
                 nlookup: 2,
@@ -116,7 +151,10 @@ impl CntrFs {
     pub fn mount(self, mountpoint: &Path) -> Result<()> {
         let subtype: &OsStr = OsStr::new("-osubtype=cntr");
         let fsname = format!("-ofsname={}", self.prefix.as_str());
-        tryfmt!(fuse::mount(self, &mountpoint, &[OsStr::new(fsname.as_str()), subtype]), "fuse");
+        tryfmt!(
+            fuse::mount(self, &mountpoint, &[OsStr::new(fsname.as_str()), subtype]),
+            "fuse"
+        );
         Ok(())
     }
 
@@ -132,23 +170,31 @@ impl CntrFs {
     }
 
     fn lookup_from_fd(&mut self, newfd: RawFd) -> nix::Result<FileAttr> {
-        let (mut attr, dev) = try!(fstat(newfd));
+        let _stat = try!(stat::fstat(newfd));
+        let mut attr = attr_from_stat(_stat);
 
         let key = InodeKey {
             ino: attr.ino,
-            dev: dev,
+            dev: _stat.st_dev,
         };
+
         if self.inodes.contains_key(&key) {
             let inode_ref = self.inodes.get_mut(&key).unwrap();
             inode_ref.as_mut().nlookup += 1;
             let _ = unistd::close(newfd);
             attr.ino = (inode_ref.as_ref() as *const Inode) as u64;
         } else {
+            let flags = match attr.kind {
+                FileType::Directory => fcntl::O_RDONLY,
+                _ => fcntl::O_RDWR,
+            };
             let inode = Box::new(Inode {
                 magic: INODE_MAGIC,
                 fd: Fd(newfd),
+                fd_is_mutable: false,
+                open_flags: flags,
                 ino: attr.ino,
-                dev: dev,
+                dev: _stat.st_dev,
                 nlookup: 1,
             });
             attr.ino = (inode.as_ref() as *const Inode) as u64;
@@ -167,8 +213,7 @@ fn get_filehandle<'a>(fh: u64) -> &'a Fh {
 
 fn to_utimespec(time: &Option<Timespec>) -> stat::UtimeSpec {
     time.map_or(stat::UtimeSpec::Omit, |v| {
-        let t = NixTimeSpec::seconds(v.sec) 
-            + NixTimeSpec::nanoseconds(v.nsec as i64);
+        let t = NixTimeSpec::seconds(v.sec) + NixTimeSpec::nanoseconds(v.nsec as i64);
         stat::UtimeSpec::Time(t)
     })
 }
@@ -231,13 +276,6 @@ fn attr_from_stat(attr: stat::FileStat) -> FileAttr {
     }
 }
 
-fn fstat(fd: RawFd) -> nix::Result<(FileAttr, u64)> {
-    match stat::fstat(fd) {
-        Ok(attr) => Ok((attr_from_stat(attr), attr.st_dev)),
-        Err(rc) => Err(rc),
-    }
-}
-
 pub fn readlinkat<'a>(fd: RawFd) -> nix::Result<OsString> {
     let mut buf = vec![0; (libc::PATH_MAX + 1) as usize];
     loop {
@@ -259,13 +297,14 @@ pub fn readlinkat<'a>(fd: RawFd) -> nix::Result<OsString> {
 
 impl Filesystem for CntrFs {
     fn lookup(&mut self, _req: &Request, parent: u64, name: &OsStr, reply: ReplyEntry) {
-        debug!("lookup({:?})", name);
         let res = {
             let parent_inode = self.inode(parent);
-            fcntl::openat(parent_inode.fd.raw(),
-                          name,
-                          fcntl::O_PATH | fcntl::O_NOFOLLOW,
-                          stat::Mode::empty())
+            fcntl::openat(
+                parent_inode.fd.raw(),
+                name,
+                fcntl::O_PATH | fcntl::O_NOFOLLOW,
+                stat::Mode::empty(),
+            )
         };
         let newfd = tryfuse!(res, reply);
         let attr = tryfuse!(self.lookup_from_fd(newfd), reply);
@@ -273,7 +312,6 @@ impl Filesystem for CntrFs {
     }
 
     fn forget(&mut self, _req: &Request, ino: u64, nlookup: u64) {
-        debug!("forget({:?})", ino);
         let key = {
             let mut inode = self.inode(ino);
             inode.nlookup -= nlookup;
@@ -295,31 +333,34 @@ impl Filesystem for CntrFs {
 
     fn getattr(&mut self, _req: &Request, ino: u64, reply: ReplyAttr) {
         let inode = self.inode(ino);
-        let (mut attr, _) = tryfuse!(fstat(inode.fd.raw()), reply);
+
+        let mut attr = attr_from_stat(tryfuse!(stat::fstat(inode.fd.raw()), reply));
         attr.ino = (inode as *const Inode) as u64;
         reply.attr(&TTL, &attr);
     }
 
-    fn setattr(&mut self,
-               req: &Request,
-               ino: u64,
-               _mode: Option<u32>,
-               uid: Option<u32>,
-               gid: Option<u32>,
-               _size: Option<i64>,
-               atime: Option<Timespec>,
-               mtime: Option<Timespec>,
-               _fh: Option<u64>,
-               _crtime: Option<Timespec>, // only mac os x
-               _chgtime: Option<Timespec>, // only mac os x
-               _bkuptime: Option<Timespec>, // only mac os x
-               _flags: Option<u32>, // only mac os x
-               reply: ReplyAttr) {
+    fn setattr(
+        &mut self,
+        req: &Request,
+        ino: u64,
+        _mode: Option<u32>,
+        uid: Option<u32>,
+        gid: Option<u32>,
+        _size: Option<i64>,
+        atime: Option<Timespec>,
+        mtime: Option<Timespec>,
+        _fh: Option<u64>,
+        _crtime: Option<Timespec>, // only mac os x
+        _chgtime: Option<Timespec>, // only mac os x
+        _bkuptime: Option<Timespec>, // only mac os x
+        _flags: Option<u32>, // only mac os x
+        reply: ReplyAttr,
+    ) {
 
         let fd = if let Some(fh) = _fh {
             get_filehandle(fh).fd.raw()
         } else {
-            self.inode(ino).fd.raw()
+            tryfuse!(self.inode(ino).get_mutable_fd(), reply).raw()
         };
 
         if let Some(mode) = _mode {
@@ -338,10 +379,10 @@ impl Filesystem for CntrFs {
             tryfuse!(unistd::ftruncate(fd, size), reply);
         }
         if mtime.is_some() || atime.is_some() {
-            tryfuse!(stat::futimens(fd,
-                                    &to_utimespec(&mtime),
-                                    &to_utimespec(&atime)),
-                     reply);
+            tryfuse!(
+                stat::futimens(fd, &to_utimespec(&mtime), &to_utimespec(&atime)),
+                reply
+            );
         }
         self.getattr(req, ino, reply)
     }
@@ -352,84 +393,98 @@ impl Filesystem for CntrFs {
         reply.data(&target.into_vec());
     }
 
-    fn mknod(&mut self,
-             req: &Request,
-             parent: u64,
-             name: &OsStr,
-             mode: u32,
-             rdev: u32,
-             reply: ReplyEntry) {
+    fn mknod(
+        &mut self,
+        req: &Request,
+        parent: u64,
+        name: &OsStr,
+        mode: u32,
+        rdev: u32,
+        reply: ReplyEntry,
+    ) {
         let kind = stat::SFlag::from_bits_truncate(mode);
         let perm = stat::Mode::from_bits_truncate(mode);
-        tryfuse!(stat::mknodat(&self.inode(parent).fd.raw(),
-                               name,
-                               kind,
-                               perm,
-                               rdev as dev_t),
-                 reply);
+        tryfuse!(
+            stat::mknodat(
+                &self.inode(parent).fd.raw(),
+                name,
+                kind,
+                perm,
+                rdev as dev_t,
+            ),
+            reply
+        );
         self.lookup(req, parent, name, reply);
     }
 
     fn mkdir(&mut self, req: &Request, parent: u64, name: &OsStr, mode: u32, reply: ReplyEntry) {
         let perm = stat::Mode::from_bits_truncate(mode);
-        tryfuse!(unistd::mkdirat(self.inode(parent).fd.raw(), name, perm),
-                 reply);
+        tryfuse!(
+            unistd::mkdirat(self.inode(parent).fd.raw(), name, perm),
+            reply
+        );
         self.lookup(req, parent, name, reply);
     }
 
     fn unlink(&mut self, _req: &Request, parent: u64, name: &OsStr, reply: ReplyEmpty) {
-        let res = unistd::unlinkat(self.inode(parent).fd.raw(),
-                                   name,
-                                   fcntl::AtFlags::empty());
+        let res = unistd::unlinkat(self.inode(parent).fd.raw(), name, fcntl::AtFlags::empty());
         tryfuse!(res, reply);
         reply.ok();
     }
 
     fn rmdir(&mut self, _req: &Request, parent: u64, name: &OsStr, reply: ReplyEmpty) {
-        let res = unistd::unlinkat(self.inode(parent).fd.raw(),
-                                   name,
-                                   fcntl::AT_REMOVEDIR);
+        let res = unistd::unlinkat(self.inode(parent).fd.raw(), name, fcntl::AT_REMOVEDIR);
         tryfuse!(res, reply);
         reply.ok();
     }
 
-    fn symlink(&mut self,
-               req: &Request,
-               parent: u64,
-               name: &OsStr,
-               link: &Path,
-               reply: ReplyEntry) {
-        let res = unistd::symlinkat(link,
-                                    self.inode(parent).fd.raw(),
-                                    name);
+    fn symlink(
+        &mut self,
+        req: &Request,
+        parent: u64,
+        name: &OsStr,
+        link: &Path,
+        reply: ReplyEntry,
+    ) {
+        let res = unistd::symlinkat(link, self.inode(parent).fd.raw(), name);
         tryfuse!(res, reply);
         self.lookup(req, parent, name, reply);
     }
 
-    fn rename(&mut self,
-              _req: &Request,
-              parent: u64,
-              name: &OsStr,
-              newparent: u64,
-              newname: &OsStr,
-              reply: ReplyEmpty) {
-        let res = fcntl::renameat(self.inode(parent).fd.raw(),
-                                  name,
-                                  self.inode(newparent).fd.raw(),
-                                  newname);
+    fn rename(
+        &mut self,
+        _req: &Request,
+        parent: u64,
+        name: &OsStr,
+        newparent: u64,
+        newname: &OsStr,
+        reply: ReplyEmpty,
+    ) {
+        let res = fcntl::renameat(
+            self.inode(parent).fd.raw(),
+            name,
+            self.inode(newparent).fd.raw(),
+            newname,
+        );
         tryfuse!(res, reply);
         reply.ok();
     }
 
-    fn link(&mut self,
-            req: &Request,
-            ino: u64,
-            newparent: u64,
-            newname: &OsStr,
-            reply: ReplyEntry) {
-        let res = unistd::linkat(self.inode(ino).fd.raw(), "",
-                                 self.inode(newparent).fd.raw(), newname,
-                                 fcntl::AT_EMPTY_PATH);
+    fn link(
+        &mut self,
+        req: &Request,
+        ino: u64,
+        newparent: u64,
+        newname: &OsStr,
+        reply: ReplyEntry,
+    ) {
+        let res = unistd::linkat(
+            self.inode(ino).fd.raw(),
+            "",
+            self.inode(newparent).fd.raw(),
+            newname,
+            fcntl::AT_EMPTY_PATH,
+        );
         tryfuse!(res, reply);
         // just do a lookup for simplicity
         self.lookup(req, newparent, newname, reply);
@@ -438,21 +493,23 @@ impl Filesystem for CntrFs {
     fn open(&mut self, _req: &Request, ino: u64, flags: u32, reply: ReplyOpen) {
         let oflags = fcntl::OFlag::from_bits_truncate(flags as i32);
         let path = fd_path(&self.inode(ino).fd.raw());
-        let res = tryfuse!(fcntl::open(Path::new(&path),
-                                       oflags,
-                                       stat::Mode::empty()),
-                           reply);
+        let res = tryfuse!(
+            fcntl::open(Path::new(&path), oflags, stat::Mode::empty()),
+            reply
+        );
         let fh = Fh::new(Fd(res));
         reply.opened(Box::into_raw(fh) as u64, 0); // freed by close
     }
 
-    fn read(&mut self,
-            _req: &Request,
-            _ino: u64,
-            fh: u64,
-            offset: i64,
-            size: u32,
-            reply: ReplyData) {
+    fn read(
+        &mut self,
+        _req: &Request,
+        _ino: u64,
+        fh: u64,
+        offset: i64,
+        size: u32,
+        reply: ReplyData,
+    ) {
         let handle = get_filehandle(fh);
 
         let mut v = vec![0; size as usize];
@@ -462,14 +519,16 @@ impl Filesystem for CntrFs {
         reply.data(buf);
     }
 
-    fn write(&mut self,
-             _req: &Request,
-             _ino: u64,
-             fh: u64,
-             offset: i64,
-             data: &[u8],
-             _flags: u32,
-             reply: ReplyWrite) {
+    fn write(
+        &mut self,
+        _req: &Request,
+        _ino: u64,
+        fh: u64,
+        offset: i64,
+        data: &[u8],
+        _flags: u32,
+        reply: ReplyWrite,
+    ) {
         let handle = get_filehandle(fh);
 
         let written = tryfuse!(pwrite(handle.fd.raw(), data, offset), reply);
@@ -488,7 +547,16 @@ impl Filesystem for CntrFs {
         };
     }
 
-    fn release (&mut self, _req: &Request, _ino: u64, fh: u64, _flags: u32, _lock_owner: u64, _flush: bool, reply: ReplyEmpty) {
+    fn release(
+        &mut self,
+        _req: &Request,
+        _ino: u64,
+        fh: u64,
+        _flags: u32,
+        _lock_owner: u64,
+        _flush: bool,
+        reply: ReplyEmpty,
+    ) {
         unsafe { drop(Box::from_raw(fh as *mut Fh)) };
         reply.ok();
     }
@@ -507,13 +575,10 @@ impl Filesystem for CntrFs {
     }
 
     fn opendir(&mut self, _req: &Request, ino: u64, _flags: u32, reply: ReplyOpen) {
-        let res = fcntl::openat(self.inode(ino).fd.raw(),
-                                ".",
-                                fcntl::O_RDONLY,
-                                stat::Mode::empty());
-        let raw_fd = tryfuse!(res, reply);
+        let fd = tryfuse!(self.inode(ino).get_mutable_fd(), reply);
+        let path = fd_path(&fd.raw());
+        let dp = tryfuse!(dirent::opendir(Path::new(&path)), reply);
 
-        let dp = tryfuse!(dirent::fdopendir(raw_fd), reply);
         let dirp = Box::new(DirP {
             magic: DIRP_MAGIC,
             dp: dp,
@@ -523,12 +588,14 @@ impl Filesystem for CntrFs {
         reply.opened(Box::into_raw(dirp) as u64, 0); // freed by releasedir
     }
 
-    fn readdir(&mut self,
-               _req: &Request,
-               _ino: u64,
-               fh: u64,
-               offset: i64,
-               mut reply: ReplyDirectory) {
+    fn readdir(
+        &mut self,
+        _req: &Request,
+        _ino: u64,
+        fh: u64,
+        offset: i64,
+        mut reply: ReplyDirectory,
+    ) {
         let dirp = unsafe { &mut (*(fh as *mut DirP)) };
         assert!(dirp.magic == DIRP_MAGIC);
 
@@ -540,8 +607,7 @@ impl Filesystem for CntrFs {
 
         while {
             if dirp.entry.is_none() {
-                dirp.entry = tryfuse!(dirent::readdir(&mut dirp.dp), reply)
-                    .map(|v| *v.as_ref());
+                dirp.entry = tryfuse!(dirent::readdir(&mut dirp.dp), reply).map(|v| *v.as_ref());
             }
             match dirp.entry {
                 None => false,
@@ -549,29 +615,27 @@ impl Filesystem for CntrFs {
                     dirp.offset = dirent::telldir(&mut dirp.dp);
                     let name = unsafe { CStr::from_ptr(entry.d_name.as_ptr()) };
                     dirp.entry = None;
-                    reply.add(entry.d_ino,
-                              dirp.offset,
-                              dtype_kind(entry.d_type),
-                              OsStr::from_bytes(name.to_bytes()))
+                    reply.add(
+                        entry.d_ino,
+                        dirp.offset,
+                        dtype_kind(entry.d_type),
+                        OsStr::from_bytes(name.to_bytes()),
+                    )
                 }
             }
-        } {}
+        }
+        {}
         reply.ok()
     }
 
     fn releasedir(&mut self, _req: &Request, _ino: u64, fh: u64, _flags: u32, reply: ReplyEmpty) {
         let dirp = unsafe { Box::from_raw(fh as *mut DirP) };
         assert!(dirp.magic == DIRP_MAGIC);
-        let _ = dirp.dp as dirent::DirectoryStream;
+        // dirp out-of-scope -> closedir(dirp.dp)
         reply.ok();
     }
 
-    fn fsyncdir(&mut self,
-                _req: &Request,
-                _ino: u64,
-                fh: u64,
-                datasync: bool,
-                reply: ReplyEmpty) {
+    fn fsyncdir(&mut self, _req: &Request, _ino: u64, fh: u64, datasync: bool, reply: ReplyEmpty) {
         let dirp = unsafe { &mut (*(fh as *mut DirP)) };
         assert!(dirp.magic == DIRP_MAGIC);
         let fd = tryfuse!(dirent::dirfd(&mut dirp.dp), reply);
@@ -584,54 +648,50 @@ impl Filesystem for CntrFs {
     }
 
     fn statfs(&mut self, _req: &Request, ino: u64, reply: ReplyStatfs) {
-        let stat = tryfuse!(fstatvfs(self.inode(ino).fd.raw()), reply);
-        reply.statfs(stat.f_blocks,
-                     stat.f_bfree,
-                     stat.f_bavail,
-                     stat.f_files,
-                     stat.f_ffree,
-                     stat.f_bsize as u32,
-                     stat.f_namemax as u32,
-                     stat.f_frsize as u32);
+        let fd = tryfuse!(self.inode(ino).get_mutable_fd(), reply).raw();
+        let stat = tryfuse!(fstatvfs(fd), reply);
+        reply.statfs(
+            stat.f_blocks,
+            stat.f_bfree,
+            stat.f_bavail,
+            stat.f_files,
+            stat.f_ffree,
+            stat.f_bsize as u32,
+            stat.f_namemax as u32,
+            stat.f_frsize as u32,
+        );
     }
 
-    fn getxattr(&mut self,
-                _req: &Request,
-                ino: u64,
-                name: &OsStr,
-                size: u32,
-                reply: ReplyXattr) {
-        let path = fd_path(&self.inode(ino).fd.raw());
-        let raw_fd = tryfuse!(fcntl::open(Path::new(&path),
-                                       fcntl::OFlag::empty(),
-                                       stat::Mode::empty()),
-                           reply);
-        let fd = Fd(raw_fd);
+    fn getxattr(&mut self, _req: &Request, ino: u64, name: &OsStr, size: u32, reply: ReplyXattr) {
+        let fd = tryfuse!(self.inode(ino).get_mutable_fd(), reply).raw();
+
         if size == 0 {
-            let size = tryfuse!(fgetxattr(fd.raw(), name, &mut []), reply);
+            let size = tryfuse!(fgetxattr(fd, name, &mut []), reply);
             reply.size(size as u32);
         } else {
             let mut buf = Vec::with_capacity(size as usize);
-            tryfuse!(fgetxattr(fd.raw(), name, &mut buf), reply);
+            tryfuse!(fgetxattr(fd, name, &mut buf), reply);
             reply.data(&buf);
         }
     }
 
-    fn setxattr(&mut self,
-                _req: &Request,
-                ino: u64,
-                name: &OsStr,
-                value: &[u8],
-                flags: u32,
-                _position: u32,
-                reply: ReplyEmpty) {
-        let fd = self.inode(ino).fd.raw();
+    fn setxattr(
+        &mut self,
+        _req: &Request,
+        ino: u64,
+        name: &OsStr,
+        value: &[u8],
+        flags: u32,
+        _position: u32,
+        reply: ReplyEmpty,
+    ) {
+        let fd = tryfuse!(self.inode(ino).get_mutable_fd(), reply).raw();
         tryfuse!(fsetxattr(fd, name, value, flags as i32), reply);
         reply.ok();
     }
 
     fn removexattr(&mut self, _req: &Request, ino: u64, name: &OsStr, reply: ReplyEmpty) {
-        let fd = self.inode(ino).fd.raw();
+        let fd = tryfuse!(self.inode(ino).get_mutable_fd(), reply).raw();
         tryfuse!(fremovexattr(fd, name), reply);
         reply.ok();
     }
@@ -643,22 +703,23 @@ impl Filesystem for CntrFs {
         reply.ok();
     }
 
-    fn create(&mut self,
-              _req: &Request,
-              parent: u64,
-              name: &OsStr,
-              mode: u32,
-              flags: u32,
-              reply: ReplyCreate) {
+    fn create(
+        &mut self,
+        _req: &Request,
+        parent: u64,
+        name: &OsStr,
+        mode: u32,
+        flags: u32,
+        reply: ReplyCreate,
+    ) {
         let parent_fd = self.inode(parent).fd.raw();
 
         let oflag = fcntl::OFlag::from_bits_truncate(flags as i32);
         let create_mode = stat::Mode::from_bits_truncate(mode);
-        let fd = tryfuse!(fcntl::openat(parent_fd,
-                                        name,
-                                        oflag | fcntl::O_NOFOLLOW,
-                                        create_mode),
-                          reply);
+        let fd = tryfuse!(
+            fcntl::openat(parent_fd, name, oflag | fcntl::O_NOFOLLOW, create_mode),
+            reply
+        );
         let fh = Fh::new(Fd(fd));
 
         let newfd = tryfuse!(unistd::dup(fd), reply);
@@ -668,16 +729,18 @@ impl Filesystem for CntrFs {
         reply.created(&TTL, &attr, 0, fp, flags);
     }
 
-    fn getlk(&mut self,
-             _req: &Request,
-             _ino: u64,
-             fh: u64,
-             _lock_owner: u64,
-             start: u64,
-             end: u64,
-             typ: u32,
-             pid: u32,
-             reply: ReplyLock) {
+    fn getlk(
+        &mut self,
+        _req: &Request,
+        _ino: u64,
+        fh: u64,
+        _lock_owner: u64,
+        start: u64,
+        end: u64,
+        typ: u32,
+        pid: u32,
+        reply: ReplyLock,
+    ) {
         let handle = get_filehandle(fh);
         let mut flock = libc::flock {
             l_type: typ as i16,
@@ -686,25 +749,31 @@ impl Filesystem for CntrFs {
             l_len: (end - start) as i64,
             l_pid: pid as i32,
         };
-        tryfuse!(fcntl::fcntl(handle.fd.raw(),
-                     fcntl::F_GETLK(&mut flock)), reply);
-        reply.locked(flock.l_start as u64,
-                     (flock.l_start + flock.l_len) as u64,
-                     flock.l_type as u32,
-                     flock.l_pid as u32)
+        tryfuse!(
+            fcntl::fcntl(handle.fd.raw(), fcntl::F_GETLK(&mut flock)),
+            reply
+        );
+        reply.locked(
+            flock.l_start as u64,
+            (flock.l_start + flock.l_len) as u64,
+            flock.l_type as u32,
+            flock.l_pid as u32,
+        )
     }
 
-    fn setlk(&mut self,
-             _req: &Request,
-             _ino: u64,
-             fh: u64,
-             _lock_owner: u64,
-             start: u64,
-             end: u64,
-             typ: u32,
-             pid: u32,
-             _sleep: bool,
-             reply: ReplyEmpty) {
+    fn setlk(
+        &mut self,
+        _req: &Request,
+        _ino: u64,
+        fh: u64,
+        _lock_owner: u64,
+        start: u64,
+        end: u64,
+        typ: u32,
+        pid: u32,
+        _sleep: bool,
+        reply: ReplyEmpty,
+    ) {
         let handle = get_filehandle(fh);
         let mut flock = libc::flock {
             l_type: typ as i16,
@@ -713,8 +782,10 @@ impl Filesystem for CntrFs {
             l_len: (end - start) as i64,
             l_pid: pid as i32,
         };
-        tryfuse!(fcntl::fcntl(handle.fd.raw(),
-                     fcntl::F_SETLK(&mut flock)), reply);
+        tryfuse!(
+            fcntl::fcntl(handle.fd.raw(), fcntl::F_SETLK(&mut flock)),
+            reply
+        );
         reply.ok()
     }
 }
