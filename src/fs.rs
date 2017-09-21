@@ -15,7 +15,7 @@ use std::os::unix::io::RawFd;
 use std::path::Path;
 use time::Timespec;
 use types::{Error, Result};
-use xattr::{fsetxattr, fgetxattr, fremovexattr};
+use xattr::{fsetxattr, fgetxattr, flistxattr, fremovexattr};
 
 const INODE_MAGIC: char = 'I';
 const FH_MAGIC: char = 'F';
@@ -671,6 +671,20 @@ impl Filesystem for CntrFs {
         } else {
             let mut buf = Vec::with_capacity(size as usize);
             tryfuse!(fgetxattr(fd, name, &mut buf), reply);
+            reply.data(&buf);
+        }
+    }
+
+    fn listxattr(&mut self, _req: &Request, ino: u64, size: u32, reply: ReplyXattr) {
+        let fd = tryfuse!(self.inode(ino).get_mutable_fd(), reply).raw();
+
+        if size == 0 {
+            let res = flistxattr(fd, &mut []);
+            let size = tryfuse!(res, reply);
+            reply.size(size as u32);
+        } else {
+            let mut buf = Vec::with_capacity(size as usize);
+            tryfuse!(flistxattr(fd, &mut buf), reply);
             reply.data(&buf);
         }
     }
