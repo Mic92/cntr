@@ -1,8 +1,6 @@
 # cntr
 
-A new container debugging tool
-
-Status: WIP - nothing to see here yet
+A FS to keep debug tools out of container images.
 
 ## Testing
 
