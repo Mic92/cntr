@@ -38,7 +38,7 @@ struct Inode {
     magic: char,
     fd: Fd,
     fd_is_mutable: bool,
-    open_flags: fcntl::OFlag,
+    kind: FileType,
     ino: u64,
     dev: u64,
     nlookup: u64,
@@ -61,8 +61,12 @@ impl Inode {
         if self.fd_is_mutable {
             return Ok(&self.fd);
         }
+        let open_flags = match self.kind {
+            FileType::Directory => fcntl::O_RDONLY,
+            _ => fcntl::O_RDWR,
+        };
 
-        self.fd = try!(reopen_fd(&mut self.fd, self.open_flags));
+        self.fd = try!(reopen_fd(&mut self.fd, open_flags));
         self.fd_is_mutable = true;
 
         return Ok(&self.fd);
@@ -143,7 +147,7 @@ impl CntrFs {
                 magic: INODE_MAGIC,
                 fd: Fd(fd),
                 fd_is_mutable: true,
-                open_flags: fcntl::O_RDONLY,
+                kind: FileType::Directory,
                 ino: fuse::FUSE_ROOT_ID,
                 dev: fuse::FUSE_ROOT_ID,
                 nlookup: 2,
@@ -188,15 +192,11 @@ impl CntrFs {
             let _ = unistd::close(newfd);
             attr.ino = (inode_ref.as_ref() as *const Inode) as u64;
         } else {
-            let flags = match attr.kind {
-                FileType::Directory => fcntl::O_RDONLY,
-                _ => fcntl::O_RDWR,
-            };
             let inode = Box::new(Inode {
                 magic: INODE_MAGIC,
                 fd: Fd(newfd),
                 fd_is_mutable: false,
-                open_flags: flags,
+                kind: attr.kind,
                 ino: attr.ino,
                 dev: _stat.st_dev,
                 nlookup: 1,
@@ -227,22 +227,15 @@ fn fd_path<'a>(fd: &'a RawFd) -> String {
 }
 
 fn dtype_kind(dtype: u8) -> FileType {
-    if dtype & libc::DT_BLK != 0 {
-        FileType::BlockDevice
-    } else if dtype & libc::DT_CHR != 0 {
-        FileType::CharDevice
-    } else if dtype & libc::DT_DIR != 0 {
-        FileType::Directory
-    } else if dtype & libc::DT_FIFO != 0 {
-        FileType::NamedPipe
-    } else if dtype & libc::DT_LNK != 0 {
-        FileType::Symlink
-    } else if dtype & libc::DT_REG != 0 {
-        FileType::RegularFile
-    } else if dtype & libc::DT_SOCK != 0 {
-        FileType::Socket
-    } else {
-        panic!("BUG! got unknown d_entry type received from d_type")
+    match dtype {
+        libc::DT_BLK => return FileType::BlockDevice,
+        libc::DT_CHR => return FileType::CharDevice,
+        libc::DT_DIR => return FileType::Directory,
+        libc::DT_FIFO => return FileType::NamedPipe,
+        libc::DT_LNK => return FileType::Symlink,
+        libc::DT_SOCK => return FileType::Socket,
+        libc::DT_REG => FileType::RegularFile,
+        _ => panic!("BUG! got unknown d_entry type received from d_type"),
     }
 }
 
