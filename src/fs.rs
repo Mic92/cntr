@@ -3,7 +3,7 @@ use fuse::{self, FileAttr, FileType, Filesystem, ReplyAttr, ReplyXattr, ReplyDat
            Request};
 use libc::{self, dev_t, c_long};
 use nix::{self, unistd, fcntl, dirent};
-use nix::sys::stat;
+use nix::sys::{stat, resource};
 use nix::sys::time::{TimeSpec as NixTimeSpec, TimeValLike};
 use nix::sys::uio::{pread, pwrite};
 use statvfs::fstatvfs;
@@ -125,6 +125,15 @@ macro_rules! tryfuse {
 
 impl CntrFs {
     pub fn new(prefix: &str) -> Result<CntrFs> {
+        let limit = resource::Rlimit {
+            rlim_cur: libc::RLIM_INFINITY,
+            rlim_max: libc::RLIM_INFINITY,
+        };
+        tryfmt!(
+            resource::setrlimit(resource::Resource::RLIMIT_NOFILE, &limit),
+            "Cannot raise file descriptor limit"
+        );
+
         let fd = tryfmt!(
             fcntl::open(
                 prefix,
