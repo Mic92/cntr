@@ -126,8 +126,8 @@ macro_rules! tryfuse {
 impl CntrFs {
     pub fn new(prefix: &str) -> Result<CntrFs> {
         let limit = resource::Rlimit {
-            rlim_cur: libc::RLIM_INFINITY,
-            rlim_max: libc::RLIM_INFINITY,
+            rlim_cur: 1048576,
+            rlim_max: 1048576,
         };
         tryfmt!(
             resource::setrlimit(resource::Resource::RLIMIT_NOFILE, &limit),
