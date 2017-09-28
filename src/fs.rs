@@ -679,9 +679,9 @@ impl Filesystem for CntrFs {
             let size = tryfuse!(fgetxattr(fd, name, &mut []), reply);
             reply.size(size as u32);
         } else {
-            let mut buf = Vec::with_capacity(size as usize);
-            tryfuse!(fgetxattr(fd, name, &mut buf), reply);
-            reply.data(&buf);
+            let mut buf = vec![0; size as usize];
+            tryfuse!(fgetxattr(fd, name, buf.as_mut_slice()), reply);
+            reply.data(buf.as_slice());
         }
     }
 
@@ -693,9 +693,9 @@ impl Filesystem for CntrFs {
             let size = tryfuse!(res, reply);
             reply.size(size as u32);
         } else {
-            let mut buf = Vec::with_capacity(size as usize);
-            tryfuse!(flistxattr(fd, &mut buf), reply);
-            reply.data(&buf);
+            let mut buf = vec![0; size as usize];
+            tryfuse!(flistxattr(fd, buf.as_mut_slice()), reply);
+            reply.data(buf.as_slice());
         }
     }
 
