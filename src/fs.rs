@@ -694,8 +694,8 @@ impl Filesystem for CntrFs {
             reply.size(size as u32);
         } else {
             let mut buf = vec![0; size as usize];
-            tryfuse!(flistxattr(fd, buf.as_mut_slice()), reply);
-            reply.data(buf.as_slice());
+            let size = tryfuse!(flistxattr(fd, buf.as_mut_slice()), reply);
+            reply.data(&buf[..size]);
         }
     }
 
