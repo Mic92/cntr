@@ -817,4 +817,12 @@ impl Filesystem for CntrFs {
         );
         reply.ok()
     }
+
+    /// Preallocate or deallocate space to a file
+    fn fallocate(&mut self, _req: &Request, _ino: u64, fh: u64, offset: i64, length: i64, mode: i32, reply: ReplyEmpty) {
+        let handle = get_filehandle(fh);
+        let flags = fcntl::FallocateFlags::from_bits_truncate(mode);
+        tryfuse!(fcntl::fallocate(handle.fd.raw(), flags, offset, length), reply);
+        reply.ok();
+    }
 }
