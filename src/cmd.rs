@@ -7,6 +7,7 @@ use std::io::{BufRead, BufReader};
 use std::os::unix::ffi::OsStrExt;
 use std::path::PathBuf;
 use types::{Error, Result};
+use std::process::{Command,ExitStatus};
 use void;
 
 fn read_environ(pid: unistd::Pid) -> Result<Vec<CString>> {
@@ -29,24 +30,6 @@ fn read_environ(pid: unistd::Pid) -> Result<Vec<CString>> {
         .collect()
 }
 
-fn setns(pid: unistd::Pid) -> Result<()> {
-    let supported = tryfmt!(
-        namespace::supported_namespaces(),
-        "can not get supported namespaces"
-    );
-    let mut namespaces = Vec::new();
-    for kind in supported {
-        if !kind.is_same(pid) {
-            namespaces.push(tryfmt!(kind.open(pid), "failed to open namespace"));
-        }
-    }
-    for ns in namespaces {
-        let name = &ns.kind.name;
-        tryfmt!(ns.apply(), "failed to apply {} namespace", name);
-    }
-    Ok(())
-}
-
 fn inherit_path(pid: unistd::Pid) -> Result<()> {
     let env = tryfmt!(
         read_environ(pid),
@@ -63,16 +46,6 @@ fn inherit_path(pid: unistd::Pid) -> Result<()> {
     Ok(())
 }
 
-pub fn exec(pid: unistd::Pid) -> Result<void::Void> {
-    let arg0 = CString::new("/bin/sh").unwrap();
-    let arg1 = CString::new("-l").unwrap();
-    tryfmt!(setns(pid), "failed to enter namespace");
-
-    // Ok(tryfmt!(unistd::execvpe(&arg0, &[arg0.clone(), arg1], env.as_slice()),
-    //           "failed to execute shell"))
-    #[allow(unreachable_patterns)]
-    Ok(tryfmt!(
-        unistd::execvp(&arg0, &[arg0.clone(), arg1]),
-        "failed to execute shell"
-    ))
+pub fn exec() -> Result<ExitStatus> {
+    Ok(tryfmt!(Command::new("/bin/sh").args(&["-l"]).status(), "failed to run `/bin/sh -l`"))
 }

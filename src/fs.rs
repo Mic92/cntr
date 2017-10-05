@@ -165,14 +165,39 @@ impl CntrFs {
         })
     }
 
-    pub fn mount(self, mountpoint: &Path) -> Result<()> {
-        let subtype: &OsStr = OsStr::new("-osubtype=cntr");
-        let fsname = format!("-ofsname={}", self.prefix.as_str());
-        tryfmt!(
-            fuse::mount(self, &mountpoint, &[OsStr::new(fsname.as_str()), subtype]),
-            "fuse"
+    pub fn mount(self, mountpoint: &Path) -> Result<RawFd> {
+        // TODO: create fuse device in a new mount ns
+        stat::mknod(
+            "/dev/fuse",
+            stat::S_IFCHR,
+            stat::S_IRUSR,
+            stat::makedev(10, 229),
         );
-        Ok(())
+
+        let fuse_fd = tryfmt!(
+            fcntl::open(
+                "/dev/fuse",
+                fcntl::O_CLOEXEC | fcntl::O_RDWR,
+                stat::Mode::empty(),
+            ),
+            "failed open /dev/fuse"
+        );
+
+        let mount_flags = format!("fd={},rootmode=40000,user_id=0,group_id=0", fuse_fd);
+
+        // TODO: allow_other option
+        tryfmt!(
+            nix::mount::mount(
+                Some(self.prefix.as_str()),
+                mountpoint,
+                Some("fuse.cntr"),
+                nix::mount::MsFlags::empty(),
+                Some(mount_flags.as_str()),
+            ),
+            "failed to mount fuse"
+        );
+
+        return Ok(fuse_fd);
     }
 
     fn inode(&mut self, ino: u64) -> &mut Inode {
@@ -819,10 +844,22 @@ impl Filesystem for CntrFs {
     }
 
     /// Preallocate or deallocate space to a file
-    fn fallocate(&mut self, _req: &Request, _ino: u64, fh: u64, offset: i64, length: i64, mode: i32, reply: ReplyEmpty) {
+    fn fallocate(
+        &mut self,
+        _req: &Request,
+        _ino: u64,
+        fh: u64,
+        offset: i64,
+        length: i64,
+        mode: i32,
+        reply: ReplyEmpty,
+    ) {
         let handle = get_filehandle(fh);
         let flags = fcntl::FallocateFlags::from_bits_truncate(mode);
-        tryfuse!(fcntl::fallocate(handle.fd.raw(), flags, offset, length), reply);
+        tryfuse!(
+            fcntl::fallocate(handle.fd.raw(), flags, offset, length),
+            reply
+        );
         reply.ok();
     }
 }
