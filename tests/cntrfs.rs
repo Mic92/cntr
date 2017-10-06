@@ -37,12 +37,15 @@ fn main() {
         return;
     }
     match CntrFs::new(&args[1]) {
-        Ok(cntr) => cntr.mount(Path::new(&args[2])).unwrap(),
+        Ok(cntr) => {
+            cntr.mount(Path::new(&args[2])).unwrap();
+        },
         Err(err) => {
             let _ = writeln!(&mut std::io::stderr(), "{}", err);
             process::exit(1);
         }
     };
+
 
     //let output = Command::new("xfstests-check")
     //    .arg("-overlay")

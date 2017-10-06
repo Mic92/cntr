@@ -1,4 +1,3 @@
-use namespace;
 use nix::unistd;
 use std::env;
 use std::ffi::{CString, OsStr};
@@ -8,7 +7,6 @@ use std::os::unix::ffi::OsStrExt;
 use std::path::PathBuf;
 use types::{Error, Result};
 use std::process::{Command,ExitStatus};
-use void;
 
 fn read_environ(pid: unistd::Pid) -> Result<Vec<CString>> {
     let mut buf = PathBuf::from("/proc/");
@@ -46,6 +44,7 @@ fn inherit_path(pid: unistd::Pid) -> Result<()> {
     Ok(())
 }
 
-pub fn exec() -> Result<ExitStatus> {
+pub fn run(pid: unistd::Pid) -> Result<ExitStatus> {
+    tryfmt!(inherit_path(pid), "could not inherit environment variables of container");
     Ok(tryfmt!(Command::new("/bin/sh").args(&["-l"]).status(), "failed to run `/bin/sh -l`"))
 }

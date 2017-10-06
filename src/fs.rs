@@ -1,6 +1,6 @@
 use fuse::{self, FileAttr, FileType, Filesystem, ReplyAttr, ReplyXattr, ReplyData, ReplyDirectory,
            ReplyEmpty, ReplyEntry, ReplyOpen, ReplyWrite, ReplyStatfs, ReplyLock, ReplyCreate,
-           Request};
+           Request, BackgroundSession};
 use libc::{self, dev_t, c_long};
 use nix::{self, unistd, fcntl, dirent};
 use nix::sys::{stat, resource};
@@ -104,6 +104,7 @@ pub struct CntrFs {
     prefix: String,
     root_inode: Box<Inode>,
     inodes: HashMap<InodeKey, Box<Inode>>,
+    fuse_fd: RawFd,
 }
 
 const TTL: Timespec = Timespec { sec: 1, nsec: 0 };
@@ -125,6 +126,11 @@ macro_rules! tryfuse {
 
 impl CntrFs {
     pub fn new(prefix: &str) -> Result<CntrFs> {
+        let fuse_fd = tryfmt!(
+            fcntl::open("/dev/fuse", fcntl::O_RDWR, stat::Mode::empty()),
+            "failed to open /dev/fuse"
+        );
+
         let limit = resource::Rlimit {
             rlim_cur: 1048576,
             rlim_max: 1048576,
@@ -162,28 +168,12 @@ impl CntrFs {
                 nlookup: 2,
             }),
             inodes: HashMap::new(),
+            fuse_fd: fuse_fd,
         })
     }
 
-    pub fn mount(self, mountpoint: &Path) -> Result<RawFd> {
-        // TODO: create fuse device in a new mount ns
-        stat::mknod(
-            "/dev/fuse",
-            stat::S_IFCHR,
-            stat::S_IRUSR,
-            stat::makedev(10, 229),
-        );
-
-        let fuse_fd = tryfmt!(
-            fcntl::open(
-                "/dev/fuse",
-                fcntl::O_CLOEXEC | fcntl::O_RDWR,
-                stat::Mode::empty(),
-            ),
-            "failed open /dev/fuse"
-        );
-
-        let mount_flags = format!("fd={},rootmode=40000,user_id=0,group_id=0", fuse_fd);
+    pub fn mount(self, mountpoint: &Path) -> Result<BackgroundSession> {
+        let mount_flags = format!("fd={},rootmode=40000,user_id=0,group_id=0", self.fuse_fd);
 
         // TODO: allow_other option
         tryfmt!(
@@ -197,7 +187,11 @@ impl CntrFs {
             "failed to mount fuse"
         );
 
-        return Ok(fuse_fd);
+        let fuse_fd = self.fuse_fd;
+        let session = unsafe {
+            BackgroundSession::new(fuse::Session::new_from_fd(self, fuse_fd, mountpoint))
+        };
+        Ok(tryfmt!(session, "failed to spawn filesystem thread"))
     }
 
     fn inode(&mut self, ino: u64) -> &mut Inode {

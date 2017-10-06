@@ -8,7 +8,6 @@ argparse = "0.2.*"
 log = "*"
 time = "*"
 void = "*"
-thread-scoped = "*"
 tempdir = "*"
 libc = { git = "https://github.com/rust-lang/libc", branch = "master" }
 
