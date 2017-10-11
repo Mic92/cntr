@@ -224,7 +224,7 @@ impl CntrFs {
             let inode = Box::new(Inode {
                 magic: INODE_MAGIC,
                 fd: Fd(newfd),
-                fd_is_mutable: attr.kind != FileType::Symlink,
+                fd_is_mutable: attr.kind == FileType::Symlink,
                 kind: attr.kind,
                 ino: attr.ino,
                 dev: _stat.st_dev,
