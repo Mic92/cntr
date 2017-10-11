@@ -522,7 +522,7 @@ impl Filesystem for CntrFs {
         let res = tryfuse!(
             fcntl::open(
                 Path::new(&path),
-                oflags | fcntl::O_CLOEXEC,
+                (oflags & !fcntl::O_NOFOLLOW) | fcntl::O_CLOEXEC,
                 stat::Mode::empty(),
             ),
             reply
