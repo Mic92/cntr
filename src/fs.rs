@@ -13,7 +13,6 @@ use std::collections::HashMap;
 use std::ffi::{CStr, OsStr, OsString};
 use std::os::unix::prelude::*;
 use std::path::Path;
-use std::mem;
 use time::Timespec;
 use types::{Error, Result};
 use xattr::{fsetxattr, fgetxattr, flistxattr, fremovexattr};
