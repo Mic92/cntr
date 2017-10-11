@@ -1,6 +1,7 @@
 use fuse::{self, FileAttr, FileType, Filesystem, ReplyAttr, ReplyXattr, ReplyData, ReplyDirectory,
            ReplyEmpty, ReplyEntry, ReplyOpen, ReplyWrite, ReplyStatfs, ReplyLock, ReplyCreate,
-           Request, BackgroundSession};
+           ReplyIoctl, Request, BackgroundSession};
+use ioctl;
 use libc::{self, dev_t, c_long};
 use nix::{self, unistd, fcntl, dirent};
 use nix::sys::{stat, resource};
@@ -855,5 +856,42 @@ impl Filesystem for CntrFs {
             reply
         );
         reply.ok();
+    }
+
+    fn ioctl(
+        &mut self,
+        _req: &Request,
+        _ino: u64,
+        fh: u64,
+        flags: u32,
+        _cmd: u32,
+        in_data: Option<&[u8]>,
+        out_size: u32,
+        reply: ReplyIoctl,
+    ) {
+        let fd = if (flags & fuse::consts::FUSE_IOCTL_DIR) > 0 {
+            let dirp = unsafe { &mut (*(fh as *mut DirP)) };
+            assert!(dirp.magic == DIRP_MAGIC);
+            tryfuse!(dirent::dirfd(&mut dirp.dp), reply)
+        } else {
+            get_filehandle(fh).fd.raw()
+        };
+
+        let cmd = _cmd as libc::c_ulong;
+
+        if out_size > 0 {
+            let mut out = vec![0; out_size as usize];
+            if let Some(data) = in_data {
+                out[..data.len()].clone_from_slice(data);
+            }
+            tryfuse!(ioctl::ioctl_read(fd, cmd, out.as_mut_slice()), reply);
+            reply.ioctl(0, out.as_slice());
+        } else if let Some(data) = in_data {
+            tryfuse!(ioctl::ioctl_write(fd, cmd, data), reply);
+            reply.ioctl(0, &[]);
+        } else {
+            tryfuse!(ioctl::ioctl(fd, cmd), reply);
+            reply.ioctl(0, &[]);
+        }
     }
 }

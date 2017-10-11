@@ -17,6 +17,7 @@ use tempdir::TempDir;
 pub mod types;
 pub mod namespace;
 mod cgroup;
+mod ioctl;
 mod pty;
 mod logging;
 mod cmd;
