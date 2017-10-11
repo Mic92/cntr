@@ -11,9 +11,9 @@ use statvfs::fstatvfs;
 use std::{u32, u64};
 use std::collections::HashMap;
 use std::ffi::{CStr, OsStr, OsString};
-use std::os::unix::ffi::{OsStrExt, OsStringExt};
-use std::os::unix::io::RawFd;
+use std::os::unix::prelude::*;
 use std::path::Path;
+use std::mem;
 use time::Timespec;
 use types::{Error, Result};
 use xattr::{fsetxattr, fgetxattr, flistxattr, fremovexattr};
@@ -29,6 +29,7 @@ impl Fd {
         self.0
     }
 }
+
 impl Drop for Fd {
     fn drop(&mut self) {
         unistd::close(self.0).unwrap();
@@ -224,7 +225,7 @@ impl CntrFs {
             let inode = Box::new(Inode {
                 magic: INODE_MAGIC,
                 fd: Fd(newfd),
-                fd_is_mutable: false,
+                fd_is_mutable: attr.kind != FileType::Symlink,
                 kind: attr.kind,
                 ino: attr.ino,
                 dev: _stat.st_dev,
@@ -398,15 +399,16 @@ impl Filesystem for CntrFs {
             let _uid = uid.map(|u| unistd::Uid::from_raw(u));
             let _gid = gid.map(|g| unistd::Gid::from_raw(g));
 
-            tryfuse!(unistd::fchown(fd, _uid, _gid), reply);
+            tryfuse!(unistd::fchownat(fd, "", _uid, _gid, fcntl::AT_EMPTY_PATH), reply);
         }
 
         if let Some(size) = _size {
             tryfuse!(unistd::ftruncate(fd, size), reply);
         }
         if mtime.is_some() || atime.is_some() {
+            let path = fd_path(&fd);
             tryfuse!(
-                stat::futimens(fd, &to_utimespec(&mtime), &to_utimespec(&atime)),
+                stat::utimensat(libc::AT_FDCWD, Path::new(&path), &to_utimespec(&mtime), &to_utimespec(&atime), fcntl::AtFlags::empty()),
                 reply
             );
         }
