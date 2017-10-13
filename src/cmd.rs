@@ -5,8 +5,8 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::os::unix::ffi::OsStrExt;
 use std::path::PathBuf;
+use std::process::{Command, ExitStatus};
 use types::{Error, Result};
-use std::process::{Command,ExitStatus};
 
 fn read_environ(pid: unistd::Pid) -> Result<Vec<CString>> {
     let mut buf = PathBuf::from("/proc/");
@@ -45,6 +45,12 @@ fn inherit_path(pid: unistd::Pid) -> Result<()> {
 }
 
 pub fn run(pid: unistd::Pid) -> Result<ExitStatus> {
-    tryfmt!(inherit_path(pid), "could not inherit environment variables of container");
-    Ok(tryfmt!(Command::new("/bin/sh").args(&["-l"]).status(), "failed to run `/bin/sh -l`"))
+    tryfmt!(
+        inherit_path(pid),
+        "could not inherit environment variables of container"
+    );
+    Ok(tryfmt!(
+        Command::new("/bin/sh").args(&["-l"]).status(),
+        "failed to run `/bin/sh -l`"
+    ))
 }

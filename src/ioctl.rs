@@ -1,7 +1,6 @@
-
 use libc::{self, c_ulong};
-use std::os::unix::io::RawFd;
 use nix::{Result, Errno};
+use std::os::unix::io::RawFd;
 
 pub fn ioctl_read(fd: RawFd, cmd: c_ulong, data: &mut [u8]) -> Result<()> {
     let res = unsafe { libc::ioctl(fd, cmd, data) };

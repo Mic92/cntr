@@ -10,8 +10,8 @@ extern crate tempdir;
 
 use nix::unistd;
 use pty::PtyFork;
-use types::{Error, Result};
 use tempdir::TempDir;
+use types::{Error, Result};
 
 #[macro_use]
 pub mod types;
@@ -23,6 +23,7 @@ mod logging;
 mod cmd;
 mod statvfs;
 mod xattr;
+mod fsuid;
 pub mod fs;
 
 pub struct Options {
@@ -52,7 +53,10 @@ fn run_child(fs: fs::CntrFs, opts: Options) -> Result<()> {
         tryfmt!(namespace.apply(), "failed to apply namespace");
     }
 
-    let mountpoint = tryfmt!(TempDir::new("cntrfs"), "failed to create temporary mountpoint");
+    let mountpoint = tryfmt!(
+        TempDir::new("cntrfs"),
+        "failed to create temporary mountpoint"
+    );
     let _ = tryfmt!(fs.mount(mountpoint.path()), "mount()");
 
     println!("mount at {:?}", mountpoint.path());
@@ -66,7 +70,10 @@ fn run_child(fs: fs::CntrFs, opts: Options) -> Result<()> {
 
 pub fn run(opts: Options) -> Result<()> {
     tryfmt!(logging::init(), "failed to initialize logging");
-    let cntr_fs = tryfmt!(fs::CntrFs::new(opts.mountpoint.as_str()), "cannot mount filesystem");
+    let cntr_fs = tryfmt!(
+        fs::CntrFs::new(opts.mountpoint.as_str()),
+        "cannot mount filesystem"
+    );
 
     let res = tryfmt!(pty::fork(), "fork failed");
     if let PtyFork::Parent { .. } = res {
