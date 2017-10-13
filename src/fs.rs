@@ -1,4 +1,3 @@
-
 use fsuid;
 use fuse::{self, FileAttr, FileType, Filesystem, ReplyAttr, ReplyXattr, ReplyData, ReplyDirectory,
            ReplyEmpty, ReplyEntry, ReplyOpen, ReplyWrite, ReplyStatfs, ReplyLock, ReplyCreate,
@@ -262,18 +261,18 @@ fn set_time(inode: &Inode, mtime: &Option<Timespec>, atime: &Option<Timespec>) -
         // utime(file) as user 100:99 when file is owned by 99:99
         let path = fd_path(&inode.fd.raw());
         try!(stat::utimensat(
-                libc::AT_FDCWD,
-                Path::new(&path),
-                &to_utimespec(&mtime),
-                &to_utimespec(&atime),
-                fcntl::AtFlags::empty()));
+            libc::AT_FDCWD,
+            Path::new(&path),
+            &to_utimespec(&mtime),
+            &to_utimespec(&atime),
+            fcntl::AtFlags::empty(),
+        ));
     } else {
-        try!(stat::utimensat(
-                inode.fd.raw(),
-                "",
-                &to_utimespec(&mtime),
-                &to_utimespec(&atime),
-                fcntl::AtFlags::empty()));
+        try!(stat::futimens(
+            inode.fd.raw(),
+            &to_utimespec(&mtime),
+            &to_utimespec(&atime),
+        ));
     }
 
     Ok(())
@@ -361,7 +360,7 @@ impl Filesystem for CntrFs {
                 name,
                 fcntl::O_PATH | fcntl::O_NOFOLLOW | fcntl::O_CLOEXEC,
                 stat::Mode::empty(),
-                )
+            )
         };
         let newfd = tryfuse!(res, reply);
         let attr = tryfuse!(self.lookup_from_fd(newfd), reply);
@@ -414,7 +413,7 @@ impl Filesystem for CntrFs {
         _bkuptime: Option<Timespec>, // only mac os x
         _flags: Option<u32>, // only mac os x
         reply: ReplyAttr,
-        ) {
+    ) {
         apply_user_context(req);
 
         let fd = if let Some(fh) = _fh {
@@ -435,7 +434,7 @@ impl Filesystem for CntrFs {
             tryfuse!(
                 unistd::fchownat(fd, "", _uid, _gid, fcntl::AT_EMPTY_PATH),
                 reply
-                );
+            );
         }
 
         if let Some(size) = _size {

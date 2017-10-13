@@ -46,7 +46,6 @@ fn main() {
         }
     };
 
-
     //let output = Command::new("xfstests-check")
     //    .arg("-overlay")
     //    .env("TEST_DIR", "./tests/dest-mnt")
