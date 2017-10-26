@@ -1,7 +1,7 @@
 use fsuid;
-use fuse::{self, FileAttr, FileType, Filesystem, ReplyAttr, ReplyXattr, ReplyData,
-           ReplyEmpty, ReplyEntry, ReplyOpen, ReplyWrite, ReplyStatfs, ReplyLock, ReplyCreate,
-           ReplyIoctl, Request, BackgroundSession, ReplyLseek};
+use fuse::{self, FileAttr, FileType, Filesystem, ReplyAttr, ReplyXattr, ReplyData, ReplyEmpty,
+           ReplyEntry, ReplyOpen, ReplyWrite, ReplyStatfs, ReplyLock, ReplyCreate, ReplyIoctl,
+           Request, BackgroundSession, ReplyLseek, ReplyRead};
 use ioctl;
 use libc::{self, dev_t, c_long};
 use nix::{self, unistd, fcntl, dirent};
@@ -12,9 +12,9 @@ use statvfs::fstatvfs;
 use std::{u32, u64};
 use std::collections::HashMap;
 use std::ffi::{CStr, OsStr, OsString};
+use std::mem;
 use std::os::unix::prelude::*;
 use std::path::Path;
-use std::mem;
 use time::Timespec;
 use types::{Error, Result};
 use xattr::{fsetxattr, fgetxattr, flistxattr, fremovexattr};
@@ -119,14 +119,14 @@ impl ReplyDirectory {
     pub fn ok(self) {
         match self {
             ReplyDirectory::Directory(r) => r.ok(),
-            ReplyDirectory::DirectoryPlus(r) => r.ok()
+            ReplyDirectory::DirectoryPlus(r) => r.ok(),
         }
     }
 
     pub fn error(self, err: libc::c_int) {
         match self {
             ReplyDirectory::Directory(r) => r.error(err),
-            ReplyDirectory::DirectoryPlus(r) => r.error(err)
+            ReplyDirectory::DirectoryPlus(r) => r.error(err),
         }
     }
 }
@@ -215,10 +215,15 @@ impl CntrFs {
         );
 
         let fuse_fd = self.fuse_fd;
-        let session = unsafe {
-            BackgroundSession::new(fuse::Session::new_from_fd(self, fuse_fd, mountpoint))
-        };
-        Ok(tryfmt!(session, "failed to spawn filesystem thread"))
+        let session = tryfmt!(
+            fuse::Session::new_from_fd(self, fuse_fd, mountpoint),
+            "failed to inherit fuse session"
+        );
+        let background_session = unsafe { BackgroundSession::new(session) };
+        Ok(tryfmt!(
+            background_session,
+            "failed to spawn filesystem thread"
+        ))
     }
 
     fn generic_readdir(
@@ -227,7 +232,8 @@ impl CntrFs {
         ino: u64,
         fh: u64,
         offset: i64,
-        mut reply: ReplyDirectory) {
+        mut reply: ReplyDirectory,
+    ) {
 
         apply_user_context(req);
 
@@ -251,15 +257,26 @@ impl CntrFs {
                     let name = unsafe { CStr::from_ptr(entry.d_name.as_ptr()) };
                     dirp.entry = None;
                     match &mut reply {
-                        &mut ReplyDirectory::Directory(ref mut r) => r.add(
-                            entry.d_ino,
-                            dirp.offset,
-                            dtype_kind(entry.d_type),
-                            OsStr::from_bytes(name.to_bytes()),
-                            ),
+                        &mut ReplyDirectory::Directory(ref mut r) => {
+                            r.add(
+                                entry.d_ino,
+                                dirp.offset,
+                                dtype_kind(entry.d_type),
+                                OsStr::from_bytes(name.to_bytes()),
+                            )
+                        }
                         &mut ReplyDirectory::DirectoryPlus(ref mut r) => {
                             match self.lookup_inode(ino, OsStr::from_bytes(name.to_bytes())) {
-                                Ok(attr) => r.add(entry.d_ino, dirp.offset, OsStr::from_bytes(name.to_bytes()), &TTL, &attr, 0),
+                                Ok(attr) => {
+                                    r.add(
+                                        entry.d_ino,
+                                        dirp.offset,
+                                        OsStr::from_bytes(name.to_bytes()),
+                                        &TTL,
+                                        &attr,
+                                        0,
+                                    )
+                                }
                                 _ => true,
                             }
                         }
@@ -325,7 +342,12 @@ impl CntrFs {
         fsuid::set_user_group(0, 0);
         let res = {
             let parent_inode = try!(self.inode(parent));
-            fcntl::openat(parent_inode.fd.raw(), name, fcntl::O_PATH | fcntl::O_NOFOLLOW | fcntl::O_CLOEXEC, stat::Mode::empty())
+            fcntl::openat(
+                parent_inode.fd.raw(),
+                name,
+                fcntl::O_PATH | fcntl::O_NOFOLLOW | fcntl::O_CLOEXEC,
+                stat::Mode::empty(),
+            )
         };
 
         self.lookup_from_fd(try!(res))
@@ -345,7 +367,7 @@ fn to_utimespec(time: &fuse::UtimeSpec) -> stat::UtimeSpec {
         &fuse::UtimeSpec::Time(time) => {
             let t = NixTimeSpec::seconds(time.sec) + NixTimeSpec::nanoseconds(time.nsec as i64);
             stat::UtimeSpec::Time(t)
-        },
+        }
     }
 }
 
@@ -479,7 +501,7 @@ impl Filesystem for CntrFs {
     fn getattr(&mut self, req: &Request, ino: u64, reply: ReplyAttr) {
         apply_user_context(req);
 
-        let inode =  tryfuse!(self.inode(ino), reply);
+        let inode = tryfuse!(self.inode(ino), reply);
 
         let mut attr = attr_from_stat(tryfuse!(stat::fstat(inode.fd.raw()), reply));
         attr.ino = (inode as *const Inode) as u64;
@@ -506,35 +528,35 @@ impl Filesystem for CntrFs {
         apply_user_context(req);
 
         {
-          let inode = tryfuse!(self.inode(ino), reply);
+            let inode = tryfuse!(self.inode(ino), reply);
 
-          let fd = if let Some(fh) = _fh {
-              get_filehandle(fh).fd.raw()
-          } else {
-              tryfuse!(inode.get_mutable_fd(), reply).raw()
-          };
+            let fd = if let Some(fh) = _fh {
+                get_filehandle(fh).fd.raw()
+            } else {
+                tryfuse!(inode.get_mutable_fd(), reply).raw()
+            };
 
-          if let Some(mode) = _mode {
-              let mode = stat::Mode::from_bits_truncate(mode);
-              tryfuse!(stat::fchmod(fd, mode), reply);
-          }
+            if let Some(mode) = _mode {
+                let mode = stat::Mode::from_bits_truncate(mode);
+                tryfuse!(stat::fchmod(fd, mode), reply);
+            }
 
-          if uid.is_some() || gid.is_some() {
-              let _uid = uid.map(|u| unistd::Uid::from_raw(u));
-              let _gid = gid.map(|g| unistd::Gid::from_raw(g));
+            if uid.is_some() || gid.is_some() {
+                let _uid = uid.map(|u| unistd::Uid::from_raw(u));
+                let _gid = gid.map(|g| unistd::Gid::from_raw(g));
 
-              tryfuse!(
-                  unistd::fchownat(fd, "", _uid, _gid, fcntl::AT_EMPTY_PATH),
-                  reply
-              );
-          }
+                tryfuse!(
+                    unistd::fchownat(fd, "", _uid, _gid, fcntl::AT_EMPTY_PATH),
+                    reply
+                );
+            }
 
-          if let Some(size) = _size {
-              tryfuse!(unistd::ftruncate(fd, size), reply);
-          }
-          if mtime != fuse::UtimeSpec::Omit || atime != fuse::UtimeSpec::Omit {
-              tryfuse!(set_time(inode, &mtime, &atime), reply);
-          }
+            if let Some(size) = _size {
+                tryfuse!(unistd::ftruncate(fd, size), reply);
+            }
+            if mtime != fuse::UtimeSpec::Omit || atime != fuse::UtimeSpec::Omit {
+                tryfuse!(set_time(inode, &mtime, &atime), reply);
+            }
         }
 
         self.getattr(req, ino, reply)
@@ -562,16 +584,7 @@ impl Filesystem for CntrFs {
         let kind = stat::SFlag::from_bits_truncate(mode);
         let perm = stat::Mode::from_bits_truncate(mode);
         let fd = tryfuse!(self.inode(parent), reply).fd.raw();
-        tryfuse!(
-            stat::mknodat(
-                &fd,
-                name,
-                kind,
-                perm,
-                rdev as dev_t,
-            ),
-            reply
-        );
+        tryfuse!(stat::mknodat(&fd, name, kind, perm, rdev as dev_t), reply);
         self.lookup(req, parent, name, reply);
     }
 
@@ -580,10 +593,7 @@ impl Filesystem for CntrFs {
 
         let perm = stat::Mode::from_bits_truncate(mode);
         let fd = tryfuse!(self.inode(parent), reply).fd.raw();
-        tryfuse!(
-            unistd::mkdirat(fd, name, perm),
-            reply
-        );
+        tryfuse!(unistd::mkdirat(fd, name, perm), reply);
         self.lookup(req, parent, name, reply);
     }
 
@@ -634,7 +644,7 @@ impl Filesystem for CntrFs {
 
         let parent_fd = tryfuse!(self.inode(parent), reply).fd.raw();
         let new_fd = tryfuse!(self.inode(newparent), reply).fd.raw();
-        tryfuse!(fcntl::renameat(parent_fd, name, new_fd, newname,), reply);
+        tryfuse!(fcntl::renameat(parent_fd, name, new_fd, newname), reply);
 
         reply.ok();
     }
@@ -653,11 +663,13 @@ impl Filesystem for CntrFs {
 
         let parent_fd = tryfuse!(self.inode(parent), reply).fd.raw();
         let new_fd = tryfuse!(self.inode(newparent), reply).fd.raw();
-        let res = fcntl::renameat2(parent_fd,
-                         name,
-                         new_fd,
-                         newname,
-                         fcntl::RenameAt2Flags::from_bits_truncate(flags as i32));
+        let res = fcntl::renameat2(
+            parent_fd,
+            name,
+            new_fd,
+            newname,
+            fcntl::RenameAt2Flags::from_bits_truncate(flags as i32),
+        );
 
         tryfuse!(res, reply);
         reply.ok();
@@ -676,13 +688,7 @@ impl Filesystem for CntrFs {
         let source_fd = tryfuse!(self.inode(ino), reply).fd.raw();
         let newparent_fd = tryfuse!(self.inode(newparent), reply).fd.raw();
 
-        let res = unistd::linkat(
-            source_fd,
-            "",
-            newparent_fd,
-            newname,
-            fcntl::AT_EMPTY_PATH,
-        );
+        let res = unistd::linkat(source_fd, "", newparent_fd, newname, fcntl::AT_EMPTY_PATH);
         tryfuse!(res, reply);
         // just do a lookup for simplicity
         self.lookup(req, newparent, newname, reply);
@@ -713,15 +719,15 @@ impl Filesystem for CntrFs {
         fh: u64,
         offset: i64,
         size: u32,
-        reply: ReplyData,
+        reply: ReplyRead,
     ) {
-        let handle = get_filehandle(fh);
+        reply.fd(get_filehandle(fh).fd.raw(), offset, size);
 
-        let mut v = vec![0; size as usize];
-        let buf = v.as_mut_slice();
-        tryfuse!(pread(handle.fd.raw(), buf, offset), reply);
+        //let mut v = vec![0; size as usize];
+        //let buf = v.as_mut_slice();
+        //tryfuse!(pread(fd, buf, offset), reply);
 
-        reply.data(buf);
+        //reply.data(buf);
     }
 
     fn write(
@@ -729,14 +735,32 @@ impl Filesystem for CntrFs {
         _req: &Request,
         _ino: u64,
         fh: u64,
-        offset: i64,
+        mut offset: i64,
+        _fd: Option<RawFd>,
         data: &[u8],
+        size: u32,
         _flags: u32,
         reply: ReplyWrite,
     ) {
-        let handle = get_filehandle(fh);
+        let dst_fd = get_filehandle(fh).fd.raw();
 
-        let written = tryfuse!(pwrite(handle.fd.raw(), data, offset), reply);
+        let written = if let Some(fd) = _fd {
+            tryfuse!(
+                fcntl::splice(
+                    fd,
+                    None,
+                    dst_fd,
+                    Some(&mut offset),
+                    size as usize,
+                    // SPLICE_F_MOVE is a no-op in the kernel at the moment according to manpage
+                    fcntl::SPLICE_F_MOVE | fcntl::SPLICE_F_NONBLOCK,
+                ),
+                reply
+            )
+        } else {
+            tryfuse!(pwrite(dst_fd, data, offset), reply)
+        };
+
         reply.written(written as u32);
     }
 
@@ -1077,9 +1101,20 @@ impl Filesystem for CntrFs {
         }
     }
 
-    fn lseek(&mut self, _req: &Request, _ino: u64, fh: u64, offset: i64, whence: u32, reply: ReplyLseek) {
+    fn lseek(
+        &mut self,
+        _req: &Request,
+        _ino: u64,
+        fh: u64,
+        offset: i64,
+        whence: u32,
+        reply: ReplyLseek,
+    ) {
         let fd = get_filehandle(fh).fd.raw();
-        let new_offset = tryfuse!(unistd::lseek64(fd, offset, unsafe { mem::transmute(whence as i32) }), reply);
+        let new_offset = tryfuse!(
+            unistd::lseek64(fd, offset, unsafe { mem::transmute(whence as i32) }),
+            reply
+        );
         reply.offset(new_offset);
     }
 }
