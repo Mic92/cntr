@@ -57,7 +57,7 @@ fn run_child(fs: fs::CntrFs, opts: Options) -> Result<()> {
         TempDir::new("cntrfs"),
         "failed to create temporary mountpoint"
     );
-    let _ = tryfmt!(fs.mount(mountpoint.path()), "mount()");
+    let _ = tryfmt!(fs.mount(mountpoint.path(), false), "mount()");
 
     println!("mount at {:?}", mountpoint.path());
 
@@ -71,7 +71,7 @@ fn run_child(fs: fs::CntrFs, opts: Options) -> Result<()> {
 pub fn run(opts: Options) -> Result<()> {
     tryfmt!(logging::init(), "failed to initialize logging");
     let cntr_fs = tryfmt!(
-        fs::CntrFs::new(opts.mountpoint.as_str()),
+        fs::CntrFs::new(opts.mountpoint.as_str(), false),
         "cannot mount filesystem"
     );
 

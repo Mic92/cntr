@@ -21,6 +21,9 @@ impl log::Log for Logger {
     }
 }
 
+const SPLICE_READ: bool = true;
+const SPLICE_WRITE: bool = true;
+
 fn main() {
     //let _ = log::set_logger(|max_log_level| {
     //    max_log_level.set(log::LogLevelFilter::Debug);
@@ -36,9 +39,16 @@ fn main() {
     if let unistd::ForkResult::Parent { .. } = unistd::fork().unwrap() {
         return;
     }
-    match CntrFs::new(&args[1]) {
+
+    if SPLICE_READ {
+        println!("enable splice read");
+    }
+    if SPLICE_WRITE {
+        println!("enable splice write");
+    }
+    match CntrFs::new(&args[1], SPLICE_READ) {
         Ok(cntr) => {
-            cntr.mount(Path::new(&args[2])).unwrap();
+            cntr.mount(Path::new(&args[2]), false).unwrap();
         },
         Err(err) => {
             let _ = writeln!(&mut std::io::stderr(), "{}", err);

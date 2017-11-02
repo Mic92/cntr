@@ -108,6 +108,7 @@ pub struct CntrFs {
     root_inode: Box<Inode>,
     inodes: HashMap<InodeKey, Box<Inode>>,
     fuse_fd: RawFd,
+    splice_read: bool,
 }
 
 enum ReplyDirectory {
@@ -149,7 +150,7 @@ macro_rules! tryfuse {
 }
 
 impl CntrFs {
-    pub fn new(prefix: &str) -> Result<CntrFs> {
+    pub fn new(prefix: &str, splice_read: bool) -> Result<CntrFs> {
         let fuse_fd = tryfmt!(
             fcntl::open("/dev/fuse", fcntl::O_RDWR, stat::Mode::empty()),
             "failed to open /dev/fuse"
@@ -193,10 +194,11 @@ impl CntrFs {
             }),
             inodes: HashMap::new(),
             fuse_fd: fuse_fd,
+            splice_read: splice_read,
         })
     }
 
-    pub fn mount(self, mountpoint: &Path) -> Result<BackgroundSession> {
+    pub fn mount(self, mountpoint: &Path, splice_write: bool) -> Result<BackgroundSession> {
         let mount_flags = format!(
             "fd={},rootmode=40000,user_id=0,group_id=0,allow_other,default_permissions",
             self.fuse_fd
@@ -216,7 +218,7 @@ impl CntrFs {
 
         let fuse_fd = self.fuse_fd;
         let session = tryfmt!(
-            fuse::Session::new_from_fd(self, fuse_fd, mountpoint),
+            fuse::Session::new_from_fd(self, fuse_fd, mountpoint, splice_write),
             "failed to inherit fuse session"
         );
         let background_session = unsafe { BackgroundSession::new(session) };
@@ -721,13 +723,15 @@ impl Filesystem for CntrFs {
         size: u32,
         reply: ReplyRead,
     ) {
-        reply.fd(get_filehandle(fh).fd.raw(), offset, size);
+        if self.splice_read {
+            reply.fd(get_filehandle(fh).fd.raw(), offset, size);
+        } else {
+            let mut v = vec![0; size as usize];
+            let buf = v.as_mut_slice();
+            tryfuse!(pread(get_filehandle(fh).fd.raw(), buf, offset), reply);
 
-        //let mut v = vec![0; size as usize];
-        //let buf = v.as_mut_slice();
-        //tryfuse!(pread(fd, buf, offset), reply);
-
-        //reply.data(buf);
+            reply.data(buf);
+        }
     }
 
     fn write(
