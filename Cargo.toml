@@ -7,9 +7,11 @@ authors = ["Jörg Thalheim <joerg@higgsboson.tk>"]
 argparse = "0.2.*"
 log = "*"
 time = "*"
-void = "*"
-tempdir = "*"
+tempdir = "0.*"
+num_cpus = "1.*"
 libc = { git = "https://github.com/rust-lang/libc", branch = "master" }
+chashmap = "2.*"
+parking_lot = "0.*"
 
 [dependencies.nix]
 path = "src/nix"

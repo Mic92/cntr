@@ -1,3 +1,4 @@
+use chashmap::CHashMap;
 use fsuid;
 use fuse::{self, FileAttr, FileType, Filesystem, ReplyAttr, ReplyXattr, ReplyData, ReplyEmpty,
            ReplyEntry, ReplyOpen, ReplyWrite, ReplyStatfs, ReplyLock, ReplyCreate, ReplyIoctl,
@@ -8,13 +9,16 @@ use nix::{self, unistd, fcntl, dirent};
 use nix::sys::{stat, resource};
 use nix::sys::time::{TimeSpec as NixTimeSpec, TimeValLike};
 use nix::sys::uio::{pread, pwrite};
+use num_cpus;
 use statvfs::fstatvfs;
 use std::{u32, u64};
-use std::collections::HashMap;
 use std::ffi::{CStr, OsStr, OsString};
 use std::mem;
 use std::os::unix::prelude::*;
 use std::path::Path;
+use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::Arc;
+use std::vec::Vec;
 use time::Timespec;
 use types::{Error, Result};
 use xattr::{fsetxattr, fgetxattr, flistxattr, fremovexattr};
@@ -60,9 +64,9 @@ fn reopen_fd(fd: &mut Fd, open_flags: fcntl::OFlag) -> nix::Result<Fd> {
 }
 
 impl Inode {
-    fn get_mutable_fd(&mut self) -> nix::Result<&Fd> {
+    fn get_mutable_fd(&mut self) -> nix::Result<RawFd> {
         if self.fd_is_mutable {
-            return Ok(&self.fd);
+            return Ok(self.fd.raw());
         }
         let open_flags = match self.kind {
             FileType::Directory => fcntl::O_RDONLY,
@@ -72,11 +76,11 @@ impl Inode {
         self.fd = try!(reopen_fd(&mut self.fd, open_flags));
         self.fd_is_mutable = true;
 
-        return Ok(&self.fd);
+        return Ok(self.fd.raw());
     }
 }
 
-#[derive(Hash, Eq, PartialEq)]
+#[derive(Hash, Eq, PartialEq, Clone)]
 struct InodeKey {
     ino: u64,
     dev: u64,
@@ -105,8 +109,8 @@ impl Fh {
 
 pub struct CntrFs {
     prefix: String,
-    root_inode: Box<Inode>,
-    inodes: HashMap<InodeKey, Box<Inode>>,
+    root_inode: Arc<Box<RwLock<Inode>>>,
+    inodes: Arc<CHashMap<InodeKey, Box<RwLock<Inode>>>>,
     fuse_fd: RawFd,
     splice_read: bool,
 }
@@ -183,7 +187,7 @@ impl CntrFs {
         }
         Ok(CntrFs {
             prefix: String::from(prefix),
-            root_inode: Box::new(Inode {
+            root_inode: Arc::new(Box::new(RwLock::new(Inode {
                 magic: INODE_MAGIC,
                 fd: Fd(fd),
                 fd_is_mutable: true,
@@ -191,20 +195,19 @@ impl CntrFs {
                 ino: fuse::FUSE_ROOT_ID,
                 dev: fuse::FUSE_ROOT_ID,
                 nlookup: 2,
-            }),
-            inodes: HashMap::new(),
+            }))),
+            inodes: Arc::new(CHashMap::<InodeKey, Box<RwLock<Inode>>>::new()),
             fuse_fd: fuse_fd,
             splice_read: splice_read,
         })
     }
 
-    pub fn mount(self, mountpoint: &Path, splice_write: bool) -> Result<BackgroundSession> {
+    pub fn mount(self, mountpoint: &Path, splice_write: bool) -> Result<Vec<BackgroundSession>> {
         let mount_flags = format!(
             "fd={},rootmode=40000,user_id=0,group_id=0,allow_other,default_permissions",
             self.fuse_fd
         );
 
-        // TODO: allow_other option
         tryfmt!(
             nix::mount::mount(
                 Some(self.prefix.as_str()),
@@ -216,16 +219,30 @@ impl CntrFs {
             "failed to mount fuse"
         );
 
-        let fuse_fd = self.fuse_fd;
-        let session = tryfmt!(
-            fuse::Session::new_from_fd(self, fuse_fd, mountpoint, splice_write),
-            "failed to inherit fuse session"
-        );
-        let background_session = unsafe { BackgroundSession::new(session) };
-        Ok(tryfmt!(
-            background_session,
-            "failed to spawn filesystem thread"
-        ))
+        let mut sessions = Vec::new();
+
+        for _ in 1..num_cpus::get() {
+            let cntrfs = CntrFs {
+                prefix: self.prefix.clone(),
+                root_inode: Arc::clone(&self.root_inode),
+                fuse_fd: self.fuse_fd,
+                inodes: Arc::clone(&self.inodes),
+                splice_read: self.splice_read,
+            };
+            let session =
+                tryfmt!(
+                    fuse::Session::new_from_fd(cntrfs, self.fuse_fd, mountpoint, splice_write),
+                    "failed to inherit fuse session"
+                );
+            let background_session = unsafe { BackgroundSession::new(session) };
+
+            sessions.push(tryfmt!(
+                background_session,
+                "failed to spawn filesystem thread"
+            ));
+        }
+
+        return Ok(sessions);
     }
 
     fn generic_readdir(
@@ -290,12 +307,13 @@ impl CntrFs {
         reply.ok()
     }
 
-    fn inode(&mut self, ino: u64) -> nix::Result<&mut Inode> {
+    fn inode(&mut self, ino: u64) -> nix::Result<RwLockReadGuard<Inode>> {
         assert!(ino > 0);
         if ino == fuse::FUSE_ROOT_ID {
-            Ok(&mut self.root_inode)
+            Ok(self.root_inode.read())
         } else {
-            let inode = unsafe { &mut (*(ino as *mut Inode)) };
+            let lock = unsafe { &mut (*(ino as *mut RwLock<Inode>)) };
+            let inode = lock.read();
             if inode.magic == INODE_DELETED_MAGIC {
                 return Err(nix::Error::Sys(nix::errno::ESTALE));
             }
@@ -304,38 +322,64 @@ impl CntrFs {
         }
     }
 
-    fn get_mutable_fd(&mut self, ino: u64) -> nix::Result<&Fd> {
-        let inode = try!(self.inode(ino));
-        Ok(try!(inode.get_mutable_fd()))
+    fn mutable_inode(&mut self, ino: u64) -> nix::Result<RwLockWriteGuard<Inode>> {
+        assert!(ino > 0);
+        if ino == fuse::FUSE_ROOT_ID {
+            Ok(self.root_inode.write())
+        } else {
+            let lock = unsafe { &mut (*(ino as *mut RwLock<Inode>)) };
+            let inode = lock.write();
+            if inode.magic == INODE_DELETED_MAGIC {
+                return Err(nix::Error::Sys(nix::errno::ESTALE));
+            }
+            assert!(inode.magic == INODE_MAGIC);
+            Ok(inode)
+        }
+    }
+
+    fn get_mutable_fd(&mut self, ino: u64) -> nix::Result<RawFd> {
+        let res = self.mutable_inode(ino);
+        let mut inode = try!(res);
+        let fd = inode.get_mutable_fd();
+        Ok(try!(fd))
     }
 
     fn lookup_from_fd(&mut self, newfd: RawFd) -> nix::Result<FileAttr> {
         let _stat = try!(stat::fstat(newfd));
         let mut attr = attr_from_stat(_stat);
 
-        let key = InodeKey {
+        let key1 = InodeKey {
             ino: attr.ino,
             dev: _stat.st_dev,
         };
+        let key2 = key1.clone();
 
-        if self.inodes.contains_key(&key) {
-            let inode_ref = self.inodes.get_mut(&key).unwrap();
-            inode_ref.as_mut().nlookup += 1;
-            let _ = unistd::close(newfd);
-            attr.ino = (inode_ref.as_ref() as *const Inode) as u64;
+        self.inodes.upsert(
+            key1,
+            || {
+                Box::new(RwLock::new(Inode {
+                    magic: INODE_MAGIC,
+                    fd: Fd(newfd),
+                    fd_is_mutable: attr.kind == FileType::Symlink,
+                    kind: attr.kind,
+                    ino: attr.ino,
+                    dev: _stat.st_dev,
+                    nlookup: 1,
+                }))
+            },
+            |lock: &mut Box<RwLock<Inode>>| {
+                // FIXME: this will lead to a crash, if a different thread crashes
+                let mut inode = lock.write();
+                inode.nlookup += 1;
+            }
+        );
+
+        if let Some(val) = self.inodes.get(&key2) {
+            attr.ino = ((*val).as_ref() as *const RwLock<Inode>) as u64;
         } else {
-            let inode = Box::new(Inode {
-                magic: INODE_MAGIC,
-                fd: Fd(newfd),
-                fd_is_mutable: attr.kind == FileType::Symlink,
-                kind: attr.kind,
-                ino: attr.ino,
-                dev: _stat.st_dev,
-                nlookup: 1,
-            });
-            attr.ino = (inode.as_ref() as *const Inode) as u64;
-            self.inodes.insert(key, inode);
-        };
+            warn!("Could not find inode in hashtable after inserting it!");
+            return Err(nix::Error::Sys(nix::errno::ESTALE));
+        }
 
         Ok(attr)
     }
@@ -474,19 +518,16 @@ impl Filesystem for CntrFs {
         let attr = tryfuse!(self.lookup_inode(parent, name), reply);
         reply.entry(&TTL, &attr, 0);
     }
-
     fn forget(&mut self, _req: &Request, ino: u64, nlookup: u64) {
         let key = {
-            let mut inode = match self.inode(ino) {
+            let mut inode = match self.mutable_inode(ino) {
                 Ok(ino) => ino,
                 _ => return,
             };
-
             inode.nlookup -= nlookup;
             if inode.nlookup > 0 {
                 return;
             };
-            // FIXME this needs to be a lock, when using multi-threading
             inode.magic = INODE_DELETED_MAGIC;
             &InodeKey {
                 ino: inode.ino,
@@ -506,7 +547,7 @@ impl Filesystem for CntrFs {
         let inode = tryfuse!(self.inode(ino), reply);
 
         let mut attr = attr_from_stat(tryfuse!(stat::fstat(inode.fd.raw()), reply));
-        attr.ino = (inode as *const Inode) as u64;
+        attr.ino = ino;
         reply.attr(&TTL, &attr);
     }
 
@@ -530,12 +571,10 @@ impl Filesystem for CntrFs {
         apply_user_context(req);
 
         {
-            let inode = tryfuse!(self.inode(ino), reply);
-
             let fd = if let Some(fh) = _fh {
                 get_filehandle(fh).fd.raw()
             } else {
-                tryfuse!(inode.get_mutable_fd(), reply).raw()
+                tryfuse!(self.get_mutable_fd(ino), reply)
             };
 
             if let Some(mode) = _mode {
@@ -557,7 +596,8 @@ impl Filesystem for CntrFs {
                 tryfuse!(unistd::ftruncate(fd, size), reply);
             }
             if mtime != fuse::UtimeSpec::Omit || atime != fuse::UtimeSpec::Omit {
-                tryfuse!(set_time(inode, &mtime, &atime), reply);
+                let inode = tryfuse!(self.inode(ino), reply);
+                tryfuse!(set_time(&inode, &mtime, &atime), reply);
             }
         }
 
@@ -813,7 +853,7 @@ impl Filesystem for CntrFs {
         apply_user_context(req);
 
         let fd = tryfuse!(self.get_mutable_fd(ino), reply);
-        let path = fd_path(&fd.raw());
+        let path = fd_path(&fd);
         let dp = tryfuse!(dirent::opendir(Path::new(&path)), reply);
 
         let dirp = Box::new(DirP {
@@ -869,7 +909,7 @@ impl Filesystem for CntrFs {
     fn statfs(&mut self, req: &Request, ino: u64, reply: ReplyStatfs) {
         apply_user_context(req);
 
-        let fd = tryfuse!(self.get_mutable_fd(ino), reply).raw();
+        let fd = tryfuse!(self.get_mutable_fd(ino), reply);
         let stat = tryfuse!(fstatvfs(fd), reply);
         reply.statfs(
             stat.f_blocks,
@@ -886,7 +926,7 @@ impl Filesystem for CntrFs {
     fn getxattr(&mut self, req: &Request, ino: u64, name: &OsStr, size: u32, reply: ReplyXattr) {
         apply_user_context(req);
 
-        let fd = tryfuse!(self.get_mutable_fd(ino), reply).raw();
+        let fd = tryfuse!(self.get_mutable_fd(ino), reply);
 
         if size == 0 {
             let size = tryfuse!(fgetxattr(fd, name, &mut []), reply);
@@ -901,7 +941,7 @@ impl Filesystem for CntrFs {
     fn listxattr(&mut self, req: &Request, ino: u64, size: u32, reply: ReplyXattr) {
         apply_user_context(req);
 
-        let fd = tryfuse!(self.get_mutable_fd(ino), reply).raw();
+        let fd = tryfuse!(self.get_mutable_fd(ino), reply);
 
         if size == 0 {
             let res = flistxattr(fd, &mut []);
@@ -926,7 +966,7 @@ impl Filesystem for CntrFs {
     ) {
         apply_user_context(req);
 
-        let fd = tryfuse!(self.get_mutable_fd(ino), reply).raw();
+        let fd = tryfuse!(self.get_mutable_fd(ino), reply);
         tryfuse!(fsetxattr(fd, name, value, flags as i32), reply);
         reply.ok();
     }
@@ -934,7 +974,7 @@ impl Filesystem for CntrFs {
     fn removexattr(&mut self, req: &Request, ino: u64, name: &OsStr, reply: ReplyEmpty) {
         apply_user_context(req);
 
-        let fd = tryfuse!(self.get_mutable_fd(ino), reply).raw();
+        let fd = tryfuse!(self.get_mutable_fd(ino), reply);
         tryfuse!(fremovexattr(fd, name), reply);
         reply.ok();
     }

@@ -5,8 +5,10 @@ extern crate log;
 extern crate core;
 extern crate fuse;
 extern crate time;
-extern crate void;
 extern crate tempdir;
+extern crate num_cpus;
+extern crate chashmap;
+extern crate parking_lot;
 
 use nix::unistd;
 use pty::PtyFork;
