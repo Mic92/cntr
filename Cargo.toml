@@ -36,3 +36,6 @@ doc = false
 name = "unserns-test"
 path = "tests/userns.rs"
 doc = false
+
+[profile.release]
+lto = true
