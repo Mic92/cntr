@@ -204,6 +204,20 @@ impl CntrFs {
         })
     }
 
+    fn create_file(&self, parent: u64, name: &OsStr, mode: u32, flags: u32) -> nix::Result<RawFd> {
+        let parent_inode = try!(self.inode(&parent));
+
+        let oflag = fcntl::OFlag::from_bits_truncate(flags as i32);
+        let create_mode = stat::Mode::from_bits_truncate(mode);
+        let fd = try!(fcntl::openat(
+            parent_inode.fd.raw(),
+            name,
+            oflag | fcntl::O_NOFOLLOW | fcntl::O_CLOEXEC,
+            create_mode,
+        ));
+        Ok(fd)
+    }
+
     pub fn mount(self, mountpoint: &Path, splice_write: bool) -> Result<Vec<BackgroundSession>> {
         let mount_flags = format!(
             "fd={},rootmode=40000,user_id=0,group_id=0,allow_other,default_permissions",
@@ -360,27 +374,23 @@ impl CntrFs {
         };
         let key2 = key1.clone();
 
-        self.inodes.upsert(
-            key1,
-            || {
-                Box::new(RwLock::new(Inode {
-                    magic: INODE_MAGIC,
-                    fd: Fd(newfd),
-                    fd_is_mutable: attr.kind == FileType::Symlink,
-                    kind: attr.kind,
-                    ino: attr.ino,
-                    dev: _stat.st_dev,
-                    nlookup: 1,
-                }))
-            },
-            |lock: &mut Box<RwLock<Inode>>| {
-                let mut inode = lock.write();
-                inode.nlookup += 1;
-            },
-        );
+        let inode = Box::new(RwLock::new(Inode {
+            magic: INODE_MAGIC,
+            fd: Fd(newfd),
+            fd_is_mutable: attr.kind == FileType::Symlink,
+            kind: attr.kind,
+            ino: attr.ino,
+            dev: _stat.st_dev,
+            nlookup: 0,
+        }));
 
-        if let Some(val) = self.inodes.get(&key2) {
-            attr.ino = ((*val).as_ref() as *const RwLock<Inode>) as u64;
+        // FIXME: incrementing to nlookup in upsert leads to a deadlock
+        self.inodes.upsert(key1, || { inode }, |_| {});
+
+        if let Some(lock) = self.inodes.get(&key2) {
+            // FIXME this is racy though
+            lock.write().nlookup += 1;
+            attr.ino = ((*lock).as_ref() as *const RwLock<Inode>) as u64;
         } else {
             warn!("Could not find inode in hashtable after inserting it!");
             return Err(nix::Error::Sys(nix::errno::ESTALE));
@@ -1039,24 +1049,9 @@ impl Filesystem for CntrFs {
     ) {
         apply_user_context(req);
 
+        let fd = tryfuse!(self.create_file(parent, name, mode, flags), reply);
 
-        let (fh, fd) = {
-            let parent_fd = tryfuse!(self.inode(parent), reply);
-
-            let oflag = fcntl::OFlag::from_bits_truncate(flags as i32);
-            let create_mode = stat::Mode::from_bits_truncate(mode);
-            let fd = tryfuse!(
-                fcntl::openat(
-                    parent_fd.fd.raw(),
-                    name,
-                    oflag | fcntl::O_NOFOLLOW | fcntl::O_CLOEXEC,
-                    create_mode,
-                    ),
-                    reply
-                    );
-            (Fh::new(Fd(fd)), fd)
-        };
-
+        let fh = Fh::new(Fd(fd));
         let newfd = tryfuse!(unistd::dup(fd), reply);
         let attr = tryfuse!(self.lookup_from_fd(newfd), reply);
 
