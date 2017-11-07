@@ -10,13 +10,14 @@ use nix::sys::{stat, resource};
 use nix::sys::time::{TimeSpec as NixTimeSpec, TimeValLike};
 use nix::sys::uio::{pread, pwrite};
 use num_cpus;
+use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use statvfs::fstatvfs;
 use std::{u32, u64};
+use std::cmp;
 use std::ffi::{CStr, OsStr, OsString};
 use std::mem;
 use std::os::unix::prelude::*;
 use std::path::Path;
-use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::sync::Arc;
 use std::vec::Vec;
 use time::Timespec;
@@ -27,6 +28,7 @@ const INODE_MAGIC: char = 'I';
 const FH_MAGIC: char = 'F';
 const INODE_DELETED_MAGIC: char = 'D';
 const DIRP_MAGIC: char = 'D';
+
 
 struct Fd(RawFd);
 impl Fd {
@@ -221,7 +223,11 @@ impl CntrFs {
 
         let mut sessions = Vec::new();
 
-        for _ in 1..num_cpus::get() {
+        // numbers of sessions is optimized for cached read
+        let num_sessions = cmp::max(num_cpus::get() / 2, 1) as usize;
+
+        for _ in 0..num_sessions {
+            debug!("spawn worker");
             let cntrfs = CntrFs {
                 prefix: self.prefix.clone(),
                 root_inode: Arc::clone(&self.root_inode),
@@ -368,10 +374,9 @@ impl CntrFs {
                 }))
             },
             |lock: &mut Box<RwLock<Inode>>| {
-                // FIXME: this will lead to a crash, if a different thread crashes
                 let mut inode = lock.write();
                 inode.nlookup += 1;
-            }
+            },
         );
 
         if let Some(val) = self.inodes.get(&key2) {
