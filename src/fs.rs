@@ -756,7 +756,7 @@ impl Filesystem for CntrFs {
             reply
         );
         let fh = Fh::new(Fd(res));
-        reply.opened(Box::into_raw(fh) as u64, 0); // freed by close
+        reply.opened(Box::into_raw(fh) as u64, fuse::consts::FOPEN_KEEP_CACHE); // freed by close
     }
 
     fn read(
