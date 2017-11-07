@@ -3,6 +3,7 @@ extern crate libc;
 extern crate cntr;
 extern crate log;
 extern crate nix;
+extern crate cpuprofiler;
 
 use cntr::fs::CntrFs;
 use nix::unistd;
@@ -10,6 +11,7 @@ use std::env;
 use std::io::Write;
 use std::path::Path;
 use std::process;
+use cpuprofiler::PROFILER;
 
 struct Logger;
 impl log::Log for Logger {
@@ -21,8 +23,9 @@ impl log::Log for Logger {
     }
 }
 
-const SPLICE_READ: bool = true;
-const SPLICE_WRITE: bool = true;
+const SPLICE_READ: bool = false;
+const SPLICE_WRITE: bool = false;
+const ENABLE_PROFILING: bool = false;
 
 fn main() {
     //let _ = log::set_logger(|max_log_level| {
@@ -48,7 +51,13 @@ fn main() {
     }
     match CntrFs::new(&args[1], SPLICE_READ) {
         Ok(cntr) => {
-            cntr.mount(Path::new(&args[2]), false).unwrap();
+            if ENABLE_PROFILING {
+                PROFILER.lock().unwrap().start("./cntrfs.profile").unwrap();
+            }
+            cntr.mount(Path::new(&args[2]), SPLICE_WRITE).unwrap();
+            if ENABLE_PROFILING {
+                PROFILER.lock().unwrap().stop().unwrap();
+            }
         },
         Err(err) => {
             let _ = writeln!(&mut std::io::stderr(), "{}", err);

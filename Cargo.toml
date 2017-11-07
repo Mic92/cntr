@@ -4,6 +4,7 @@ version = "0.1.0"
 authors = ["Jörg Thalheim <joerg@higgsboson.tk>"]
 
 [dependencies]
+cpuprofiler = "*"
 argparse = "0.2.*"
 log = "*"
 time = "*"
@@ -39,3 +40,4 @@ doc = false
 
 [profile.release]
 lto = true
+debug = true
