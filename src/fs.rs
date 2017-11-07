@@ -313,7 +313,7 @@ impl CntrFs {
         reply.ok()
     }
 
-    fn inode(&mut self, ino: u64) -> nix::Result<RwLockReadGuard<Inode>> {
+    fn inode(&self, ino: u64) -> nix::Result<RwLockReadGuard<Inode>> {
         assert!(ino > 0);
         if ino == fuse::FUSE_ROOT_ID {
             Ok(self.root_inode.read())
@@ -630,8 +630,13 @@ impl Filesystem for CntrFs {
 
         let kind = stat::SFlag::from_bits_truncate(mode);
         let perm = stat::Mode::from_bits_truncate(mode);
-        let fd = tryfuse!(self.inode(parent), reply).fd.raw();
-        tryfuse!(stat::mknodat(&fd, name, kind, perm, rdev as dev_t), reply);
+        {
+            let inode = tryfuse!(self.inode(parent), reply);
+            tryfuse!(
+                stat::mknodat(&inode.fd.raw(), name, kind, perm, rdev as dev_t),
+                reply
+            );
+        }
         self.lookup(req, parent, name, reply);
     }
 
@@ -639,17 +644,20 @@ impl Filesystem for CntrFs {
         apply_user_context(req);
 
         let perm = stat::Mode::from_bits_truncate(mode);
-        let fd = tryfuse!(self.inode(parent), reply).fd.raw();
-        tryfuse!(unistd::mkdirat(fd, name, perm), reply);
+        {
+            let inode = tryfuse!(self.inode(parent), reply);
+            tryfuse!(unistd::mkdirat(inode.fd.raw(), name, perm), reply);
+        }
         self.lookup(req, parent, name, reply);
     }
 
     fn unlink(&mut self, req: &Request, parent: u64, name: &OsStr, reply: ReplyEmpty) {
         apply_user_context(req);
 
-        let fd = tryfuse!(self.inode(parent), reply).fd.raw();
 
-        let res = unistd::unlinkat(fd, name, fcntl::AtFlags::empty());
+        let inode = tryfuse!(self.inode(parent), reply);
+
+        let res = unistd::unlinkat(inode.fd.raw(), name, fcntl::AtFlags::empty());
         tryfuse!(res, reply);
         reply.ok();
     }
@@ -657,8 +665,12 @@ impl Filesystem for CntrFs {
     fn rmdir(&mut self, req: &Request, parent: u64, name: &OsStr, reply: ReplyEmpty) {
         apply_user_context(req);
 
-        let fd = tryfuse!(self.inode(parent), reply).fd.raw();
-        tryfuse!(unistd::unlinkat(fd, name, fcntl::AT_REMOVEDIR), reply);
+        let inode = tryfuse!(self.inode(parent), reply);
+
+        tryfuse!(
+            unistd::unlinkat(inode.fd.raw(), name, fcntl::AT_REMOVEDIR),
+            reply
+        );
         reply.ok();
     }
 
@@ -672,9 +684,11 @@ impl Filesystem for CntrFs {
     ) {
         apply_user_context(req);
 
-        let fd = tryfuse!(self.inode(parent), reply).fd.raw();
-        let res = unistd::symlinkat(link, fd, name);
-        tryfuse!(res, reply);
+        {
+            let inode = tryfuse!(self.inode(parent), reply);
+            let res = unistd::symlinkat(link, inode.fd.raw(), name);
+            tryfuse!(res, reply);
+        }
         self.lookup(req, parent, name, reply);
     }
 
@@ -689,9 +703,12 @@ impl Filesystem for CntrFs {
     ) {
         apply_user_context(req);
 
-        let parent_fd = tryfuse!(self.inode(parent), reply).fd.raw();
-        let new_fd = tryfuse!(self.inode(newparent), reply).fd.raw();
-        tryfuse!(fcntl::renameat(parent_fd, name, new_fd, newname), reply);
+        let parent_inode = tryfuse!(self.inode(parent), reply);
+        let new_inode = tryfuse!(self.inode(newparent), reply);
+        tryfuse!(
+            fcntl::renameat(parent_inode.fd.raw(), name, new_inode.fd.raw(), newname),
+            reply
+        );
 
         reply.ok();
     }
@@ -708,12 +725,12 @@ impl Filesystem for CntrFs {
     ) {
         apply_user_context(req);
 
-        let parent_fd = tryfuse!(self.inode(parent), reply).fd.raw();
-        let new_fd = tryfuse!(self.inode(newparent), reply).fd.raw();
+        let parent_inode = tryfuse!(self.inode(parent), reply);
+        let new_inode = tryfuse!(self.inode(newparent), reply);
         let res = fcntl::renameat2(
-            parent_fd,
+            parent_inode.fd.raw(),
             name,
-            new_fd,
+            new_inode.fd.raw(),
             newname,
             fcntl::RenameAt2Flags::from_bits_truncate(flags as i32),
         );
@@ -732,11 +749,13 @@ impl Filesystem for CntrFs {
     ) {
         apply_user_context(req);
 
-        let source_fd = tryfuse!(self.inode(ino), reply).fd.raw();
-        let newparent_fd = tryfuse!(self.inode(newparent), reply).fd.raw();
+        {
+            let source_inode = tryfuse!(self.inode(ino), reply);
+            let newparent_inode = tryfuse!(self.inode(newparent), reply);
 
-        let res = unistd::linkat(source_fd, "", newparent_fd, newname, fcntl::AT_EMPTY_PATH);
-        tryfuse!(res, reply);
+            let res = unistd::linkat(source_inode.fd.raw(), "", newparent_inode.fd.raw(), newname, fcntl::AT_EMPTY_PATH);
+            tryfuse!(res, reply);
+        }
         // just do a lookup for simplicity
         self.lookup(req, newparent, newname, reply);
     }
@@ -745,8 +764,8 @@ impl Filesystem for CntrFs {
         apply_user_context(req);
 
         let oflags = fcntl::OFlag::from_bits_truncate(flags as i32);
-        let fd = tryfuse!(self.inode(ino), reply).fd.raw();
-        let path = fd_path(&fd);
+        let inode = tryfuse!(self.inode(ino), reply);
+        let path = fd_path(&inode.fd.raw());
         let res = tryfuse!(
             fcntl::open(
                 Path::new(&path),
@@ -987,9 +1006,9 @@ impl Filesystem for CntrFs {
     fn access(&mut self, req: &Request, ino: u64, mask: u32, reply: ReplyEmpty) {
         apply_user_context(req);
 
-        let fd = tryfuse!(self.inode(ino), reply).fd.raw();
+        let inode = tryfuse!(self.inode(ino), reply);
         let mode = unistd::AccessMode::from_bits_truncate(mask as i32);
-        tryfuse!(unistd::access(fd_path(&fd).as_str(), mode), reply);
+        tryfuse!(unistd::access(fd_path(&inode.fd.raw()).as_str(), mode), reply);
         reply.ok();
     }
 
@@ -1004,20 +1023,23 @@ impl Filesystem for CntrFs {
     ) {
         apply_user_context(req);
 
-        let parent_fd = tryfuse!(self.inode(parent), reply).fd.raw();
 
-        let oflag = fcntl::OFlag::from_bits_truncate(flags as i32);
-        let create_mode = stat::Mode::from_bits_truncate(mode);
-        let fd = tryfuse!(
-            fcntl::openat(
-                parent_fd,
-                name,
-                oflag | fcntl::O_NOFOLLOW | fcntl::O_CLOEXEC,
-                create_mode,
-            ),
-            reply
-        );
-        let fh = Fh::new(Fd(fd));
+        let (fh, fd) = {
+            let parent_fd = tryfuse!(self.inode(parent), reply);
+
+            let oflag = fcntl::OFlag::from_bits_truncate(flags as i32);
+            let create_mode = stat::Mode::from_bits_truncate(mode);
+            let fd = tryfuse!(
+                fcntl::openat(
+                    parent_fd.fd.raw(),
+                    name,
+                    oflag | fcntl::O_NOFOLLOW | fcntl::O_CLOEXEC,
+                    create_mode,
+                    ),
+                    reply
+                    );
+            (Fh::new(Fd(fd)), fd)
+        };
 
         let newfd = tryfuse!(unistd::dup(fd), reply);
         let attr = tryfuse!(self.lookup_from_fd(newfd), reply);
