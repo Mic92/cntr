@@ -39,7 +39,7 @@ macro_rules! tryfmt {
 
 impl error::Error for Error {
     fn description(&self) -> &str {
-        return &*self.desc;
+        &*self.desc
     }
 
     fn cause(&self) -> Option<&error::Error> {

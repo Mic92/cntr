@@ -33,15 +33,15 @@ pub struct Options {
     pub mountpoint: String,
 }
 
-fn run_parent(pty: PtyFork) -> Result<()> {
-    if let PtyFork::Parent { ref pty_master, .. } = pty {
+fn run_parent(pty: &PtyFork) -> Result<()> {
+    if let PtyFork::Parent { ref pty_master, .. } = *pty {
         pty::forward(pty_master)
     }
 
-    return Ok(());
+    Ok(())
 }
 
-fn run_child(fs: fs::CntrFs, opts: Options) -> Result<()> {
+fn run_child(fs: fs::CntrFs, opts: &Options) -> Result<()> {
     tryfmt!(
         cgroup::move_to(unistd::getpid(), opts.pid),
         "failed to change cgroup"
@@ -70,7 +70,7 @@ fn run_child(fs: fs::CntrFs, opts: Options) -> Result<()> {
     Ok(())
 }
 
-pub fn run(opts: Options) -> Result<()> {
+pub fn run(opts: &Options) -> Result<()> {
     tryfmt!(logging::init(), "failed to initialize logging");
     let cntr_fs = tryfmt!(
         fs::CntrFs::new(opts.mountpoint.as_str(), false),
@@ -79,7 +79,7 @@ pub fn run(opts: Options) -> Result<()> {
 
     let res = tryfmt!(pty::fork(), "fork failed");
     if let PtyFork::Parent { .. } = res {
-        run_parent(res)
+        run_parent(&res)
     } else {
         run_child(cntr_fs, opts)
     }

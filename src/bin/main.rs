@@ -30,7 +30,7 @@ fn parse_args() -> cntr::Options {
 
 fn main() {
     let opts = parse_args();
-    match cntr::run(opts) {
+    match cntr::run(&opts) {
         Err(err) => {
             let _ = writeln!(&mut std::io::stderr(), "{}", err);
             process::exit(1);

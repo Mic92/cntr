@@ -62,7 +62,7 @@ fn reopen_fd(fd: &mut Fd, open_flags: fcntl::OFlag) -> nix::Result<Fd> {
         open_flags | fcntl::O_CLOEXEC,
         stat::Mode::empty(),
     ));
-    return Ok(Fd(fd));
+    Ok(Fd(fd))
 }
 
 impl Inode {
@@ -78,7 +78,7 @@ impl Inode {
         self.fd = try!(reopen_fd(&mut self.fd, open_flags));
         self.fd_is_mutable = true;
 
-        return Ok(self.fd.raw());
+        Ok(self.fd.raw())
     }
 }
 
@@ -170,8 +170,8 @@ impl CntrFs {
         );
 
         let limit = resource::Rlimit {
-            rlim_cur: 1048576,
-            rlim_max: 1048576,
+            rlim_cur: 1_048_576,
+            rlim_max: 1_048_576,
         };
         tryfmt!(
             resource::setrlimit(resource::Resource::RLIMIT_NOFILE, &limit),
@@ -269,7 +269,7 @@ impl CntrFs {
             ));
         }
 
-        return Ok(sessions);
+        Ok(sessions)
     }
 
     fn generic_readdir(
@@ -302,8 +302,8 @@ impl CntrFs {
                     dirp.offset = dirent::telldir(&mut dirp.dp);
                     let name = unsafe { CStr::from_ptr(entry.d_name.as_ptr()) };
                     dirp.entry = None;
-                    match &mut reply {
-                        &mut ReplyDirectory::Directory(ref mut r) => {
+                    match reply {
+                        ReplyDirectory::Directory(ref mut r) => {
                             r.add(
                                 entry.d_ino,
                                 dirp.offset,
@@ -311,7 +311,7 @@ impl CntrFs {
                                 OsStr::from_bytes(name.to_bytes()),
                             )
                         }
-                        &mut ReplyDirectory::DirectoryPlus(ref mut r) => {
+                        ReplyDirectory::DirectoryPlus(ref mut r) => {
                             match self.lookup_inode(ino, OsStr::from_bytes(name.to_bytes())) {
                                 Ok(attr) => {
                                     r.add(
@@ -429,11 +429,11 @@ fn get_filehandle<'a>(fh: u64) -> &'a Fh {
 }
 
 fn to_utimespec(time: &fuse::UtimeSpec) -> stat::UtimeSpec {
-    match time {
-        &fuse::UtimeSpec::Omit => stat::UtimeSpec::Omit,
-        &fuse::UtimeSpec::Now => stat::UtimeSpec::Now,
-        &fuse::UtimeSpec::Time(time) => {
-            let t = NixTimeSpec::seconds(time.sec) + NixTimeSpec::nanoseconds(time.nsec as i64);
+    match *time {
+        fuse::UtimeSpec::Omit => stat::UtimeSpec::Omit,
+        fuse::UtimeSpec::Now => stat::UtimeSpec::Now,
+        fuse::UtimeSpec::Time(time) => {
+            let t = NixTimeSpec::seconds(time.sec) + NixTimeSpec::nanoseconds(i64::from(time.nsec));
             stat::UtimeSpec::Time(t)
         }
     }
@@ -462,18 +462,18 @@ fn set_time(inode: &Inode, mtime: &fuse::UtimeSpec, atime: &fuse::UtimeSpec) -> 
     Ok(())
 }
 
-fn fd_path<'a>(fd: &'a RawFd) -> String {
+fn fd_path(fd: &RawFd) -> String {
     format!("/proc/self/fd/{}", fd)
 }
 
 fn dtype_kind(dtype: u8) -> FileType {
     match dtype {
-        libc::DT_BLK => return FileType::BlockDevice,
-        libc::DT_CHR => return FileType::CharDevice,
-        libc::DT_DIR => return FileType::Directory,
-        libc::DT_FIFO => return FileType::NamedPipe,
-        libc::DT_LNK => return FileType::Symlink,
-        libc::DT_SOCK => return FileType::Socket,
+        libc::DT_BLK => FileType::BlockDevice,
+        libc::DT_CHR => FileType::CharDevice,
+        libc::DT_DIR => FileType::Directory,
+        libc::DT_FIFO => FileType::NamedPipe,
+        libc::DT_LNK => FileType::Symlink,
+        libc::DT_SOCK => FileType::Socket,
         libc::DT_REG => FileType::RegularFile,
         _ => panic!("BUG! got unknown d_entry type received from d_type"),
     }
@@ -513,7 +513,7 @@ fn attr_from_stat(attr: stat::FileStat) -> FileAttr {
     }
 }
 
-pub fn readlinkat<'a>(fd: RawFd) -> nix::Result<OsString> {
+pub fn readlinkat(fd: RawFd) -> nix::Result<OsString> {
     let mut buf = vec![0; (libc::PATH_MAX + 1) as usize];
     loop {
         match fcntl::readlinkat(fd, "", &mut buf) {
@@ -650,7 +650,7 @@ impl Filesystem for CntrFs {
         {
             let inode = tryfuse!(self.inode(&parent), reply);
             tryfuse!(
-                stat::mknodat(&inode.fd.raw(), name, kind, perm, rdev as dev_t),
+                stat::mknodat(&inode.fd.raw(), name, kind, perm, dev_t::from(rdev)),
                 reply
             );
         }
@@ -863,7 +863,7 @@ impl Filesystem for CntrFs {
 
         let handle = get_filehandle(fh);
 
-        let _ = match unistd::dup(handle.fd.raw()) {
+        match unistd::dup(handle.fd.raw()) {
             Ok(fd) => {
                 tryfuse!(unistd::close(fd), reply);
                 reply.ok();
@@ -1119,7 +1119,7 @@ impl Filesystem for CntrFs {
         apply_user_context(req);
 
         let handle = get_filehandle(fh);
-        let mut flock = libc::flock {
+        let flock = libc::flock {
             l_type: typ as i16,
             l_whence: 0,
             l_start: start as i64,
@@ -1127,7 +1127,7 @@ impl Filesystem for CntrFs {
             l_pid: pid as i32,
         };
         tryfuse!(
-            fcntl::fcntl(handle.fd.raw(), fcntl::F_SETLK(&mut flock)),
+            fcntl::fcntl(handle.fd.raw(), fcntl::F_SETLK(&flock)),
             reply
         );
         reply.ok()
@@ -1175,7 +1175,7 @@ impl Filesystem for CntrFs {
             get_filehandle(fh).fd.raw()
         };
 
-        let cmd = _cmd as libc::c_ulong;
+        let cmd = u64::from(_cmd);
 
         if out_size > 0 {
             let mut out = vec![0; out_size as usize];

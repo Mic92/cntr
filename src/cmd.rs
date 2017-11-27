@@ -40,7 +40,7 @@ fn inherit_path(pid: unistd::Pid) -> Result<()> {
         Some(n) => &n.as_bytes()[5..],
         None => default_path.as_bytes(),
     };
-    env::set_var("PATH", OsStr::from_bytes(&path));
+    env::set_var("PATH", OsStr::from_bytes(path));
     Ok(())
 }
 

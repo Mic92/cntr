@@ -13,7 +13,7 @@ fn get_subsystems() -> Result<Vec<String>> {
     let mut subsystems: Vec<String> = Vec::new();
     for l in reader.lines() {
         let line = tryfmt!(l, "failed to read /proc/cgroups");
-        if line.starts_with("#") {
+        if line.starts_with('#') {
             continue;
         }
         let fields: Vec<&str> = line.split('\t').collect();
@@ -21,12 +21,12 @@ fn get_subsystems() -> Result<Vec<String>> {
             subsystems.push(fields[0].to_string());
         }
     }
-    return Ok(subsystems);
+    Ok(subsystems)
 }
 
 fn get_mounts() -> Result<HashMap<String, String>> {
     let subsystems = tryfmt!(get_subsystems(), "failed to obtain cgroup subsystems");
-    let path = format!("/proc/self/mountinfo");
+    let path = "/proc/self/mountinfo";
     // example:
     //
     // 36 35 98:0 /mnt1 /mnt2 rw,noatime master:1 - ext3 /dev/root rw,errors=continue
@@ -36,11 +36,11 @@ fn get_mounts() -> Result<HashMap<String, String>> {
     let mut mountpoints: HashMap<String, String> = HashMap::new();
     for l in reader.lines() {
         let line = tryfmt!(l, "failed to read '{}'", path);
-        let fields: Vec<&str> = line.split(" ").collect();
+        let fields: Vec<&str> = line.split(' ').collect();
         if fields.len() < 11 || fields[9] != "cgroup" {
             continue;
         }
-        for option in fields[10].split(",") {
+        for option in fields[10].split(',') {
             let name = if option.starts_with("name=") {
                 option[5..].to_string()
             } else {
@@ -51,7 +51,7 @@ fn get_mounts() -> Result<HashMap<String, String>> {
             }
         }
     }
-    return Ok(mountpoints);
+    Ok(mountpoints)
 }
 
 fn get_cgroups(pid: unistd::Pid) -> Result<Vec<String>> {
@@ -66,11 +66,11 @@ fn get_cgroups(pid: unistd::Pid) -> Result<Vec<String>> {
             cgroups.push(fields[1].to_string());
         }
     }
-    return Ok(cgroups);
+    Ok(cgroups)
 }
 
 fn cgroup_path(cgroup: &str, mountpoints: &HashMap<String, String>) -> Option<PathBuf> {
-    for c in cgroup.split(",") {
+    for c in cgroup.split(',') {
         let m = mountpoints.get(c);
         if m.is_some() {
             let mut tasks_path = PathBuf::from(m.unwrap());
@@ -79,7 +79,7 @@ fn cgroup_path(cgroup: &str, mountpoints: &HashMap<String, String>) -> Option<Pa
             return Some(tasks_path);
         }
     }
-    return None;
+    None
 }
 
 // TODO add implementation for unified cgroups, cgmanager, lxcfs
@@ -110,5 +110,5 @@ pub fn move_to(pid: unistd::Pid, target_pid: unistd::Pid) -> Result<()> {
             }
         }
     }
-    return Ok(());
+    Ok(())
 }

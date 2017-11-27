@@ -41,10 +41,10 @@ impl Kind {
         let buf = self.path(pid);
         let path = buf.to_str().unwrap();
         let file = tryfmt!(File::open(path), "failed to open namespace file '{}'", path);
-        return Ok(Namespace {
+        Ok(Namespace {
             kind: self,
             file: file,
-        });
+        })
     }
     pub fn is_same(&self, pid: unistd::Pid) -> bool {
         let path = self.path(pid);
@@ -64,7 +64,7 @@ impl Kind {
         buf.push(pid.to_string());
         buf.push("ns");
         buf.push(self.name);
-        return buf;
+        buf
     }
 }
 
