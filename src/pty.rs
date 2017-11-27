@@ -37,14 +37,14 @@ struct FilePair<'a> {
 
 impl<'a> FilePair<'a> {
     fn new(from: &'a File, to: &'a File) -> FilePair<'a> {
-        return FilePair {
+        FilePair {
             from: from,
             to: to,
             buf: [8; libc::BUFSIZ as usize],
             write_offset: 0,
             read_offset: 0,
             state: FilePairState::Read,
-        };
+        }
     }
     fn read(&mut self) -> bool {
         match self.from.read(&mut self.buf) {
@@ -121,17 +121,15 @@ fn shovel(pairs: &mut [FilePair]) {
         for pair in pairs.iter_mut() {
             match pair.state {
                 FilePairState::Read => {
-                    if read_set.contains(pair.from.as_raw_fd()) {
-                        if !pair.read() {
-                            return;
-                        };
+                    if read_set.contains(pair.from.as_raw_fd())
+                      && !pair.read() {
+                          return;
                     }
                 }
                 FilePairState::Write => {
-                    if write_set.contains(pair.to.as_raw_fd()) {
-                        if !pair.write() {
+                    if write_set.contains(pair.to.as_raw_fd())
+                        && !pair.write() {
                             return;
-                        }
                     }
                 }
             }
@@ -155,12 +153,11 @@ pub fn forward(pty: &PtyMaster) {
 }
 
 pub fn reset_stdin(pty: &PtyFork) {
-    if let &PtyFork::Parent { ref stdin_attr, .. } = pty {
-        if let &Some(ref attr) = stdin_attr {
-            match tcsetattr(libc::STDIN_FILENO, SetArg::TCSANOW, &attr) {
-                Err(err) => warn!("failed to restore stdin tty: {}", err),
-                _ => {}
-            };
+    if let PtyFork::Parent { ref stdin_attr, .. } = *pty {
+        if let Some(ref attr) = *stdin_attr {
+            if let Err(err) = tcsetattr(libc::STDIN_FILENO, SetArg::TCSANOW, attr) {
+                warn!("failed to restore stdin tty: {}", err);
+            }
         }
     }
 }
@@ -191,7 +188,7 @@ fn set_tty_raw(fd: RawFd) -> Result<Termios> {
         tcsetattr(fd, SetArg::TCSAFLUSH, &attr),
         "failed to set termios attributes"
     );
-    return Ok(orig_attr);
+    Ok(orig_attr)
 }
 
 pub fn fork() -> Result<PtyFork> {
@@ -200,7 +197,7 @@ pub fn fork() -> Result<PtyFork> {
     match tryfmt!(unistd::fork(), "fork()") {
         unistd::ForkResult::Parent { child } => setup_parent(child, pty_master),
         unistd::ForkResult::Child => {
-            tryfmt!(attach_pts(pty_master), "attach to pty");
+            tryfmt!(attach_pts(&pty_master), "attach to pty");
             Ok(PtyFork::Child)
         }
     }
@@ -266,7 +263,7 @@ fn setup_parent(pid: unistd::Pid, pty_master: PtyMaster) -> Result<PtyFork> {
         ));
     }
 
-    return Ok(parent);
+    Ok(parent)
 }
 
 fn open_ptm() -> Result<PtyMaster> {
@@ -278,8 +275,8 @@ fn open_ptm() -> Result<PtyMaster> {
     Ok(pty_master)
 }
 
-fn attach_pts(pty_master: PtyMaster) -> Result<()> {
-    let pts_name = tryfmt!(ptsname_r(&pty_master), "ptsname()");
+fn attach_pts(pty_master: &PtyMaster) -> Result<()> {
+    let pts_name = tryfmt!(ptsname_r(pty_master), "ptsname()");
 
     unsafe_try!(libc::setsid(), "setsid()");
 
