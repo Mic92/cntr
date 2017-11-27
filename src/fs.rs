@@ -155,6 +155,13 @@ macro_rules! tryfuse {
     })
 }
 
+pub fn posix_fadvise(fd: RawFd) -> nix::Result<()> {
+    let res = unsafe {
+        libc::posix_fadvise(fd, 0, 0, libc::POSIX_FADV_DONTNEED)
+    };
+    nix::Errno::result(res).map(drop)
+}
+
 impl CntrFs {
     pub fn new(prefix: &str, splice_read: bool) -> Result<CntrFs> {
         let fuse_fd = tryfmt!(
@@ -790,6 +797,9 @@ impl Filesystem for CntrFs {
             ),
             reply
         );
+
+        // avoid double caching
+        tryfuse!(posix_fadvise(res), reply);
         let fh = Fh::new(Fd(res));
         reply.opened(Box::into_raw(fh) as u64, fuse::consts::FOPEN_KEEP_CACHE); // freed by close
     }
