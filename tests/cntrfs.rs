@@ -3,6 +3,8 @@ extern crate libc;
 extern crate cntr;
 extern crate log;
 extern crate nix;
+
+#[cfg(feature="profiling")]
 extern crate cpuprofiler;
 
 use cntr::fs::CntrFs;
@@ -11,6 +13,8 @@ use std::env;
 use std::io::Write;
 use std::path::Path;
 use std::process;
+
+#[cfg(feature="profiling")]
 use cpuprofiler::PROFILER;
 
 struct Logger;
@@ -23,15 +27,13 @@ impl log::Log for Logger {
     }
 }
 
-const SPLICE_READ: bool = false;
-const SPLICE_WRITE: bool = false;
-const ENABLE_PROFILING: bool = false;
-
 fn main() {
-    //let _ = log::set_logger(|max_log_level| {
-    //    max_log_level.set(log::LogLevelFilter::Debug);
-    //    Box::new(Logger)
-    //});
+    if cfg!(feature = "testlogging") {
+        log::set_logger(|max_log_level| {
+            max_log_level.set(log::LogLevelFilter::Debug);
+            Box::new(Logger)
+        }).unwrap();
+    }
 
     let args: Vec<String> = env::args().collect();
     if args.len() < 3 {
@@ -43,27 +45,26 @@ fn main() {
         return;
     }
 
-    if SPLICE_READ {
+    if cfg!(feature = "splice_read") {
         println!("enable splice read");
     }
-    if SPLICE_WRITE {
+    if cfg!(feature = "splice_write") {
         println!("enable splice write");
     }
-    match CntrFs::new(&args[1], SPLICE_READ) {
+    #[cfg(feature = "profiling")]
+    PROFILER.lock().unwrap().start("./cntrfs.profile").unwrap();
+
+    match CntrFs::new(&args[1], cfg!(feature="splice_read")) {
         Ok(cntr) => {
-            if ENABLE_PROFILING {
-                PROFILER.lock().unwrap().start("./cntrfs.profile").unwrap();
-            }
-            cntr.mount(Path::new(&args[2]), SPLICE_WRITE).unwrap();
-            if ENABLE_PROFILING {
-                PROFILER.lock().unwrap().stop().unwrap();
-            }
+            cntr.mount(Path::new(&args[2]), cfg!(feature="splice_write")).unwrap();
         },
         Err(err) => {
             let _ = writeln!(&mut std::io::stderr(), "{}", err);
             process::exit(1);
         }
     };
+    #[cfg(feature = "profiling")]
+    PROFILER.lock().unwrap().stop().unwrap();
 
     //let output = Command::new("xfstests-check")
     //    .arg("-overlay")
