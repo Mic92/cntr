@@ -7,7 +7,7 @@ extern crate fuse;
 extern crate time;
 extern crate tempdir;
 extern crate num_cpus;
-extern crate chashmap;
+extern crate concurrent_hashmap;
 extern crate parking_lot;
 
 use nix::unistd;
