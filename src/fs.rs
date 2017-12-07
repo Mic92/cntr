@@ -246,6 +246,7 @@ impl CntrFs {
 
     fn create_file(
         &self,
+        req: &Request,
         parent: u64,
         name: &OsStr,
         mut mode: u32,
@@ -256,6 +257,7 @@ impl CntrFs {
         let has_default_acl = try!(parent_inode.check_default_acl());
         let parent_fd = parent_inode.fd.read();
 
+        apply_user_context(req);
 
         let oflag = fcntl::OFlag::from_bits_truncate(flags as i32);
 
@@ -750,14 +752,14 @@ impl Filesystem for CntrFs {
         rdev: u32,
         reply: ReplyEntry,
     ) {
-        apply_user_context(req);
-
         {
             let inode = tryfuse!(self.inode(&parent), reply);
             let has_default_acl = tryfuse!(inode.check_default_acl(), reply);
             if !has_default_acl {
                 mode &= !umask;
             }
+            apply_user_context(req);
+
             let kind = stat::SFlag::from_bits_truncate(mode);
             let perm = stat::Mode::from_bits_truncate(mode);
 
@@ -779,14 +781,14 @@ impl Filesystem for CntrFs {
         umask: u32,
         reply: ReplyEntry,
     ) {
-        apply_user_context(req);
-
         {
             let inode = tryfuse!(self.inode(&parent), reply);
             let has_default_acl = tryfuse!(inode.check_default_acl(), reply);
             if !has_default_acl {
                 mode &= !umask;
             }
+            apply_user_context(req);
+
             let perm = stat::Mode::from_bits_truncate(mode);
             let fd = inode.fd.read();
             tryfuse!(unistd::mkdirat(fd.raw(), name, perm), reply);
@@ -1230,9 +1232,7 @@ impl Filesystem for CntrFs {
         flags: u32,
         reply: ReplyCreate,
     ) {
-        apply_user_context(req);
-
-        let fd = tryfuse!(self.create_file(parent, name, mode, umask, flags), reply);
+        let fd = tryfuse!(self.create_file(req, parent, name, mode, umask, flags), reply);
 
         let fh = Fh::new(Fd {
             number: fd,
