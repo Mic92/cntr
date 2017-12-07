@@ -4,18 +4,20 @@ extern crate cntr;
 extern crate log;
 extern crate nix;
 
-#[cfg(feature="profiling")]
+#[cfg(feature = "profiling")]
 extern crate cpuprofiler;
 
+extern crate parking_lot;
+
 use cntr::fs::CntrFs;
+
+#[cfg(feature = "profiling")]
+use cpuprofiler::PROFILER;
 use nix::unistd;
 use std::env;
 use std::io::Write;
 use std::path::Path;
 use std::process;
-
-#[cfg(feature="profiling")]
-use cpuprofiler::PROFILER;
 
 struct Logger;
 impl log::Log for Logger {
@@ -51,20 +53,19 @@ fn main() {
     if cfg!(feature = "splice_write") {
         println!("enable splice write");
     }
-    #[cfg(feature = "profiling")]
-    PROFILER.lock().unwrap().start("./cntrfs.profile").unwrap();
+    #[cfg(feature = "profiling")] PROFILER.lock().unwrap().start("./cntrfs.profile").unwrap();
 
-    match CntrFs::new(&args[1], cfg!(feature="splice_read")) {
+    match CntrFs::new(&args[1], cfg!(feature = "splice_read")) {
         Ok(cntr) => {
-            cntr.mount(Path::new(&args[2]), cfg!(feature="splice_write")).unwrap();
-        },
+            cntr.mount(Path::new(&args[2]), cfg!(feature = "splice_write"))
+                .unwrap();
+        }
         Err(err) => {
             let _ = writeln!(&mut std::io::stderr(), "{}", err);
             process::exit(1);
         }
     };
-    #[cfg(feature = "profiling")]
-    PROFILER.lock().unwrap().stop().unwrap();
+    #[cfg(feature = "profiling")] PROFILER.lock().unwrap().stop().unwrap();
 
     //let output = Command::new("xfstests-check")
     //    .arg("-overlay")
