@@ -244,7 +244,14 @@ impl CntrFs {
         })
     }
 
-    fn create_file(&self, parent: u64, name: &OsStr, mut mode: u32, umask: u32, flags: u32) -> nix::Result<RawFd> {
+    fn create_file(
+        &self,
+        parent: u64,
+        name: &OsStr,
+        mut mode: u32,
+        umask: u32,
+        flags: u32,
+    ) -> nix::Result<RawFd> {
         let parent_inode = try!(self.inode(&parent));
         let has_default_acl = try!(parent_inode.check_default_acl());
         let parent_fd = parent_inode.fd.read();
@@ -485,7 +492,7 @@ impl CntrFs {
                         // some one else removed our inode again
                         None => {
                             debug!("could not find {}", lock.get().inode_number);
-                        },
+                        }
                     };
                 }
 
@@ -763,7 +770,15 @@ impl Filesystem for CntrFs {
         self.lookup(req, parent, name, reply);
     }
 
-    fn mkdir(&mut self, req: &Request, parent: u64, name: &OsStr, mut mode: u32, umask: u32, reply: ReplyEntry) {
+    fn mkdir(
+        &mut self,
+        req: &Request,
+        parent: u64,
+        name: &OsStr,
+        mut mode: u32,
+        umask: u32,
+        reply: ReplyEntry,
+    ) {
         apply_user_context(req);
 
         {
@@ -912,7 +927,8 @@ impl Filesystem for CntrFs {
         let res = tryfuse!(
             fcntl::open(
                 Path::new(&path),
-                (oflags & !fcntl::O_NOFOLLOW & !fcntl::O_APPEND & !fcntl::O_WRONLY) | fcntl::O_CLOEXEC | fcntl::O_RDWR,
+                (oflags & !fcntl::O_NOFOLLOW & !fcntl::O_APPEND & !fcntl::O_WRONLY) |
+                    fcntl::O_CLOEXEC | fcntl::O_RDWR,
                 stat::Mode::empty(),
             ),
             reply
