@@ -25,16 +25,13 @@ fn parse_args() -> cntr::Options {
         ap.parse_args_or_exit();
     }
     options.pid = unistd::Pid::from_raw(pid);
-    return options;
+    options
 }
 
 fn main() {
     let opts = parse_args();
-    match cntr::run(&opts) {
-        Err(err) => {
-            let _ = writeln!(&mut std::io::stderr(), "{}", err);
-            process::exit(1);
-        }
-        _ => {}
+    if let Err(err) = cntr::run(&opts) {
+        let _ = writeln!(&mut std::io::stderr(), "{}", err);
+        process::exit(1);
     };
 }
