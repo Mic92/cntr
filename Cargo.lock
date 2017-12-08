@@ -1,3 +1,20 @@
+[root]
+name = "cntr"
+version = "0.1.0"
+dependencies = [
+ "argparse 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "concurrent-hashmap 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "cpuprofiler 0.0.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "fuse 0.3.0",
+ "libc 0.2.34 (git+https://github.com/rust-lang/libc)",
+ "log 0.3.8 (registry+https://github.com/rust-lang/crates.io-index)",
+ "nix 0.10.0-pre",
+ "num_cpus 1.7.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "parking_lot 0.5.3 (git+https://github.com/Amanieu/parking_lot)",
+ "tempdir 0.3.5 (registry+https://github.com/rust-lang/crates.io-index)",
+ "time 0.1.38 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
 [[package]]
 name = "argparse"
 version = "0.2.1"
@@ -45,23 +62,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 name = "cfg-if"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-
-[[package]]
-name = "cntr"
-version = "0.1.0"
-dependencies = [
- "argparse 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "concurrent-hashmap 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "cpuprofiler 0.0.3 (registry+https://github.com/rust-lang/crates.io-index)",
- "fuse 0.3.0",
- "libc 0.2.34 (git+https://github.com/rust-lang/libc)",
- "log 0.3.8 (registry+https://github.com/rust-lang/crates.io-index)",
- "nix 0.10.0-pre",
- "num_cpus 1.7.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "parking_lot 0.5.3 (git+https://github.com/Amanieu/parking_lot)",
- "tempdir 0.3.5 (registry+https://github.com/rust-lang/crates.io-index)",
- "time 0.1.38 (registry+https://github.com/rust-lang/crates.io-index)",
-]
 
 [[package]]
 name = "concurrent-hashmap"
@@ -141,7 +141,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 [[package]]
 name = "libc"
 version = "0.2.34"
-source = "git+https://github.com/rust-lang/libc#b080eb5c3a2299575a3bf9960af797fadf1d3a84"
+source = "git+https://github.com/rust-lang/libc#9d6115ac1e1b750329646d6fc157b7611e1c717d"
 
 [[package]]
 name = "libc"

@@ -12,7 +12,10 @@ tempdir = "0.*"
 num_cpus = "1.*"
 libc = { git = "https://github.com/rust-lang/libc", branch = "master" }
 parking_lot = { git = "https://github.com/Amanieu/parking_lot", branch = "master" }
-concurrent-hashmap = "0.2.*"
+
+[dependencies.concurrent-hashmap]
+version = "0.2.*"
+default-features = false
 
 [dependencies.nix]
 path = "src/nix"
