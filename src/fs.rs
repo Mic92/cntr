@@ -1,8 +1,11 @@
 use concurrent_hashmap::ConcHashMap;
+
+use files::Fd;
 use fsuid;
 use fuse::{self, FileAttr, FileType, Filesystem, ReplyAttr, ReplyXattr, ReplyData, ReplyEmpty,
            ReplyEntry, ReplyOpen, ReplyWrite, ReplyStatfs, ReplyLock, ReplyCreate, ReplyIoctl,
            Request, BackgroundSession, ReplyLseek, ReplyRead};
+use fusefd;
 use ioctl;
 use libc::{self, dev_t, c_long};
 use nix::{self, unistd, fcntl, dirent};
@@ -28,23 +31,6 @@ const FH_MAGIC: char = 'F';
 const DIRP_MAGIC: char = 'D';
 
 const POSIX_ACL_DEFAULT_XATTR: &str = "system.posix_acl_default";
-
-struct Fd {
-    number: RawFd,
-    is_mutable: bool,
-}
-
-impl Fd {
-    fn raw(&self) -> RawFd {
-        self.number
-    }
-}
-
-impl Drop for Fd {
-    fn drop(&mut self) {
-        unistd::close(self.number).unwrap();
-    }
-}
 
 struct Inode {
     fd: RwLock<Fd>,
@@ -143,6 +129,7 @@ pub struct CntrFs {
     inode_counter: Arc<RwLock<InodeCounter>>,
     fuse_fd: RawFd,
     splice_read: bool,
+    splice_write: bool,
 }
 
 enum ReplyDirectory {
@@ -183,17 +170,20 @@ macro_rules! tryfuse {
     })
 }
 
-pub fn posix_fadvise(fd: RawFd) -> nix::Result<()> {
+fn posix_fadvise(fd: RawFd) -> nix::Result<()> {
     let res = unsafe { libc::posix_fadvise(fd, 0, 0, libc::POSIX_FADV_DONTNEED) };
     nix::Errno::result(res).map(drop)
 }
 
+pub struct CntrMountOptions<'a> {
+    pub prefix: &'a str,
+    pub splice_read: bool,
+    pub splice_write: bool,
+}
+
 impl CntrFs {
-    pub fn new(prefix: &str, splice_read: bool) -> Result<CntrFs> {
-        let fuse_fd = tryfmt!(
-            fcntl::open("/dev/fuse", fcntl::O_RDWR, stat::Mode::empty()),
-            "failed to open /dev/fuse"
-        );
+    pub fn new(options: &CntrMountOptions) -> Result<CntrFs> {
+        let fuse_fd = tryfmt!(fusefd::open(), "failed to initialize fuse");
 
         let limit = resource::Rlimit {
             rlim_cur: 1_048_576,
@@ -206,22 +196,22 @@ impl CntrFs {
 
         let fd = tryfmt!(
             fcntl::open(
-                prefix,
+                options.prefix,
                 fcntl::O_RDONLY | fcntl::O_CLOEXEC,
                 stat::Mode::all(),
             ),
             "failed to open backing filesystem '{}'",
-            prefix
+            options.prefix
         );
-        let name = Path::new(prefix).file_name();
+        let name = Path::new(options.prefix).file_name();
         if name.is_none() {
             return errfmt!(format!(
                 "cannot obtain filename of mountpoint: '{}'",
-                prefix
+                options.prefix
             ));
         }
         Ok(CntrFs {
-            prefix: String::from(prefix),
+            prefix: String::from(options.prefix),
             root_inode: Arc::new(Inode {
                 fd: RwLock::new(Fd {
                     number: fd,
@@ -239,8 +229,9 @@ impl CntrFs {
                 next_number: 3,
                 generation: 0,
             })),
-            fuse_fd: fuse_fd,
-            splice_read: splice_read,
+            fuse_fd: fuse_fd.into_raw_fd(),
+            splice_read: options.splice_read,
+            splice_write: options.splice_write,
         })
     }
 
@@ -275,7 +266,41 @@ impl CntrFs {
         Ok(fd)
     }
 
-    pub fn mount(self, mountpoint: &Path, splice_write: bool) -> Result<Vec<BackgroundSession>> {
+    pub fn spawn_sessions(&self) -> Result<Vec<BackgroundSession>> {
+        let mut sessions = Vec::new();
+
+        // numbers of sessions is optimized for cached read
+        let num_sessions = cmp::max(num_cpus::get() / 2, 1) as usize;
+
+        for _ in 0..num_sessions {
+            debug!("spawn worker");
+            let cntrfs = CntrFs {
+                prefix: self.prefix.clone(),
+                root_inode: Arc::clone(&self.root_inode),
+                fuse_fd: self.fuse_fd,
+                inode_mapping: Arc::clone(&self.inode_mapping),
+                inodes: Arc::clone(&self.inodes),
+                splice_read: self.splice_read,
+                splice_write: self.splice_write,
+                inode_counter: Arc::clone(&self.inode_counter),
+            };
+            let session =
+                tryfmt!(
+                    fuse::Session::new_from_fd(cntrfs, self.fuse_fd, Path::new(""), self.splice_write),
+                    "failed to inherit fuse session"
+                );
+            let background_session = unsafe { BackgroundSession::new(session) };
+
+            sessions.push(tryfmt!(
+                background_session,
+                "failed to spawn filesystem thread"
+            ));
+        }
+
+        Ok(sessions)
+    }
+
+    pub fn mount(&self, mountpoint: &Path) -> Result<()> {
         let mount_flags = format!(
             "fd={},rootmode=40000,user_id=0,group_id=0,allow_other,default_permissions",
             self.fuse_fd
@@ -291,37 +316,7 @@ impl CntrFs {
             ),
             "failed to mount fuse"
         );
-
-        let mut sessions = Vec::new();
-
-        // numbers of sessions is optimized for cached read
-        let num_sessions = cmp::max(num_cpus::get() / 2, 1) as usize;
-
-        for _ in 0..num_sessions {
-            debug!("spawn worker");
-            let cntrfs = CntrFs {
-                prefix: self.prefix.clone(),
-                root_inode: Arc::clone(&self.root_inode),
-                fuse_fd: self.fuse_fd,
-                inode_mapping: Arc::clone(&self.inode_mapping),
-                inodes: Arc::clone(&self.inodes),
-                splice_read: self.splice_read,
-                inode_counter: Arc::clone(&self.inode_counter),
-            };
-            let session =
-                tryfmt!(
-                    fuse::Session::new_from_fd(cntrfs, self.fuse_fd, mountpoint, splice_write),
-                    "failed to inherit fuse session"
-                );
-            let background_session = unsafe { BackgroundSession::new(session) };
-
-            sessions.push(tryfmt!(
-                background_session,
-                "failed to spawn filesystem thread"
-            ));
-        }
-
-        Ok(sessions)
+        Ok(())
     }
 
     fn setattr_inner(
@@ -1232,7 +1227,10 @@ impl Filesystem for CntrFs {
         flags: u32,
         reply: ReplyCreate,
     ) {
-        let fd = tryfuse!(self.create_file(req, parent, name, mode, umask, flags), reply);
+        let fd = tryfuse!(
+            self.create_file(req, parent, name, mode, umask, flags),
+            reply
+        );
 
         let fh = Fh::new(Fd {
             number: fd,

@@ -1,7 +1,7 @@
 use nix::sched;
 use nix::unistd;
 use std::fs::{self, File};
-use std::os::unix::io::IntoRawFd;
+use std::os::unix::prelude::*;
 use std::path::PathBuf;
 use types::{Error, Result};
 
@@ -74,9 +74,9 @@ pub struct Namespace {
 }
 
 impl Namespace {
-    pub fn apply(self) -> Result<()> {
+    pub fn apply(&self) -> Result<()> {
         tryfmt!(
-            sched::setns(self.file.into_raw_fd(), sched::CloneFlags::empty()),
+            sched::setns(self.file.as_raw_fd(), sched::CloneFlags::empty()),
             "setns"
         );
         Ok(())

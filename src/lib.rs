@@ -12,8 +12,10 @@ extern crate parking_lot;
 
 use nix::unistd;
 use pty::PtyFork;
-use tempdir::TempDir;
 use types::{Error, Result};
+use std::fs::File;
+use std::io::Read;
+use std::os::unix::prelude::*;
 
 #[macro_use]
 pub mod types;
@@ -26,6 +28,9 @@ mod cmd;
 mod statvfs;
 mod xattr;
 mod fsuid;
+mod fusefd;
+mod files;
+mod mountns;
 pub mod fs;
 
 pub struct Options {
@@ -33,54 +38,75 @@ pub struct Options {
     pub mountpoint: String,
 }
 
-fn run_parent(pty: &PtyFork) -> Result<()> {
+fn run_parent(mut mount_ready_file: File, fs: fs::CntrFs, pty: &PtyFork) -> Result<()> {
+    let mut buf = [0 as u8; 1];
+    tryfmt!(mount_ready_file.read_exact(&mut buf), "child process failed to mount fuse");
+
+    let sessions = fs.spawn_sessions();
+
     if let PtyFork::Parent { ref pty_master, .. } = *pty {
         pty::forward(pty_master)
     }
 
+    drop(sessions);
+
     Ok(())
 }
 
-fn run_child(fs: fs::CntrFs, opts: &Options) -> Result<()> {
+fn run_child(mount_ready_file: File, fs: fs::CntrFs, opts: &Options) -> Result<()> {
     tryfmt!(
         cgroup::move_to(unistd::getpid(), opts.pid),
         "failed to change cgroup"
     );
+
     let kinds = tryfmt!(
         namespace::supported_namespaces(),
         "failed to list namespaces"
     );
+
+    let mut container_mount_ns: Option<namespace::Namespace> = None;
+
     for kind in kinds {
-        let namespace = tryfmt!(kind.open(opts.pid), "failed to open namespace");
-        tryfmt!(namespace.apply(), "failed to apply namespace");
+        let ns = tryfmt!(kind.open(opts.pid), "failed to open namespace");
+        tryfmt!(ns.apply(), "failed to apply namespace");
+        if ns.kind.name == namespace::MOUNT.name {
+            container_mount_ns = Some(ns);
+        }
     }
 
-    let mountpoint = tryfmt!(
-        TempDir::new("cntrfs"),
-        "failed to create temporary mountpoint"
-    );
-    let _ = tryfmt!(fs.mount(mountpoint.path(), false), "mount()");
+    if container_mount_ns.is_none() {
+        return errfmt!("no mount namespace found for container");
+    }
 
-    println!("mount at {:?}", mountpoint.path());
+    let ns = tryfmt!(mountns::setup(fs, mount_ready_file, container_mount_ns.unwrap()), "");
 
     let result = cmd::run(opts.pid);
-    let _ = nix::mount::umount(mountpoint.path());
 
     let _ = tryfmt!(result, "");
+
+    drop(ns);
+
     Ok(())
 }
 
 pub fn run(opts: &Options) -> Result<()> {
-    tryfmt!(logging::init(), "failed to initialize logging");
-    let cntr_fs = tryfmt!(
-        fs::CntrFs::new(opts.mountpoint.as_str(), false),
+    let cntrfs = tryfmt!(
+        fs::CntrFs::new(&fs::CntrMountOptions {
+            prefix: opts.mountpoint.as_str(),
+            splice_read: false,
+            splice_write: false,
+        }),
         "cannot mount filesystem"
     );
+    let (parent_fd, child_fd) = tryfmt!(nix::unistd::pipe(), "failed to create pipe");
+    let parent_file = unsafe { File::from_raw_fd(parent_fd) };
+    let child_file = unsafe { File::from_raw_fd(child_fd) };
 
     let res = tryfmt!(pty::fork(), "fork failed");
     if let PtyFork::Parent { .. } = res {
-        run_parent(&res)
+        run_parent(parent_file, cntrfs, &res)
     } else {
-        run_child(cntr_fs, opts)
+    tryfmt!(logging::init(), "failed to initialize logging");
+        run_child(child_file, cntrfs, opts)
     }
 }
