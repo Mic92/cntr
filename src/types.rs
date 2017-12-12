@@ -64,8 +64,13 @@ from!(log::SetLoggerError);
 
 impl From<(Error, String)> for Error {
     fn from((error, desc): (Error, String)) -> Error {
+        let desc_with_error = if desc.len() == 0 {
+            format!("{}", error)
+        } else {
+            format!("{}: {}", desc, error)
+        };
         Error {
-            desc: format!("{}: {}", desc, error),
+            desc: desc_with_error,
             cause: match error.cause {
                 Some(cause) => Some(cause),
                 None => None,
