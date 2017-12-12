@@ -121,15 +121,13 @@ fn shovel(pairs: &mut [FilePair]) {
         for pair in pairs.iter_mut() {
             match pair.state {
                 FilePairState::Read => {
-                    if read_set.contains(pair.from.as_raw_fd())
-                      && !pair.read() {
-                          return;
+                    if read_set.contains(pair.from.as_raw_fd()) && !pair.read() {
+                        return;
                     }
                 }
                 FilePairState::Write => {
-                    if write_set.contains(pair.to.as_raw_fd())
-                        && !pair.write() {
-                            return;
+                    if write_set.contains(pair.to.as_raw_fd()) && !pair.write() {
+                        return;
                     }
                 }
             }
