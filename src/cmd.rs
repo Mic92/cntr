@@ -1,14 +1,19 @@
 use nix::unistd;
+use std::collections::HashMap;
 use std::env;
-use std::ffi::{CString, OsStr};
+use std::ffi::OsString;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::os::unix::ffi::OsStrExt;
+use std::os::unix::ffi::OsStringExt;
 use std::path::PathBuf;
 use std::process::{Command, ExitStatus};
 use types::{Error, Result};
 
-fn read_environ(pid: unistd::Pid) -> Result<Vec<CString>> {
+pub struct Cmd {
+    environment: HashMap<OsString, OsString>,
+}
+
+fn read_environment(pid: unistd::Pid) -> Result<HashMap<OsString, OsString>> {
     let mut buf = PathBuf::from("/proc/");
     buf.push(pid.to_string());
     buf.push("environ");
@@ -19,38 +24,46 @@ fn read_environ(pid: unistd::Pid) -> Result<Vec<CString>> {
         path.to_str().unwrap()
     );
     let reader = BufReader::new(f);
-    reader
+    let res: HashMap<OsString, OsString> = reader
         .split(b'\0')
-        .map(|var| {
-            let r = tryfmt!(var, "failed to read");
-            Ok(CString::new(r).unwrap())
+        .filter_map(|var| {
+            let var = match var {
+                Ok(var) => var,
+                Err(_) => return None,
+            };
+
+            let tuple: Vec<&[u8]> = var.splitn(1, |b| *b == b'=').collect();
+            if tuple.len() != 2 {
+                return None;
+            }
+            Some((
+                OsString::from_vec(Vec::from(tuple[0])),
+                OsString::from_vec(Vec::from(tuple[1])),
+            ))
         })
-        .collect()
+        .collect();
+    Ok(res)
 }
 
-fn inherit_path(pid: unistd::Pid) -> Result<()> {
-    let env = tryfmt!(
-        read_environ(pid),
-        "failed to get environment variables of target process {}",
-        pid
-    );
-
-    let default_path = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
-    let path = match env.iter().find(|var| var.as_bytes().starts_with(b"PATH=")) {
-        Some(n) => &n.as_bytes()[5..],
-        None => default_path.as_bytes(),
-    };
-    env::set_var("PATH", OsStr::from_bytes(path));
-    Ok(())
-}
-
-pub fn run(pid: unistd::Pid) -> Result<ExitStatus> {
-    tryfmt!(
-        inherit_path(pid),
-        "could not inherit environment variables of container"
-    );
-    Ok(tryfmt!(
-        Command::new("/bin/sh").args(&["-l"]).status(),
-        "failed to run `/bin/sh -l`"
-    ))
+impl Cmd {
+    pub fn new(pid: unistd::Pid) -> Result<Cmd> {
+        let mut variables = tryfmt!(
+            read_environment(pid),
+            "could not inherit environment variables of container"
+        );
+        let default_path = OsString::from(
+            "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        );
+        variables.insert(
+            OsString::from("PATH"),
+            env::var_os("PATH").unwrap_or(default_path),
+        );
+        Ok(Cmd { environment: variables })
+    }
+    pub fn run(self) -> Result<ExitStatus> {
+        Ok(tryfmt!(
+            Command::new("sh").args(&["-l"]).envs(self.environment).status(),
+            "failed to run `sh -l`"
+        ))
+    }
 }

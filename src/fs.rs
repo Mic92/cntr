@@ -47,17 +47,12 @@ impl Inode {
         if fd.is_mutable {
             return Ok(());
         }
-        let open_flags = match self.kind {
-            FileType::Directory => fcntl::O_RDONLY,
-            _ => fcntl::O_RDWR,
-        };
-
         let mut fd = fd.upgrade();
 
         let path = fd_path(&fd.raw());
         let new_fd = try!(fcntl::open(
             Path::new(&path),
-            open_flags | fcntl::O_CLOEXEC,
+            fcntl::O_RDONLY | fcntl::O_CLOEXEC,
             stat::Mode::empty(),
         ));
         fd.number = new_fd;
@@ -203,13 +198,6 @@ impl CntrFs {
             "failed to open backing filesystem '{}'",
             options.prefix
         );
-        let name = Path::new(options.prefix).file_name();
-        if name.is_none() {
-            return errfmt!(format!(
-                "cannot obtain filename of mountpoint: '{}'",
-                options.prefix
-            ));
-        }
         Ok(CntrFs {
             prefix: String::from(options.prefix),
             root_inode: Arc::new(Inode {
@@ -915,17 +903,22 @@ impl Filesystem for CntrFs {
     fn open(&mut self, _req: &Request, ino: u64, flags: u32, reply: ReplyOpen) {
         apply_root_context();
 
-        let oflags = fcntl::OFlag::from_bits_truncate(flags as i32);
+        let mut oflags = fcntl::OFlag::from_bits_truncate(flags as i32);
         let inode = tryfuse!(self.inode(&ino), reply);
         let fd = inode.fd.read();
         let path = fd_path(&fd.raw());
-        // ignore read/write/append flags because we have writeback cache enabled
+
+        // ignore write only or append flags because we have writeback cache enabled
         // and the kernel will also read from file descriptors opened as read.
+        oflags = (oflags & !fcntl::O_NOFOLLOW & !fcntl::O_APPEND) | fcntl::O_CLOEXEC;
+        if oflags & fcntl::O_WRONLY == fcntl::O_WRONLY {
+            oflags = (oflags & !fcntl::O_WRONLY) | fcntl::O_RDWR;
+        }
+
         let res = tryfuse!(
             fcntl::open(
                 Path::new(&path),
-                (oflags & !fcntl::O_NOFOLLOW & !fcntl::O_APPEND & !fcntl::O_WRONLY) |
-                    fcntl::O_CLOEXEC | fcntl::O_RDWR,
+                oflags,
                 stat::Mode::empty(),
             ),
             reply

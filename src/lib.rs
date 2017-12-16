@@ -16,6 +16,7 @@ use types::{Error, Result};
 use std::fs::File;
 use std::io::Read;
 use std::os::unix::prelude::*;
+use cmd::Cmd;
 
 #[macro_use]
 pub mod types;
@@ -59,6 +60,8 @@ fn run_child(mount_ready_file: File, fs: fs::CntrFs, opts: &Options) -> Result<(
         "failed to change cgroup"
     );
 
+    let cmd = tryfmt!(Cmd::new(opts.pid), "");
+
     let kinds = tryfmt!(
         namespace::supported_namespaces(),
         "failed to list namespaces"
@@ -80,7 +83,7 @@ fn run_child(mount_ready_file: File, fs: fs::CntrFs, opts: &Options) -> Result<(
 
     let ns = tryfmt!(mountns::setup(fs, mount_ready_file, container_mount_ns.unwrap()), "");
 
-    let result = cmd::run(opts.pid);
+    let result = cmd.run();
 
     let _ = tryfmt!(result, "");
 
