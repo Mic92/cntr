@@ -87,6 +87,7 @@ fn run_child(mount_ready_file: File, fs: fs::CntrFs, opts: &Options) -> Result<(
 
     let _ = tryfmt!(result, "");
 
+    // delay destruction of mountns and associated mountpoints after command has exited
     drop(ns);
 
     Ok(())
