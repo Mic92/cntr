@@ -1,5 +1,6 @@
 use libc::{self, c_int};
-use nix::{Result, Errno, NixPath};
+use nix::{Result, NixPath};
+use nix::errno::Errno;
 use std::os::unix::io::RawFd;
 
 pub fn fgetxattr<P: ?Sized + NixPath>(fd: RawFd, name: &P, buf: &mut [u8]) -> Result<usize> {

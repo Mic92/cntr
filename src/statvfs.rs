@@ -1,5 +1,6 @@
 use libc;
-use nix::{Result, Errno};
+use nix::Result;
+use nix::errno::Errno;
 use std::mem;
 use std::os::unix::io::RawFd;
 

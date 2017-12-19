@@ -1,12 +1,13 @@
 use nix::{self, fcntl, errno};
-use nix::sys::stat;
+use nix::fcntl::OFlag;
+use nix::sys::stat::{self, SFlag, Mode};
 use std::fs::File;
 use std::os::unix::prelude::*;
 use tempdir::TempDir;
 use types::{Error, Result};
 
 pub fn open() -> Result<File> {
-    let res = fcntl::open("/dev/fuse", fcntl::O_RDWR, stat::Mode::empty());
+    let res = fcntl::open("/dev/fuse", OFlag::O_RDWR, stat::Mode::empty());
 
     match res {
         Ok(fd) => {
@@ -28,8 +29,8 @@ pub fn open() -> Result<File> {
     tryfmt!(
         stat::mknod(
             &fuse_path,
-            stat::S_IFCHR,
-            stat::S_IRUSR | stat::S_IWUSR,
+            SFlag::S_IFCHR,
+            Mode::S_IRUSR | Mode::S_IWUSR,
             stat::makedev(10, 229),
         ),
         "failed to create temporary fuse character device"
@@ -37,7 +38,7 @@ pub fn open() -> Result<File> {
 
     let file = unsafe {
         File::from_raw_fd(tryfmt!(
-            fcntl::open(&fuse_path, fcntl::O_RDWR, stat::Mode::empty()),
+            fcntl::open(&fuse_path, OFlag::O_RDWR, stat::Mode::empty()),
             "failed to open fuse device"
         ))
     };

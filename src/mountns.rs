@@ -1,6 +1,8 @@
 use fs::CntrFs;
 use namespace;
 use nix::{mount, sched, unistd};
+use nix::mount::MsFlags;
+use nix::sched::CloneFlags;
 use std::fs::{File, remove_dir, create_dir_all};
 use std::io::Write;
 use std::path::PathBuf;
@@ -28,7 +30,7 @@ impl MountNamespace {
         );
 
         tryfmt!(
-            sched::unshare(sched::CLONE_NEWNS),
+            sched::unshare(CloneFlags::CLONE_NEWNS),
             "failed to create mount namespace"
         );
 
@@ -80,7 +82,7 @@ pub fn setup(
             Some("none"),
             "/",
             NONE,
-            mount::MS_REC | mount::MS_PRIVATE,
+            MsFlags::MS_REC | MsFlags::MS_PRIVATE,
             NONE,
         ),
         "unable to bind mount /"
@@ -92,7 +94,7 @@ pub fn setup(
             Some("/"),
             &ns.temp_mountpoint,
             NONE,
-            mount::MS_REC | mount::MS_BIND,
+            MsFlags::MS_REC | MsFlags::MS_BIND,
             NONE,
         ),
         "unable to move container mounts to new mountpoint"
@@ -107,7 +109,7 @@ pub fn setup(
             Some(&ns.temp_mountpoint),
             &ns.mountpoint.join("cntr"),
             NONE,
-            mount::MS_REC | mount::MS_MOVE,
+            MsFlags::MS_REC | MsFlags::MS_MOVE,
             NONE,
         ),
         "unable to move container mounts to new mountpoint"
@@ -122,7 +124,7 @@ pub fn setup(
             Some(&PathBuf::from("/").join(m)),
             mountpoint,
             NONE,
-            mount::MS_REC | mount::MS_BIND,
+            MsFlags::MS_REC | MsFlags::MS_BIND,
             NONE,
         );
         if res.is_err() {

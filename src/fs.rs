@@ -9,7 +9,10 @@ use fusefd;
 use ioctl;
 use libc::{self, dev_t, c_long};
 use nix::{self, unistd, fcntl, dirent};
+use nix::errno::Errno;
+use nix::fcntl::{SpliceFFlags, OFlag, AtFlags};
 use nix::sys::{stat, resource};
+use nix::sys::stat::SFlag;
 use nix::sys::time::{TimeSpec as NixTimeSpec, TimeValLike};
 use nix::sys::uio::{pread, pwrite};
 use num_cpus;
@@ -52,7 +55,7 @@ impl Inode {
         let path = fd_path(&fd.raw());
         let new_fd = try!(fcntl::open(
             Path::new(&path),
-            fcntl::O_RDONLY | fcntl::O_CLOEXEC,
+            OFlag::O_RDONLY | OFlag::O_CLOEXEC,
             stat::Mode::empty(),
         ));
         fd.number = new_fd;
@@ -167,7 +170,7 @@ macro_rules! tryfuse {
 
 fn posix_fadvise(fd: RawFd) -> nix::Result<()> {
     let res = unsafe { libc::posix_fadvise(fd, 0, 0, libc::POSIX_FADV_DONTNEED) };
-    nix::Errno::result(res).map(drop)
+    Errno::result(res).map(drop)
 }
 
 pub struct CntrMountOptions<'a> {
@@ -192,7 +195,7 @@ impl CntrFs {
         let fd = tryfmt!(
             fcntl::open(
                 options.prefix,
-                fcntl::O_RDONLY | fcntl::O_CLOEXEC,
+                OFlag::O_RDONLY | OFlag::O_CLOEXEC,
                 stat::Mode::all(),
             ),
             "failed to open backing filesystem '{}'",
@@ -248,7 +251,7 @@ impl CntrFs {
         let fd = try!(fcntl::openat(
             parent_fd.raw(),
             name,
-            oflag | fcntl::O_NOFOLLOW | fcntl::O_CLOEXEC,
+            oflag | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
             create_mode,
         ));
         Ok(fd)
@@ -328,7 +331,7 @@ impl CntrFs {
             let _uid = uid.map(|u| unistd::Uid::from_raw(u));
             let _gid = gid.map(|g| unistd::Gid::from_raw(g));
 
-            try!(unistd::fchownat(fd, "", _uid, _gid, fcntl::AT_EMPTY_PATH));
+            try!(unistd::fchownat(fd, "", _uid, _gid, AtFlags::AT_EMPTY_PATH));
         }
 
         if let Some(s) = size {
@@ -404,7 +407,7 @@ impl CntrFs {
         } else {
             match self.inodes.find(ino) {
                 Some(inode) => Ok(Arc::clone(inode.get())),
-                None => Err(nix::Error::Sys(nix::errno::ESTALE)),
+                None => Err(nix::Error::Sys(Errno::ESTALE)),
             }
         }
     }
@@ -495,7 +498,7 @@ impl CntrFs {
             fcntl::openat(
                 parent_fd.raw(),
                 name,
-                fcntl::O_PATH | fcntl::O_NOFOLLOW | fcntl::O_CLOEXEC,
+                OFlag::O_PATH | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
                 stat::Mode::empty(),
             )
         };
@@ -566,15 +569,15 @@ fn dtype_kind(dtype: u8) -> FileType {
     }
 }
 
-fn inode_kind(mode: stat::SFlag) -> FileType {
+fn inode_kind(mode: SFlag) -> FileType {
     match mode {
-        stat::S_IFBLK => FileType::BlockDevice,
-        stat::S_IFCHR => FileType::CharDevice,
-        stat::S_IFDIR => FileType::Directory,
-        stat::S_IFIFO => FileType::NamedPipe,
-        stat::S_IFLNK => FileType::Symlink,
-        stat::S_IFREG => FileType::RegularFile,
-        stat::S_IFSOCK => FileType::Socket,
+        SFlag::S_IFBLK => FileType::BlockDevice,
+        SFlag::S_IFCHR => FileType::CharDevice,
+        SFlag::S_IFDIR => FileType::Directory,
+        SFlag::S_IFIFO => FileType::NamedPipe,
+        SFlag::S_IFLNK => FileType::Symlink,
+        SFlag::S_IFREG => FileType::RegularFile,
+        SFlag::S_IFSOCK => FileType::Socket,
         _ => panic!("Got unexpected File type with value: {}", mode.bits()),
     }
 }
@@ -607,7 +610,7 @@ pub fn readlinkat(fd: RawFd) -> nix::Result<OsString> {
             Ok(target) => {
                 return Ok(OsString::from(target));
             }
-            Err(nix::Error::Sys(nix::Errno::ENAMETOOLONG)) => {}
+            Err(nix::Error::Sys(Errno::ENAMETOOLONG)) => {}
             Err(e) => return Err(e),
         };
         // Trigger the internal buffer resizing logic of `Vec` by requiring
@@ -797,7 +800,10 @@ impl Filesystem for CntrFs {
         let inode = tryfuse!(self.inode(&parent), reply);
         let fd = inode.fd.read();
 
-        tryfuse!(unistd::unlinkat(fd.raw(), name, fcntl::AT_REMOVEDIR), reply);
+        tryfuse!(
+            unistd::unlinkat(fd.raw(), name, AtFlags::AT_REMOVEDIR),
+            reply
+        );
         reply.ok();
     }
 
@@ -892,7 +898,7 @@ impl Filesystem for CntrFs {
                 "",
                 newparent_fd.raw(),
                 newname,
-                fcntl::AT_EMPTY_PATH,
+                AtFlags::AT_EMPTY_PATH,
             );
             tryfuse!(res, reply);
         }
@@ -910,9 +916,9 @@ impl Filesystem for CntrFs {
 
         // ignore write only or append flags because we have writeback cache enabled
         // and the kernel will also read from file descriptors opened as read.
-        oflags = (oflags & !fcntl::O_NOFOLLOW & !fcntl::O_APPEND) | fcntl::O_CLOEXEC;
-        if oflags & fcntl::O_WRONLY == fcntl::O_WRONLY {
-            oflags = (oflags & !fcntl::O_WRONLY) | fcntl::O_RDWR;
+        oflags = (oflags & !OFlag::O_NOFOLLOW & !OFlag::O_APPEND) | OFlag::O_CLOEXEC;
+        if oflags & OFlag::O_WRONLY == OFlag::O_WRONLY {
+            oflags = (oflags & !OFlag::O_WRONLY) | OFlag::O_RDWR;
         }
 
         let res = tryfuse!(
@@ -975,7 +981,7 @@ impl Filesystem for CntrFs {
                     Some(&mut offset),
                     size as usize,
                     // SPLICE_F_MOVE is a no-op in the kernel at the moment according to manpage
-                    fcntl::SPLICE_F_MOVE | fcntl::SPLICE_F_NONBLOCK,
+                    SpliceFFlags::SPLICE_F_MOVE | SpliceFFlags::SPLICE_F_NONBLOCK,
                 ),
                 reply
             )

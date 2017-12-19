@@ -4,14 +4,14 @@ extern crate cntr;
 extern crate log;
 extern crate nix;
 
-use nix::unistd;
-use std::fs::read_link;
-use std::process::{Command, Stdio, self};
-use std::io::{Write, Read};
 
 use cntr::namespace;
+use nix::unistd;
+use std::fs::read_link;
+use std::io::{Write, Read};
+use std::process::{self, Command, Stdio};
 
-const USER : &namespace::Kind = &namespace::USER;
+const USER: &namespace::Kind = &namespace::USER;
 fn testname_space() -> (process::ChildStdin, process::ChildStdout) {
     let child = Command::new("unshare")
         .args(&["--user", "--mount", "--", "sh", "-c", "cat"])
@@ -29,8 +29,13 @@ fn testname_space() -> (process::ChildStdin, process::ChildStdout) {
     stdout.read_exact(&mut buf).unwrap();
     assert_eq!(buf, [b't']);
 
-    println!("{} -> {}", read_link("/proc/self/ns/user").unwrap().display(),
-             read_link(format!("/proc/{}/ns/user", pid)).unwrap().display());
+    println!(
+        "{} -> {}",
+        read_link("/proc/self/ns/user").unwrap().display(),
+        read_link(format!("/proc/{}/ns/user", pid))
+            .unwrap()
+            .display()
+    );
     USER.open(pid).unwrap().apply().unwrap();
     (stdin, stdout)
 }

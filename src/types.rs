@@ -1,5 +1,6 @@
 use log;
 use nix;
+use nix::errno::Errno;
 use std::{error, fmt, io, result};
 use std::boxed::Box;
 
@@ -21,7 +22,7 @@ macro_rules! unsafe_try {
         let ret = unsafe { $x };
 
         if ret < 0 {
-            return errfmt!(nix::Error::Sys(nix::Errno::last()), $($arg)+);
+            return errfmt!(nix::Error::Sys(Errno::last()), $($arg)+);
         } else {
             ret
         }

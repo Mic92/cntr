@@ -1,10 +1,12 @@
 use libc;
 use nix::{self, unistd, fcntl};
 use nix::errno::Errno;
+use nix::fcntl::OFlag;
 use nix::pty::*;
 use nix::sys::select;
 use nix::sys::stat;
-use nix::sys::termios::*;
+use nix::sys::termios::{InputFlags, SetArg, OutputFlags, LocalFlags, ControlFlags, tcsetattr,
+                        tcgetattr, Termios};
 use nix::sys::termios::SpecialCharacterIndices::*;
 use std::fs::File;
 use std::io::{Read, Write};
@@ -171,14 +173,19 @@ fn set_tty_raw(fd: RawFd) -> Result<Termios> {
 
     let mut attr = orig_attr.clone();
     attr.input_flags.remove(
-        IGNBRK | BRKINT | PARMRK | ISTRIP | INLCR | IGNCR | ICRNL | IXON,
+        InputFlags::IGNBRK | InputFlags::BRKINT | InputFlags::PARMRK | InputFlags::ISTRIP |
+            InputFlags::INLCR | InputFlags::IGNCR |
+            InputFlags::ICRNL | InputFlags::IXON,
     );
-    attr.output_flags.remove(OPOST);
+    attr.output_flags.remove(OutputFlags::OPOST);
     attr.local_flags.remove(
-        ECHO | ECHONL | ICANON | ISIG | IEXTEN,
+        LocalFlags::ECHO | LocalFlags::ECHONL | LocalFlags::ICANON |
+            LocalFlags::ISIG | LocalFlags::IEXTEN,
     );
-    attr.control_flags.remove(CSIZE | PARENB);
-    attr.control_flags.insert(CS8);
+    attr.control_flags.remove(
+        ControlFlags::CSIZE | ControlFlags::PARENB,
+    );
+    attr.control_flags.insert(ControlFlags::CS8);
     attr.control_chars[VMIN as usize] = 1; // One character-at-a-time input
     attr.control_chars[VTIME as usize] = 0; // with blocking read
 
@@ -265,7 +272,7 @@ fn setup_parent(pid: unistd::Pid, pty_master: PtyMaster) -> Result<PtyFork> {
 }
 
 fn open_ptm() -> Result<PtyMaster> {
-    let pty_master = tryfmt!(posix_openpt(fcntl::O_RDWR), "posix_openpt()");
+    let pty_master = tryfmt!(posix_openpt(OFlag::O_RDWR), "posix_openpt()");
 
     tryfmt!(grantpt(&pty_master), "grantpt()");
     tryfmt!(unlockpt(&pty_master), "unlockpt()");
@@ -279,7 +286,7 @@ fn attach_pts(pty_master: &PtyMaster) -> Result<()> {
     unsafe_try!(libc::setsid(), "setsid()");
 
     let pty_slave = tryfmt!(
-        fcntl::open(pts_name.as_str(), fcntl::O_RDWR, stat::Mode::empty()),
+        fcntl::open(pts_name.as_str(), OFlag::O_RDWR, stat::Mode::empty()),
         "cannot open slave pty"
     );
 

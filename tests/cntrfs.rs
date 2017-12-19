@@ -9,7 +9,7 @@ extern crate cpuprofiler;
 
 extern crate parking_lot;
 
-use cntr::fs::{CntrFs,CntrMountOptions};
+use cntr::fs::{CntrFs, CntrMountOptions};
 
 #[cfg(feature = "profiling")]
 use cpuprofiler::PROFILER;
@@ -55,7 +55,7 @@ fn main() {
     }
     #[cfg(feature = "profiling")] PROFILER.lock().unwrap().start("./cntrfs.profile").unwrap();
 
-    let fs = CntrFs::new(&CntrMountOptions{
+    let fs = CntrFs::new(&CntrMountOptions {
         prefix: &args[1],
         splice_read: cfg!(feature = "splice_read"),
         splice_write: cfg!(feature = "splice_write"),
@@ -63,8 +63,7 @@ fn main() {
 
     match fs {
         Ok(cntr) => {
-            cntr.mount(Path::new(&args[2]))
-                .unwrap();
+            cntr.mount(Path::new(&args[2])).unwrap();
         }
         Err(err) => {
             let _ = writeln!(&mut std::io::stderr(), "{}", err);
