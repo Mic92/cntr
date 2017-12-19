@@ -10,7 +10,7 @@ dependencies = [
  "log 0.3.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "nix 0.10.0-pre",
  "num_cpus 1.7.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "parking_lot 0.5.3 (git+https://github.com/Amanieu/parking_lot)",
+ "parking_lot 0.5.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "tempdir 0.3.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "time 0.1.38 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
@@ -182,16 +182,16 @@ dependencies = [
 [[package]]
 name = "parking_lot"
 version = "0.5.3"
-source = "git+https://github.com/Amanieu/parking_lot#4d6581e04967cf181548f738338e89985446d65c"
+source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "owning_ref 0.3.3 (registry+https://github.com/rust-lang/crates.io-index)",
- "parking_lot_core 0.2.7 (git+https://github.com/Amanieu/parking_lot)",
+ "parking_lot_core 0.2.8 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
 name = "parking_lot_core"
-version = "0.2.7"
-source = "git+https://github.com/Amanieu/parking_lot#4d6581e04967cf181548f738338e89985446d65c"
+version = "0.2.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "kernel32-sys 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "libc 0.2.34 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -299,8 +299,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum log 0.3.8 (registry+https://github.com/rust-lang/crates.io-index)" = "880f77541efa6e5cc74e76910c9884d9859683118839d6a1dc3b11e63512565b"
 "checksum num_cpus 1.7.0 (registry+https://github.com/rust-lang/crates.io-index)" = "514f0d73e64be53ff320680ca671b64fe3fb91da01e1ae2ddc99eb51d453b20d"
 "checksum owning_ref 0.3.3 (registry+https://github.com/rust-lang/crates.io-index)" = "cdf84f41639e037b484f93433aa3897863b561ed65c6e59c7073d7c561710f37"
-"checksum parking_lot 0.5.3 (git+https://github.com/Amanieu/parking_lot)" = "<none>"
-"checksum parking_lot_core 0.2.7 (git+https://github.com/Amanieu/parking_lot)" = "<none>"
+"checksum parking_lot 0.5.3 (registry+https://github.com/rust-lang/crates.io-index)" = "3e7f7c9857874e54afeb950eebeae662b1e51a2493666d2ea4c0a5d91dcf0412"
+"checksum parking_lot_core 0.2.8 (registry+https://github.com/rust-lang/crates.io-index)" = "12d20aac4f67aa75f681aded784bac91f910ba3f2af1812573cdcf687414e122"
 "checksum pkg-config 0.3.9 (registry+https://github.com/rust-lang/crates.io-index)" = "3a8b4c6b8165cd1a1cd4b9b120978131389f64bdaf456435caa41e630edba903"
 "checksum rand 0.3.18 (registry+https://github.com/rust-lang/crates.io-index)" = "6475140dfd8655aeb72e1fd4b7a1cc1c202be65d71669476e392fe62532b9edd"
 "checksum redox_syscall 0.1.32 (registry+https://github.com/rust-lang/crates.io-index)" = "ab105df655884ede59d45b7070c8a65002d921461ee813a024558ca16030eea0"
