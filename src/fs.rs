@@ -916,11 +916,7 @@ impl Filesystem for CntrFs {
         }
 
         let res = tryfuse!(
-            fcntl::open(
-                Path::new(&path),
-                oflags,
-                stat::Mode::empty(),
-            ),
+            fcntl::open(Path::new(&path), oflags, stat::Mode::empty()),
             reply
         );
 

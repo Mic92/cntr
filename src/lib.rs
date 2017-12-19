@@ -10,13 +10,13 @@ extern crate num_cpus;
 extern crate concurrent_hashmap;
 extern crate parking_lot;
 
+use cmd::Cmd;
 use nix::unistd;
 use pty::PtyFork;
-use types::{Error, Result};
 use std::fs::File;
 use std::io::Read;
 use std::os::unix::prelude::*;
-use cmd::Cmd;
+use types::{Error, Result};
 
 #[macro_use]
 pub mod types;
@@ -32,6 +32,7 @@ mod fsuid;
 mod fusefd;
 mod files;
 mod mountns;
+mod seccomp;
 pub mod fs;
 
 pub struct Options {
@@ -41,7 +42,10 @@ pub struct Options {
 
 fn run_parent(mut mount_ready_file: File, fs: fs::CntrFs, pty: &PtyFork) -> Result<()> {
     let mut buf = [0 as u8; 1];
-    tryfmt!(mount_ready_file.read_exact(&mut buf), "child process failed to mount fuse");
+    tryfmt!(
+        mount_ready_file.read_exact(&mut buf),
+        "child process failed to mount fuse"
+    );
 
     let sessions = fs.spawn_sessions();
 
@@ -81,7 +85,10 @@ fn run_child(mount_ready_file: File, fs: fs::CntrFs, opts: &Options) -> Result<(
         return errfmt!("no mount namespace found for container");
     }
 
-    let ns = tryfmt!(mountns::setup(fs, mount_ready_file, container_mount_ns.unwrap()), "");
+    let ns = tryfmt!(
+        mountns::setup(fs, mount_ready_file, container_mount_ns.unwrap()),
+        ""
+    );
 
     let result = cmd.run();
 
@@ -110,7 +117,7 @@ pub fn run(opts: &Options) -> Result<()> {
     if let PtyFork::Parent { .. } = res {
         run_parent(parent_file, cntrfs, &res)
     } else {
-    tryfmt!(logging::init(), "failed to initialize logging");
+        tryfmt!(logging::init(), "failed to initialize logging");
         run_child(child_file, cntrfs, opts)
     }
 }

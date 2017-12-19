@@ -62,7 +62,10 @@ impl Cmd {
     }
     pub fn run(self) -> Result<ExitStatus> {
         Ok(tryfmt!(
-            Command::new("sh").args(&["-l"]).envs(self.environment).status(),
+            Command::new("sh")
+                .args(&["-l"])
+                .envs(self.environment)
+                .status(),
             "failed to run `sh -l`"
         ))
     }

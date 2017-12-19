@@ -1,4 +1,3 @@
-
 use nix::{self, fcntl, errno};
 use nix::sys::stat;
 use std::fs::File;
@@ -13,7 +12,7 @@ pub fn open() -> Result<File> {
         Ok(fd) => {
             let file = unsafe { File::from_raw_fd(fd) };
             return Ok(file);
-        },
+        }
         Err(nix::Error::Sys(errno::Errno::ENOENT)) => {}
         Err(err) => return errfmt!(err, "failed to open /dev/fuse"),
     };
@@ -36,9 +35,11 @@ pub fn open() -> Result<File> {
         "failed to create temporary fuse character device"
     );
 
-    let file = unsafe { File::from_raw_fd(tryfmt!(
-        fcntl::open(&fuse_path, fcntl::O_RDWR, stat::Mode::empty()),
-        "failed to open fuse device"
-    ))};
+    let file = unsafe {
+        File::from_raw_fd(tryfmt!(
+            fcntl::open(&fuse_path, fcntl::O_RDWR, stat::Mode::empty()),
+            "failed to open fuse device"
+        ))
+    };
     Ok(file)
 }
