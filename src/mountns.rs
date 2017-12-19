@@ -17,6 +17,8 @@ pub struct MountNamespace {
 
 const READY_MSG: &[u8] = b"R";
 
+const CNTR_MOUNT_POINT : &str = "var/lib/cntr";
+
 impl MountNamespace {
     fn new(old_namespace: namespace::Namespace) -> Result<MountNamespace> {
         let mountpoint = tryfmt!(
@@ -104,10 +106,12 @@ pub fn setup(
 
     tryfmt!(mount_ready_file.write_all(READY_MSG), "parent failed");
 
+    tryfmt!(create_dir_all(ns.mountpoint.join(CNTR_MOUNT_POINT)), "cannot create /{}", CNTR_MOUNT_POINT);
+
     tryfmt!(
         mount::mount(
             Some(&ns.temp_mountpoint),
-            &ns.mountpoint.join("cntr"),
+            &ns.mountpoint.join(CNTR_MOUNT_POINT),
             NONE,
             MsFlags::MS_REC | MsFlags::MS_MOVE,
             NONE,
