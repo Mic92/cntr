@@ -12,6 +12,8 @@ tempdir = "0.*"
 num_cpus = "1.*"
 libc = { git = "https://github.com/rust-lang/libc", branch = "master" }
 parking_lot = "*"
+serde_json = "1.0"
+void = "*"
 
 [dependencies.concurrent-hashmap]
 version = "0.2.*"

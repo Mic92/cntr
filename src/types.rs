@@ -1,6 +1,7 @@
+use core::num::ParseIntError;
 use log;
 use nix;
-use nix::errno::Errno;
+use serde_json;
 use std::{error, fmt, io, result};
 use std::boxed::Box;
 
@@ -15,18 +16,6 @@ macro_rules! errfmt {
     ($msg:expr) => (Err(Error::from($msg.to_string())));
     ($err:expr, $msg:expr) => (Err(Error::from(($err, $msg.to_string()))));
     ($err:expr, $fmt:expr, $($arg:tt)+) => (Err(Error::from(($err, format!($fmt, $($arg)+)))));
-}
-
-macro_rules! unsafe_try {
-    ( $x:expr, $($arg:tt)+ ) => {{
-        let ret = unsafe { $x };
-
-        if ret < 0 {
-            return errfmt!(nix::Error::Sys(Errno::last()), $($arg)+);
-        } else {
-            ret
-        }
-    }}
 }
 
 macro_rules! tryfmt {
@@ -62,10 +51,12 @@ macro_rules! from {
 from!(io::Error);
 from!(nix::Error);
 from!(log::SetLoggerError);
+from!(serde_json::Error);
+from!(ParseIntError);
 
 impl From<(Error, String)> for Error {
     fn from((error, desc): (Error, String)) -> Error {
-        let desc_with_error = if desc.len() == 0 {
+        let desc_with_error = if desc.is_empty() {
             format!("{}", error)
         } else {
             format!("{}: {}", desc, error)

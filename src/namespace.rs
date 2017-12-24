@@ -46,6 +46,14 @@ impl Kind {
             file: file,
         })
     }
+
+    pub fn namespace_from_file(&'static self, file: File) -> Namespace {
+        Namespace {
+            kind: self,
+            file: file,
+        }
+    }
+
     pub fn is_same(&self, pid: unistd::Pid) -> bool {
         let path = self.path(pid);
         let path2 = self.path(unistd::getpid());
@@ -68,6 +76,7 @@ impl Kind {
     }
 }
 
+
 pub struct Namespace {
     pub kind: &'static Kind,
     file: File,
@@ -80,5 +89,8 @@ impl Namespace {
             "setns"
         );
         Ok(())
+    }
+    pub fn file(&self) -> &File {
+        &self.file
     }
 }
