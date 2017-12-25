@@ -1,7 +1,6 @@
 use core::num::ParseIntError;
 use log;
 use nix;
-use serde_json;
 use std::{error, fmt, io, result};
 use std::boxed::Box;
 
@@ -51,7 +50,6 @@ macro_rules! from {
 from!(io::Error);
 from!(nix::Error);
 from!(log::SetLoggerError);
-from!(serde_json::Error);
 from!(ParseIntError);
 
 impl From<(Error, String)> for Error {

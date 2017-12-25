@@ -3,35 +3,41 @@ extern crate cntr;
 extern crate nix;
 
 use argparse::{ArgumentParser, Store};
-use nix::unistd;
-use std::io::Write;
 use std::process;
+use cntr::container::ContainerType;
 
 fn parse_args() -> cntr::Options {
     let mut options = cntr::Options {
-        pid: unistd::Pid::from_raw(0),
-        mountpoint: "/".to_string(),
+        container_name: String::from(""),
+        container_type: None,
     };
-    let mut pid = 0;
+    let mut container_type = String::from("");
+    let mut container_name = String::from("");
     {
         let mut ap = ArgumentParser::new();
         ap.set_description("Enter container");
-        ap.refer(&mut pid).add_argument("pid", Store, "target pid");
-        ap.refer(&mut options.mountpoint).add_argument(
-            "mountpoint",
-            Store,
-            "fuse mountpoint",
-        );
+        ap.refer(&mut container_type).add_option(&["--type"], Store, "Container type (docker|generic)");
+        ap.refer(&mut container_name).add_argument("id", Store, "container id, container name or process id");
         ap.parse_args_or_exit();
     }
-    options.pid = unistd::Pid::from_raw(pid);
+    options.container_name = container_name;
+    options.container_type = match container_type.as_str() {
+        "docker" => Some(ContainerType::Docker),
+        "pid" => Some(ContainerType::ProcessId),
+        "" => None,
+        _ => {
+            eprintln!("invalid argument '{}' passed to `--type`; valid values are: docker, pid", container_type);
+            process::exit(1);
+        }
+    };
+
     options
 }
 
 fn main() {
     let opts = parse_args();
     if let Err(err) = cntr::run(&opts) {
-        let _ = writeln!(&mut std::io::stderr(), "{}", err);
+        eprintln!("{}", err);
         process::exit(1);
     };
 }

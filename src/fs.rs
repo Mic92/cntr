@@ -275,11 +275,9 @@ impl CntrFs {
                 splice_write: self.splice_write,
                 inode_counter: Arc::clone(&self.inode_counter),
             };
-            let session =
-                tryfmt!(
-                    fuse::Session::new_from_fd(cntrfs, self.fuse_fd, Path::new(""), self.splice_write),
-                    "failed to inherit fuse session"
-                );
+            let res =
+                fuse::Session::new_from_fd(cntrfs, self.fuse_fd, Path::new(""), self.splice_write);
+            let session = tryfmt!(res, "failed to inherit fuse session");
             let background_session = unsafe { BackgroundSession::new(session) };
 
             sessions.push(tryfmt!(

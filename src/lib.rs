@@ -9,15 +9,15 @@ extern crate tempdir;
 extern crate num_cpus;
 extern crate concurrent_hashmap;
 extern crate parking_lot;
-extern crate serde_json;
 extern crate void;
 
 use cmd::Cmd;
+use container::ContainerType;
 use nix::pty::PtyMaster;
 use nix::sys::signal::{self, Signal};
 use nix::sys::socket::CmsgSpace;
 use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
-use nix::unistd::{self, ForkResult};
+use nix::unistd::{self, ForkResult, Pid};
 use std::fs::File;
 use std::os::unix::io::IntoRawFd;
 use std::os::unix::prelude::*;
@@ -40,16 +40,16 @@ mod fusefd;
 mod files;
 mod mountns;
 mod capabilities;
-mod docker;
 mod ipc;
+pub mod container;
 pub mod fs;
 
 pub struct Options {
-    pub pid: unistd::Pid,
-    pub mountpoint: String,
+    pub container_name: String,
+    pub container_type: Option<ContainerType>,
 }
 
-fn run_parent(mount_ready_sock: &ipc::Socket, fs: &fs::CntrFs, pid: unistd::Pid) -> Result<Void> {
+fn run_parent(pid: Pid, mount_ready_sock: &ipc::Socket, fs: &fs::CntrFs) -> Result<Void> {
     let ns = tryfmt!(
         mountns::MountNamespace::receive(mount_ready_sock),
         "failed to receive mount namespace from child"
@@ -100,18 +100,18 @@ fn run_parent(mount_ready_sock: &ipc::Socket, fs: &fs::CntrFs, pid: unistd::Pid)
     }
 }
 
-fn run_child(mount_ready_sock: &ipc::Socket, fs: fs::CntrFs, opts: &Options) -> Result<Void> {
+fn run_child(container_pid: Pid, mount_ready_sock: &ipc::Socket, fs: fs::CntrFs) -> Result<Void> {
     let target_caps = tryfmt!(
-        capabilities::get(Some(opts.pid)),
+        capabilities::get(Some(container_pid)),
         "failed to get capabilities of target process"
     );
 
     tryfmt!(
-        cgroup::move_to(unistd::getpid(), opts.pid),
+        cgroup::move_to(unistd::getpid(), container_pid),
         "failed to change cgroup"
     );
 
-    let cmd = tryfmt!(Cmd::new(opts.pid), "");
+    let cmd = tryfmt!(Cmd::new(container_pid), "");
 
     let kinds = tryfmt!(
         namespace::supported_namespaces(),
@@ -121,7 +121,7 @@ fn run_child(mount_ready_sock: &ipc::Socket, fs: fs::CntrFs, opts: &Options) -> 
     let mut container_mount_ns: Option<namespace::Namespace> = None;
 
     for kind in kinds {
-        let ns = tryfmt!(kind.open(opts.pid), "failed to open namespace");
+        let ns = tryfmt!(kind.open(container_pid), "failed to open namespace");
         tryfmt!(ns.apply(), "failed to apply namespace");
         if ns.kind.name == namespace::MOUNT.name {
             container_mount_ns = Some(ns);
@@ -168,14 +168,21 @@ fn run_child(mount_ready_sock: &ipc::Socket, fs: fs::CntrFs, opts: &Options) -> 
         process::exit(code);
     }
     panic!(
-        "BUG! command exited successfully, but was neither terminated by a signal nor has an exit code"
+        "BUG! command exited successfully, \
+        but was neither terminated by a signal nor has an exit code"
     );
 }
 
 pub fn run(opts: &Options) -> Result<Void> {
+    let container_pid =
+        tryfmt!(
+            container::lookup_container_pid(&opts.container_name, opts.container_type.clone()),
+            ""
+        );
+
     let cntrfs = tryfmt!(
         fs::CntrFs::new(&fs::CntrMountOptions {
-            prefix: opts.mountpoint.as_str(),
+            prefix: "/",
             splice_read: false,
             splice_write: false,
         }),
@@ -184,7 +191,7 @@ pub fn run(opts: &Options) -> Result<Void> {
     let (parent_sock, child_sock) = tryfmt!(ipc::socket_pair(), "failed to set up ipc");
 
     match tryfmt!(unistd::fork(), "failed to fork") {
-        ForkResult::Parent { child } => run_parent(&parent_sock, &cntrfs, child),
-        ForkResult::Child => run_child(&child_sock, cntrfs, opts),
+        ForkResult::Parent { child } => run_parent(child, &parent_sock, &cntrfs),
+        ForkResult::Child => run_child(container_pid, &child_sock, cntrfs),
     }
 }

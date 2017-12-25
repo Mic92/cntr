@@ -33,7 +33,7 @@ impl Socket {
         cmsgspace: &mut CmsgSpace<T>,
     ) -> Result<(Vec<u8>, Vec<File>)> {
         let mut msg_buf = vec![0; (message_length) as usize];
-        let mut received = 0;
+        let received;
         let mut files: Vec<File> = Vec::with_capacity(1);
         {
             let iov = [IoVec::from_mut_slice(&mut msg_buf)];
