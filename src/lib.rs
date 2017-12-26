@@ -12,7 +12,7 @@ extern crate parking_lot;
 extern crate void;
 
 use cmd::Cmd;
-use container::ContainerType;
+pub use container::{AVAILABLE_CONTAINER_TYPES, lookup_container_type};
 use nix::pty::PtyMaster;
 use nix::sys::signal::{self, Signal};
 use nix::sys::socket::CmsgSpace;
@@ -41,12 +41,12 @@ mod files;
 mod mountns;
 mod capabilities;
 mod ipc;
-pub mod container;
+mod container;
 pub mod fs;
 
 pub struct Options {
     pub container_name: String,
-    pub container_type: Option<ContainerType>,
+    pub container_types: Vec<Box<container::Container>>,
 }
 
 fn run_parent(pid: Pid, mount_ready_sock: &ipc::Socket, fs: &fs::CntrFs) -> Result<Void> {
@@ -176,7 +176,7 @@ fn run_child(container_pid: Pid, mount_ready_sock: &ipc::Socket, fs: fs::CntrFs)
 pub fn run(opts: &Options) -> Result<Void> {
     let container_pid =
         tryfmt!(
-            container::lookup_container_pid(&opts.container_name, opts.container_type.clone()),
+            container::lookup_container_pid(opts.container_name.as_str(), &opts.container_types),
             ""
         );
 

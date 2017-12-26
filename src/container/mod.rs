@@ -1,38 +1,62 @@
+use std::fmt::Debug;
 use types::{Result, Error};
 use unistd::Pid;
 
 mod process_id;
 mod docker;
+mod nspawn;
+mod rkt;
+mod lxc;
 
-#[derive(Debug, Clone)]
-pub enum ContainerType {
-    Docker,
-    ProcessId,
+pub trait Container: Debug {
+    fn lookup(&self, id: &str) -> Result<Pid>;
+    fn check_required_tools(&self) -> Result<()>;
 }
 
-impl ContainerType {
-    fn lookup(&self, id: &str) -> Result<Pid> {
-        match *self {
-            ContainerType::Docker => docker::lookup_process_id(id),
-            ContainerType::ProcessId => process_id::lookup_process_id(id),
-        }
+pub const AVAILABLE_CONTAINER_TYPES: &[&str] = &["process_id", "rkt", "docker", "nspawn", "lxc"];
+
+fn default_order() -> Vec<Box<Container>> {
+    let containers: Vec<Box<Container>> = vec![
+        Box::new(process_id::ProcessId {}),
+        Box::new(rkt::Rkt {}),
+        Box::new(docker::Docker {}),
+        Box::new(nspawn::Nspawn {}),
+        Box::new(lxc::Lxc {}),
+    ];
+    containers
+        .into_iter()
+        .filter(|c| c.check_required_tools().is_ok())
+        .collect()
+}
+
+pub fn lookup_container_type(name: &str) -> Option<Box<Container>> {
+    Some(match name {
+        "process_id" => Box::new(process_id::ProcessId {}),
+        "rkt" => Box::new(rkt::Rkt {}),
+        "docker" => Box::new(docker::Docker {}),
+        "nspawn" => Box::new(nspawn::Nspawn {}),
+        "lxc" => Box::new(lxc::Lxc {}),
+        _ => return None,
+    })
+}
+
+pub fn lookup_container_pid(container_id: &str, container_types: &[Box<Container>]) -> Result<Pid> {
+    for c in container_types {
+        try!(c.check_required_tools());
     }
-}
-
-const DEFAULT_ORDER: &[ContainerType] = &[ContainerType::ProcessId, ContainerType::Docker];
-
-pub fn lookup_container_pid(
-    container_id: &str,
-    container_type: Option<ContainerType>,
-) -> Result<Pid> {
-    let types = container_type.map_or(DEFAULT_ORDER.to_vec(), |t| vec![t]);
+    let fallback: Vec<Box<Container>> = default_order();
+    let types = if container_types.is_empty() {
+        fallback.as_slice()
+    } else {
+        container_types
+    };
 
     let mut message = String::from("no suitable container found, got the following errors:");
     for t in types {
         match t.lookup(container_id) {
             Ok(pid) => return Ok(pid),
             Err(e) => {
-                message += &format!("\n{:?}: {}", t, e);
+                message += &format!("\n  - {:?}: {}", t, e);
             }
         };
     }

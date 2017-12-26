@@ -4,12 +4,11 @@ extern crate nix;
 
 use argparse::{ArgumentParser, Store};
 use std::process;
-use cntr::container::ContainerType;
 
 fn parse_args() -> cntr::Options {
     let mut options = cntr::Options {
         container_name: String::from(""),
-        container_type: None,
+        container_types: vec![],
     };
     let mut container_type = String::from("");
     let mut container_name = String::from("");
@@ -21,15 +20,16 @@ fn parse_args() -> cntr::Options {
         ap.parse_args_or_exit();
     }
     options.container_name = container_name;
-    options.container_type = match container_type.as_str() {
-        "docker" => Some(ContainerType::Docker),
-        "pid" => Some(ContainerType::ProcessId),
-        "" => None,
-        _ => {
-            eprintln!("invalid argument '{}' passed to `--type`; valid values are: docker, pid", container_type);
-            process::exit(1);
-        }
-    };
+
+    if !container_type.is_empty() {
+        options.container_types = match cntr::lookup_container_type(container_type.as_str()) {
+            Some(container) => vec![container],
+            None => {
+                eprintln!("invalid argument '{}' passed to `--type`; valid values are: {}", container_type, cntr::AVAILABLE_CONTAINER_TYPES.join(", "));
+                process::exit(1);
+            }
+        };
+    }
 
     options
 }
