@@ -18,17 +18,21 @@ use nix::sys::signal::{self, Signal};
 use nix::sys::socket::CmsgSpace;
 use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
 use nix::unistd::{self, ForkResult, Pid};
+use std::env;
 use std::fs::File;
 use std::os::unix::io::IntoRawFd;
 use std::os::unix::prelude::*;
 use std::process;
 use types::{Error, Result};
+pub use user_namespace::DEFAULT_ID_MAP;
+use user_namespace::IdMap;
 use void::Void;
 
 #[macro_use]
 pub mod types;
 pub mod namespace;
 mod cgroup;
+mod user_namespace;
 mod ioctl;
 mod pty;
 mod logging;
@@ -100,6 +104,7 @@ fn run_parent(pid: Pid, mount_ready_sock: &ipc::Socket, fs: &fs::CntrFs) -> Resu
     }
 }
 
+
 fn run_child(container_pid: Pid, mount_ready_sock: &ipc::Socket, fs: fs::CntrFs) -> Result<Void> {
     let target_caps = tryfmt!(
         capabilities::get(Some(container_pid)),
@@ -113,29 +118,52 @@ fn run_child(container_pid: Pid, mount_ready_sock: &ipc::Socket, fs: fs::CntrFs)
 
     let cmd = tryfmt!(Cmd::new(container_pid), "");
 
-    let kinds = tryfmt!(
+    let supported_namespaces = tryfmt!(
         namespace::supported_namespaces(),
         "failed to list namespaces"
     );
 
-    let mut container_mount_ns: Option<namespace::Namespace> = None;
+    if !supported_namespaces.contains(namespace::MOUNT.name) {
+        return errfmt!("the system has no support for mount namespaces");
+    };
 
-    for kind in kinds {
-        let ns = tryfmt!(kind.open(container_pid), "failed to open namespace");
-        tryfmt!(ns.apply(), "failed to apply namespace");
-        if ns.kind.name == namespace::MOUNT.name {
-            container_mount_ns = Some(ns);
-        }
-    }
-
-    if container_mount_ns.is_none() {
-        return errfmt!("no mount namespace found for container");
-    }
-
-    tryfmt!(
-        mountns::setup(&fs, mount_ready_sock, container_mount_ns.unwrap()),
-        ""
+    let mount_namespace = tryfmt!(
+        namespace::MOUNT.open(container_pid),
+        "could not access mount namespace"
     );
+    let mut other_namespaces = Vec::new();
+
+    let other_kinds = &[
+        namespace::UTS,
+        namespace::CGROUP,
+        namespace::PID,
+        namespace::NET,
+        namespace::IPC,
+        namespace::USER,
+    ];
+
+    for kind in other_kinds {
+        if !supported_namespaces.contains(kind.name) {
+            continue;
+        }
+        other_namespaces.push(tryfmt!(
+            kind.open(container_pid),
+            "failed to open {} namespace",
+            kind.name
+        ));
+    }
+
+    tryfmt!(mount_namespace.apply(), "failed to apply mount namespace");
+    tryfmt!(mountns::setup(&fs, mount_ready_sock, mount_namespace), "");
+    for ns in other_namespaces {
+        tryfmt!(ns.apply(), "failed to apply namespace");
+    }
+
+    if supported_namespaces.contains(namespace::USER.name) {
+        tryfmt!(unistd::setgroups(&[]), "could not set groups");
+        tryfmt!(unistd::setuid(unistd::Uid::from_raw(0)), "could not set user id");
+        tryfmt!(unistd::setgid(unistd::Gid::from_raw(0)), "could not set group id");
+    }
 
     tryfmt!(
         capabilities::set(Some(unistd::getpid()), &target_caps),
@@ -150,6 +178,10 @@ fn run_child(container_pid: Pid, mount_ready_sock: &ipc::Socket, fs: fs::CntrFs)
     let res = mount_ready_sock.send(&[], &[&f]);
     f.into_raw_fd();
     tryfmt!(res, "failed to send pty file descriptor to parent process");
+
+    if let Err(e) = env::set_current_dir("/var/lib/cntr") {
+        warn!("failed to change directory to /var/lib/cntr: {}", e);
+    }
 
     let status = tryfmt!(cmd.run(), "");
     if let Some(signum) = status.signal() {
@@ -180,11 +212,19 @@ pub fn run(opts: &Options) -> Result<Void> {
             ""
         );
 
+    let (uid_map, gid_map) = tryfmt!(
+        IdMap::new_from_pid(container_pid),
+        "failed to read usernamespace properties of {}",
+        container_pid
+    );
+
     let cntrfs = tryfmt!(
         fs::CntrFs::new(&fs::CntrMountOptions {
             prefix: "/",
             splice_read: false,
             splice_write: false,
+            uid_map: uid_map,
+            gid_map: gid_map,
         }),
         "cannot mount filesystem"
     );

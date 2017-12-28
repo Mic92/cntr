@@ -59,6 +59,8 @@ fn main() {
         prefix: &args[1],
         splice_read: cfg!(feature = "splice_read"),
         splice_write: cfg!(feature = "splice_write"),
+        uid_map: cntr::DEFAULT_ID_MAP,
+        gid_map: cntr::DEFAULT_ID_MAP,
     });
 
     match fs {

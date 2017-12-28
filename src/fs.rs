@@ -1,10 +1,9 @@
 use concurrent_hashmap::ConcHashMap;
-
 use files::Fd;
 use fsuid;
 use fuse::{self, FileAttr, FileType, Filesystem, ReplyAttr, ReplyXattr, ReplyData, ReplyEmpty,
-           ReplyEntry, ReplyOpen, ReplyWrite, ReplyStatfs, ReplyLock, ReplyCreate, ReplyIoctl,
-           Request, BackgroundSession, ReplyLseek, ReplyRead};
+           ReplyEntry, ReplyOpen, ReplyWrite, ReplyStatfs, ReplyCreate, ReplyIoctl, Request,
+           BackgroundSession, ReplyLseek, ReplyRead};
 use fusefd;
 use ioctl;
 use libc::{self, dev_t, c_long};
@@ -28,6 +27,7 @@ use std::sync::Arc;
 use std::vec::Vec;
 use time::Timespec;
 use types::{Error, Result};
+use user_namespace::IdMap;
 use xattr::{fsetxattr, fgetxattr, flistxattr, fremovexattr};
 
 const FH_MAGIC: char = 'F';
@@ -126,6 +126,8 @@ pub struct CntrFs {
     inodes: Arc<ConcHashMap<u64, Arc<Inode>>>,
     inode_counter: Arc<RwLock<InodeCounter>>,
     fuse_fd: RawFd,
+    uid_map: IdMap,
+    gid_map: IdMap,
     splice_read: bool,
     splice_write: bool,
 }
@@ -177,6 +179,8 @@ pub struct CntrMountOptions<'a> {
     pub prefix: &'a str,
     pub splice_read: bool,
     pub splice_write: bool,
+    pub uid_map: IdMap,
+    pub gid_map: IdMap,
 }
 
 impl CntrFs {
@@ -220,10 +224,20 @@ impl CntrFs {
                 next_number: 3,
                 generation: 0,
             })),
+            uid_map: options.uid_map,
+            gid_map: options.gid_map,
             fuse_fd: fuse_fd.into_raw_fd(),
             splice_read: options.splice_read,
             splice_write: options.splice_write,
         })
+    }
+
+    pub fn uid_map(&self) -> IdMap {
+        self.uid_map
+    }
+
+    pub fn gid_map(&self) -> IdMap {
+        self.gid_map
     }
 
     fn create_file(
@@ -239,7 +253,7 @@ impl CntrFs {
         let has_default_acl = try!(parent_inode.check_default_acl());
         let parent_fd = parent_inode.fd.read();
 
-        apply_user_context(req);
+        self.apply_user_context(req);
 
         let oflag = fcntl::OFlag::from_bits_truncate(flags as i32);
 
@@ -274,6 +288,8 @@ impl CntrFs {
                 splice_read: self.splice_read,
                 splice_write: self.splice_write,
                 inode_counter: Arc::clone(&self.inode_counter),
+                uid_map: self.uid_map,
+                gid_map: self.gid_map,
             };
             let res =
                 fuse::Session::new_from_fd(cntrfs, self.fuse_fd, Path::new(""), self.splice_write);
@@ -326,8 +342,8 @@ impl CntrFs {
         }
 
         if uid.is_some() || gid.is_some() {
-            let _uid = uid.map(|u| unistd::Uid::from_raw(u));
-            let _gid = gid.map(|g| unistd::Gid::from_raw(g));
+            let _uid = uid.map(|u| unistd::Uid::from_raw(self.uid_map.map_id_up(u)));
+            let _gid = gid.map(|g| unistd::Gid::from_raw(self.gid_map.map_id_up(g)));
 
             try!(unistd::fchownat(fd, "", _uid, _gid, AtFlags::AT_EMPTY_PATH));
         }
@@ -397,6 +413,34 @@ impl CntrFs {
         reply.ok()
     }
 
+    pub fn apply_user_context(&self, req: &Request) {
+        fsuid::set_user_group(
+            self.uid_map.map_id_up(req.uid()),
+            self.gid_map.map_id_up(req.gid()),
+        );
+    }
+
+    fn attr_from_stat(&self, attr: stat::FileStat) -> FileAttr {
+        let ctime = Timespec::new(attr.st_ctime, attr.st_ctime_nsec as i32);
+        FileAttr {
+            ino: attr.st_ino, // replaced by ino pointer
+            size: attr.st_size,
+            blocks: attr.st_blocks as u64,
+            atime: Timespec::new(attr.st_atime, attr.st_atime_nsec as i32),
+            mtime: Timespec::new(attr.st_mtime, attr.st_mtime_nsec as i32),
+            ctime: ctime,
+            crtime: ctime,
+            uid: self.uid_map.map_id_down(attr.st_uid),
+            gid: self.gid_map.map_id_down(attr.st_gid),
+            perm: attr.st_mode as u16,
+            kind: inode_kind(stat::SFlag::from_bits_truncate(attr.st_mode)),
+            nlink: attr.st_nlink as u32,
+            rdev: attr.st_rdev as u32,
+            // Flags (OS X only, see chflags(2))
+            flags: 0,
+        }
+    }
+
     fn inode<'a>(&'a self, ino: &u64) -> nix::Result<Arc<Inode>> {
         assert!(*ino > 0);
 
@@ -431,7 +475,7 @@ impl CntrFs {
 
     fn lookup_from_fd(&mut self, newfd: RawFd) -> nix::Result<(FileAttr, u64)> {
         let _stat = try!(stat::fstat(newfd));
-        let mut attr = attr_from_stat(_stat);
+        let mut attr = self.attr_from_stat(_stat);
 
         loop {
             let key1 = InodeKey {
@@ -489,7 +533,7 @@ impl CntrFs {
     }
 
     pub fn lookup_inode(&mut self, parent: u64, name: &OsStr) -> nix::Result<(FileAttr, u64)> {
-        fsuid::set_user_group(0, 0);
+        apply_root_context();
         let res = {
             let parent_inode = try!(self.inode(&parent));
             let parent_fd = parent_inode.fd.read();
@@ -580,27 +624,6 @@ fn inode_kind(mode: SFlag) -> FileType {
     }
 }
 
-fn attr_from_stat(attr: stat::FileStat) -> FileAttr {
-    let ctime = Timespec::new(attr.st_ctime, attr.st_ctime_nsec as i32);
-    FileAttr {
-        ino: attr.st_ino, // replaced by ino pointer
-        size: attr.st_size,
-        blocks: attr.st_blocks as u64,
-        atime: Timespec::new(attr.st_atime, attr.st_atime_nsec as i32),
-        mtime: Timespec::new(attr.st_mtime, attr.st_mtime_nsec as i32),
-        ctime: ctime,
-        crtime: ctime,
-        uid: attr.st_uid,
-        gid: attr.st_gid,
-        perm: attr.st_mode as u16,
-        kind: inode_kind(stat::SFlag::from_bits_truncate(attr.st_mode)),
-        nlink: attr.st_nlink as u32,
-        rdev: attr.st_rdev as u32,
-        // Flags (OS X only, see chflags(2))
-        flags: 0,
-    }
-}
-
 pub fn readlinkat(fd: RawFd) -> nix::Result<OsString> {
     let mut buf = vec![0; (libc::PATH_MAX + 1) as usize];
     loop {
@@ -619,9 +642,6 @@ pub fn readlinkat(fd: RawFd) -> nix::Result<OsString> {
 
 }
 
-pub fn apply_user_context(req: &Request) {
-    fsuid::set_user_group(req.uid(), req.gid());
-}
 
 pub fn apply_root_context() {
     fsuid::set_user_group(0, 0);
@@ -670,7 +690,7 @@ impl Filesystem for CntrFs {
         let inode = tryfuse!(self.inode(&ino), reply);
         let fd = inode.fd.read();
 
-        let mut attr = attr_from_stat(tryfuse!(stat::fstat(fd.raw()), reply));
+        let mut attr = self.attr_from_stat(tryfuse!(stat::fstat(fd.raw()), reply));
         attr.ino = ino;
         reply.attr(&TTL, &attr);
     }
@@ -742,7 +762,7 @@ impl Filesystem for CntrFs {
             if !has_default_acl {
                 mode &= !umask;
             }
-            apply_user_context(req);
+            self.apply_user_context(req);
 
             let kind = stat::SFlag::from_bits_truncate(mode);
             let perm = stat::Mode::from_bits_truncate(mode);
@@ -771,7 +791,7 @@ impl Filesystem for CntrFs {
             if !has_default_acl {
                 mode &= !umask;
             }
-            apply_user_context(req);
+            self.apply_user_context(req);
 
             let perm = stat::Mode::from_bits_truncate(mode);
             let fd = inode.fd.read();
@@ -813,7 +833,7 @@ impl Filesystem for CntrFs {
         link: &Path,
         reply: ReplyEntry,
     ) {
-        apply_user_context(req);
+        self.apply_user_context(req);
 
         {
             let inode = tryfuse!(self.inode(&parent), reply);
@@ -833,7 +853,7 @@ impl Filesystem for CntrFs {
         newname: &OsStr,
         reply: ReplyEmpty,
     ) {
-        apply_user_context(req);
+        self.apply_user_context(req);
 
         let parent_inode = tryfuse!(self.inode(&parent), reply);
         let parent_fd = parent_inode.fd.read();
@@ -857,7 +877,7 @@ impl Filesystem for CntrFs {
         flags: u32,
         reply: ReplyEmpty,
     ) {
-        apply_user_context(req);
+        self.apply_user_context(req);
 
         let parent_inode = tryfuse!(self.inode(&parent), reply);
         let parent_fd = parent_inode.fd.read();
@@ -1237,6 +1257,7 @@ impl Filesystem for CntrFs {
     }
 
     // we do not support remote locking at the moment and rely on the kernel
+    //use fuse::ReplyLock;
     //fn getlk(
     //    &mut self,
     //    _req: &Request,

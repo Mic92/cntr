@@ -1,5 +1,6 @@
 use nix::sched;
 use nix::unistd;
+use std::collections::HashSet;
 use std::fs::{self, File};
 use std::os::unix::prelude::*;
 use std::path::PathBuf;
@@ -10,27 +11,25 @@ pub const UTS: Kind = Kind { name: "uts" };
 pub const USER: Kind = Kind { name: "user" };
 pub const PID: Kind = Kind { name: "pid" };
 pub const NET: Kind = Kind { name: "net" };
+pub const CGROUP: Kind = Kind { name: "cgroup" };
 pub const IPC: Kind = Kind { name: "ipc" };
 
-//pub static ALL: &'static [Kind] = &[UTS, USER, PID, NET, IPC, MOUNT];
-pub static ALL: &'static [Kind] = &[UTS, PID, NET, IPC, MOUNT];
+pub static ALL: &'static [Kind] = &[UTS, CGROUP, PID, NET, IPC, MOUNT, USER];
 
 pub struct Kind {
     pub name: &'static str,
 }
 
-pub fn supported_namespaces<'a>() -> Result<Vec<&'a Kind>> {
-    let mut namespaces = Vec::new();
+pub fn supported_namespaces<'a>() -> Result<HashSet<String>> {
+    let mut namespaces = HashSet::new();
     let entries = tryfmt!(
         fs::read_dir(PathBuf::from("/proc/self/ns")),
-        "failed to list /proc/self/ns"
+        "failed to open directory /proc/self/ns"
     );
     for entry in entries {
-        let entry = tryfmt!(entry, "failed to list /proc/self/ns");
-        for ns in ALL {
-            if entry.file_name() == *ns.name {
-                namespaces.push(ns);
-            }
+        let entry = tryfmt!(entry, "failed to read directory /proc/self/ns");
+        if let Ok(name) = entry.file_name().into_string() {
+            namespaces.insert(name);
         }
     }
     Ok(namespaces)

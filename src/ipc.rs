@@ -62,7 +62,7 @@ impl Socket {
             }
         }
         msg_buf.resize(received, 0);
-        return Ok((msg_buf, files));
+        Ok((msg_buf, files))
     }
 }
 

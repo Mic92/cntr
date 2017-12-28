@@ -26,7 +26,7 @@ fn parse_args() -> cntr::Options {
             Some(container) => vec![container],
             None => {
                 eprintln!("invalid argument '{}' passed to `--type`; valid values are: {}", container_type, cntr::AVAILABLE_CONTAINER_TYPES.join(", "));
-                process::exit(1);
+                process::exit(1)
             }
         };
     }
