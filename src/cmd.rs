@@ -1,4 +1,4 @@
-use cntr_nix::unistd;
+use nix::unistd;
 use std::collections::HashMap;
 use std::env;
 use std::ffi::OsString;

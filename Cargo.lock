@@ -46,7 +46,7 @@ name = "cntr"
 version = "0.1.0"
 dependencies = [
  "argparse 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "cntr-nix 0.10.0-pre (registry+https://github.com/rust-lang/crates.io-index)",
+ "cntr-nix 0.10.0-pre1 (registry+https://github.com/rust-lang/crates.io-index)",
  "concurrent-hashmap 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "cpuprofiler 0.0.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "fuse 0.3.0",
@@ -61,7 +61,7 @@ dependencies = [
 
 [[package]]
 name = "cntr-nix"
-version = "0.10.0-pre"
+version = "0.10.0-pre1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "bitflags 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -286,7 +286,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum bitflags 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)" = "b3c30d3802dfb7281680d6285f2ccdaa8c2d8fee41f93805dba5c4cf50dc23cf"
 "checksum cc 1.0.3 (registry+https://github.com/rust-lang/crates.io-index)" = "a9b13a57efd6b30ecd6598ebdb302cca617930b5470647570468a65d12ef9719"
 "checksum cfg-if 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)" = "d4c819a1287eb618df47cc647173c5c4c66ba19d888a6e50d605672aed3140de"
-"checksum cntr-nix 0.10.0-pre (registry+https://github.com/rust-lang/crates.io-index)" = "a4b8db06dede8a2a4a59d4ff2e26d77bf33b7bd174696c376762531d9e1c7aec"
+"checksum cntr-nix 0.10.0-pre1 (registry+https://github.com/rust-lang/crates.io-index)" = "f8e06273aa067f2994958409c81d07c60c2cc523cf0e88d0e6bec1a238d71ee1"
 "checksum concurrent-hashmap 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)" = "9b497d3441e4e31ef52273f344aacf0a24d28a353837451a45df9b3e9cf7d44a"
 "checksum cpuprofiler 0.0.3 (registry+https://github.com/rust-lang/crates.io-index)" = "33f07976bb6821459632d7a18d97ccca005cb5c552f251f822c7c1781c1d7035"
 "checksum dbghelp-sys 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)" = "97590ba53bcb8ac28279161ca943a924d1fd4a8fb3fa63302591647c4fc5b850"

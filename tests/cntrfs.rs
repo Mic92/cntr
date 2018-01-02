@@ -2,7 +2,7 @@ extern crate fuse;
 extern crate libc;
 extern crate cntr;
 extern crate log;
-extern crate cntr_nix;
+extern crate nix;
 
 #[cfg(feature = "profiling")]
 extern crate cpuprofiler;
@@ -10,10 +10,10 @@ extern crate cpuprofiler;
 extern crate parking_lot;
 
 use cntr::fs::{CntrFs, CntrMountOptions};
-use cntr_nix::unistd;
 
 #[cfg(feature = "profiling")]
 use cpuprofiler::PROFILER;
+use nix::unistd;
 use std::env;
 use std::io::Write;
 use std::path::Path;

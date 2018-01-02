@@ -1,6 +1,6 @@
-use cntr_nix::Result;
-use cntr_nix::errno::Errno;
 use libc;
+use nix::Result;
+use nix::errno::Errno;
 use std::mem;
 use std::os::unix::io::RawFd;
 

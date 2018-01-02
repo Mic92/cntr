@@ -1,5 +1,5 @@
 extern crate libc;
-extern crate cntr_nix;
+extern crate nix;
 #[macro_use]
 extern crate log;
 extern crate core;
@@ -12,12 +12,12 @@ extern crate parking_lot;
 extern crate void;
 
 use cmd::Cmd;
-use cntr_nix::pty::PtyMaster;
-use cntr_nix::sys::signal::{self, Signal};
-use cntr_nix::sys::socket::CmsgSpace;
-use cntr_nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
-use cntr_nix::unistd::{self, ForkResult, Pid};
 pub use container::{AVAILABLE_CONTAINER_TYPES, lookup_container_type};
+use nix::pty::PtyMaster;
+use nix::sys::signal::{self, Signal};
+use nix::sys::socket::CmsgSpace;
+use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
+use nix::unistd::{self, ForkResult, Pid};
 use std::env;
 use std::fs::File;
 use std::os::unix::io::IntoRawFd;
