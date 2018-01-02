@@ -170,10 +170,11 @@ macro_rules! tryfuse {
     })
 }
 
-fn posix_fadvise(fd: RawFd) -> nix::Result<()> {
-    let res = unsafe { libc::posix_fadvise(fd, 0, 0, libc::POSIX_FADV_DONTNEED) };
-    Errno::result(res).map(drop)
-}
+// TODO: evaluate if this option increases performance
+//fn posix_fadvise(fd: RawFd) -> nix::Result<()> {
+//    let res = unsafe { libc::posix_fadvise(fd, 0, 0, libc::POSIX_FADV_DONTNEED) };
+//    Errno::result(res).map(drop)
+//}
 
 pub struct CntrMountOptions<'a> {
     pub prefix: &'a str,
