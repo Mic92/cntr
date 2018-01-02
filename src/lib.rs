@@ -26,6 +26,7 @@ use std::process;
 use types::{Error, Result};
 pub use user_namespace::DEFAULT_ID_MAP;
 use user_namespace::IdMap;
+pub use logging::enable_debug_log;
 use void::Void;
 
 #[macro_use]

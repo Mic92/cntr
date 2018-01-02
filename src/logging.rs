@@ -9,14 +9,14 @@ impl log::Log for Logger {
 
     fn log(&self, record: &log::LogRecord) {
         if self.enabled(record.metadata()) {
-            println!("{} - {}", record.level(), record.args());
+            eprintln!("{} - {}", record.level(), record.args());
         }
     }
 }
 
-pub fn init() -> Result<(), log::SetLoggerError> {
+pub fn enable_debug_log() -> Result<(), log::SetLoggerError> {
     log::set_logger(|max_log_level| {
-        max_log_level.set(log::LogLevelFilter::Info);
+        max_log_level.set(log::LogLevelFilter::Debug);
         Box::new(Logger)
     })
 }

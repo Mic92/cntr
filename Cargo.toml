@@ -45,7 +45,7 @@ debug = true
 
 [features]
 default = []
-testlogging = []
+verbose_fuse_test_log = []
 splice_read = []
 splice_write = []
 profiling = []

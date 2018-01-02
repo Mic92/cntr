@@ -1,7 +1,6 @@
 extern crate fuse;
 extern crate libc;
 extern crate cntr;
-extern crate log;
 extern crate nix;
 
 #[cfg(feature = "profiling")]
@@ -19,22 +18,9 @@ use std::io::Write;
 use std::path::Path;
 use std::process;
 
-struct Logger;
-impl log::Log for Logger {
-    fn enabled(&self, _: &log::LogMetadata) -> bool {
-        true
-    }
-    fn log(&self, record: &log::LogRecord) {
-        println!("{} - {}", record.level(), record.args());
-    }
-}
-
 fn main() {
-    if cfg!(feature = "testlogging") {
-        log::set_logger(|max_log_level| {
-            max_log_level.set(log::LogLevelFilter::Debug);
-            Box::new(Logger)
-        }).unwrap();
+    if cfg!(feature = "verbose_fuse_test_log") {
+        cntr::enable_debug_log().unwrap();
     }
 
     let args: Vec<String> = env::args().collect();
