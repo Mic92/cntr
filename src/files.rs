@@ -1,4 +1,4 @@
-use nix::unistd;
+use cntr_nix::unistd;
 use std::os::unix::prelude::*;
 
 pub struct Fd {

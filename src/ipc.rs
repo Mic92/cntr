@@ -1,7 +1,7 @@
-use nix;
-use nix::errno::Errno;
-use nix::sys::socket::*;
-use nix::sys::uio::IoVec;
+use cntr_nix;
+use cntr_nix::errno::Errno;
+use cntr_nix::sys::socket::*;
+use cntr_nix::sys::uio::IoVec;
 use std::fs::File;
 use std::os::unix::prelude::*;
 use types::{Error, Result};
@@ -44,8 +44,8 @@ impl Socket {
                     Some(&mut *cmsgspace),
                     MsgFlags::empty(),
                 ) {
-                    Err(nix::Error::Sys(Errno::EAGAIN)) |
-                    Err(nix::Error::Sys(Errno::EINTR)) => continue,
+                    Err(cntr_nix::Error::Sys(Errno::EAGAIN)) |
+                    Err(cntr_nix::Error::Sys(Errno::EINTR)) => continue,
                     Err(e) => return tryfmt!(Err(e), "recvmsg failed"),
                     Ok(msg) => {
                         for cmsg in msg.cmsgs() {

@@ -1,6 +1,6 @@
+use cntr_nix::Result;
+use cntr_nix::errno::Errno;
 use libc::{self, c_ulong};
-use nix::Result;
-use nix::errno::Errno;
 use std::os::unix::io::RawFd;
 
 pub fn ioctl_read(fd: RawFd, cmd: c_ulong, data: &mut [u8]) -> Result<()> {

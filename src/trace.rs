@@ -1,9 +1,10 @@
+
+use cntr_nix;
+use cntr_nix::errno;
+use cntr_nix::sys::ptrace::*;
+use cntr_nix::sys::ptrace::ptrace::*;
+use cntr_nix::sys::wait::{WaitStatus, wait, waitpid};
 use libc;
-use nix;
-use nix::errno;
-use nix::sys::ptrace::*;
-use nix::sys::ptrace::ptrace::*;
-use nix::sys::wait::{WaitStatus, wait, waitpid};
 use sigstr;
 use std::ptr;
 use types::{Error, Result};
@@ -40,14 +41,14 @@ pub fn install(pid: libc::pid_t) -> Result<()> {
     Ok(())
 }
 
-pub fn me() -> nix::Result<libc::c_long> {
+pub fn me() -> cntr_nix::Result<libc::c_long> {
     ptrace(PTRACE_TRACEME, 0, ptr::null_mut(), ptr::null_mut())
 }
 
 pub fn dispatch() -> Result<()> {
     loop {
         match wait() {
-            Err(nix::Error::Sys(errno::ECHILD)) => return Ok(()),
+            Err(cntr_nix::Error::Sys(errno::ECHILD)) => return Ok(()),
             Ok(WaitStatus::Stopped(pid, _)) => {
                 ptrace(PTRACE_CONT, pid, ptr::null_mut(), ptr::null_mut());
             }

@@ -1,6 +1,6 @@
-use nix::{self, fcntl, errno};
-use nix::fcntl::OFlag;
-use nix::sys::stat::{self, SFlag, Mode};
+use cntr_nix::{self, fcntl, errno};
+use cntr_nix::fcntl::OFlag;
+use cntr_nix::sys::stat::{self, SFlag, Mode};
 use std::fs::File;
 use std::os::unix::prelude::*;
 use tempdir::TempDir;
@@ -14,7 +14,7 @@ pub fn open() -> Result<File> {
             let file = unsafe { File::from_raw_fd(fd) };
             return Ok(file);
         }
-        Err(nix::Error::Sys(errno::Errno::ENOENT)) => {}
+        Err(cntr_nix::Error::Sys(errno::Errno::ENOENT)) => {}
         Err(err) => return errfmt!(err, "failed to open /dev/fuse"),
     };
 

@@ -1,5 +1,5 @@
-use nix::sched;
-use nix::unistd;
+use cntr_nix::sched;
+use cntr_nix::unistd;
 use std::collections::HashSet;
 use std::fs::{self, File};
 use std::os::unix::prelude::*;

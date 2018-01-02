@@ -6,20 +6,18 @@ authors = ["Jörg Thalheim <joerg@higgsboson.tk>"]
 [dependencies]
 cpuprofiler = {version = "*", optional = true}
 argparse = "0.2.*"
-log = "*"
+log = "0.3.*"
 time = "*"
 tempdir = "0.*"
 num_cpus = "1.*"
-libc = { git = "https://github.com/rust-lang/libc", branch = "master" }
+libc = "0.2.*"
 parking_lot = "*"
 void = "*"
+cntr-nix = "0.10.0-pre"
 
 [dependencies.concurrent-hashmap]
 version = "0.2.*"
 default-features = false
-
-[dependencies.nix]
-path = "src/nix"
 
 [dependencies.fuse]
 path = "src/rust-fuse"

@@ -1,5 +1,5 @@
 extern crate libc;
-extern crate nix;
+extern crate cntr_nix;
 #[macro_use]
 extern crate log;
 extern crate core;
@@ -12,12 +12,12 @@ extern crate parking_lot;
 extern crate void;
 
 use cmd::Cmd;
+use cntr_nix::pty::PtyMaster;
+use cntr_nix::sys::signal::{self, Signal};
+use cntr_nix::sys::socket::CmsgSpace;
+use cntr_nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
+use cntr_nix::unistd::{self, ForkResult, Pid};
 pub use container::{AVAILABLE_CONTAINER_TYPES, lookup_container_type};
-use nix::pty::PtyMaster;
-use nix::sys::signal::{self, Signal};
-use nix::sys::socket::CmsgSpace;
-use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
-use nix::unistd::{self, ForkResult, Pid};
 use std::env;
 use std::fs::File;
 use std::os::unix::io::IntoRawFd;
@@ -161,8 +161,14 @@ fn run_child(container_pid: Pid, mount_ready_sock: &ipc::Socket, fs: fs::CntrFs)
 
     if supported_namespaces.contains(namespace::USER.name) {
         tryfmt!(unistd::setgroups(&[]), "could not set groups");
-        tryfmt!(unistd::setuid(unistd::Uid::from_raw(0)), "could not set user id");
-        tryfmt!(unistd::setgid(unistd::Gid::from_raw(0)), "could not set group id");
+        tryfmt!(
+            unistd::setuid(unistd::Uid::from_raw(0)),
+            "could not set user id"
+        );
+        tryfmt!(
+            unistd::setgid(unistd::Gid::from_raw(0)),
+            "could not set group id"
+        );
     }
 
     tryfmt!(

@@ -1,7 +1,7 @@
+use cntr_nix::errno::Errno;
+use cntr_nix::sys::prctl;
+use cntr_nix::unistd::Pid;
 use libc::{self, c_int};
-use nix::errno::Errno;
-use nix::sys::prctl;
-use nix::unistd::Pid;
 use std::fs::File;
 use std::io::Read;
 use std::mem;

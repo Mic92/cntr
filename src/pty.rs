@@ -1,13 +1,13 @@
+use cntr_nix::{self, unistd, fcntl};
+use cntr_nix::errno::Errno;
+use cntr_nix::fcntl::OFlag;
+use cntr_nix::pty::*;
+use cntr_nix::sys::select;
+use cntr_nix::sys::stat;
+use cntr_nix::sys::termios::{InputFlags, SetArg, OutputFlags, LocalFlags, ControlFlags, tcsetattr,
+                             tcgetattr, Termios};
+use cntr_nix::sys::termios::SpecialCharacterIndices::*;
 use libc::{self, winsize};
-use nix::{self, unistd, fcntl};
-use nix::errno::Errno;
-use nix::fcntl::OFlag;
-use nix::pty::*;
-use nix::sys::select;
-use nix::sys::stat;
-use nix::sys::termios::{InputFlags, SetArg, OutputFlags, LocalFlags, ControlFlags, tcsetattr,
-                        tcgetattr, Termios};
-use nix::sys::termios::SpecialCharacterIndices::*;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::mem;
@@ -102,7 +102,7 @@ fn shovel(pairs: &mut [FilePair]) {
             None,
             None,
         ) {
-            Err(nix::Error::Sys(Errno::EINTR)) => {
+            Err(cntr_nix::Error::Sys(Errno::EINTR)) => {
                 continue;
             }
             Err(_) => {
@@ -240,7 +240,7 @@ pub fn open_ptm() -> Result<PtyMaster> {
     Ok(pty_master)
 }
 
-pub fn attach_pts(pty_master: &PtyMaster) -> nix::Result<()> {
+pub fn attach_pts(pty_master: &PtyMaster) -> cntr_nix::Result<()> {
     let pts_name = ptsname_r(pty_master)?;
 
     unistd::setsid()?;

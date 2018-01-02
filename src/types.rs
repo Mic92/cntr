@@ -1,6 +1,6 @@
+use cntr_nix;
 use core::num::ParseIntError;
 use log;
-use nix;
 use std::{error, fmt, io, result};
 use std::boxed::Box;
 
@@ -48,7 +48,7 @@ macro_rules! from {
 }
 
 from!(io::Error);
-from!(nix::Error);
+from!(cntr_nix::Error);
 from!(log::SetLoggerError);
 from!(ParseIntError);
 

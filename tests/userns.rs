@@ -2,11 +2,11 @@ extern crate fuse;
 extern crate libc;
 extern crate cntr;
 extern crate log;
-extern crate nix;
+extern crate cntr_nix;
 
 
 use cntr::namespace;
-use nix::unistd;
+use cntr_nix::unistd;
 use std::fs::read_link;
 use std::io::{Write, Read};
 use std::process::{self, Command, Stdio};

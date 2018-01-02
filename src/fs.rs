@@ -1,3 +1,10 @@
+use cntr_nix::{self, unistd, fcntl, dirent};
+use cntr_nix::errno::Errno;
+use cntr_nix::fcntl::{SpliceFFlags, OFlag, AtFlags};
+use cntr_nix::sys::{stat, resource};
+use cntr_nix::sys::stat::SFlag;
+use cntr_nix::sys::time::{TimeSpec as NixTimeSpec, TimeValLike};
+use cntr_nix::sys::uio::{pread, pwrite};
 use concurrent_hashmap::ConcHashMap;
 use files::Fd;
 use fsuid;
@@ -7,13 +14,6 @@ use fuse::{self, FileAttr, FileType, Filesystem, ReplyAttr, ReplyXattr, ReplyDat
 use fusefd;
 use ioctl;
 use libc::{self, dev_t, c_long};
-use nix::{self, unistd, fcntl, dirent};
-use nix::errno::Errno;
-use nix::fcntl::{SpliceFFlags, OFlag, AtFlags};
-use nix::sys::{stat, resource};
-use nix::sys::stat::SFlag;
-use nix::sys::time::{TimeSpec as NixTimeSpec, TimeValLike};
-use nix::sys::uio::{pread, pwrite};
 use num_cpus;
 use parking_lot::RwLock;
 use statvfs::fstatvfs;
@@ -45,7 +45,7 @@ struct Inode {
 }
 
 impl Inode {
-    fn open_fd_mutable(&self) -> nix::Result<()> {
+    fn open_fd_mutable(&self) -> cntr_nix::Result<()> {
         let fd = self.fd.upgradable_read();
         if fd.is_mutable {
             return Ok(());
@@ -64,7 +64,7 @@ impl Inode {
         Ok(())
     }
 
-    fn check_default_acl(&self) -> nix::Result<bool> {
+    fn check_default_acl(&self) -> cntr_nix::Result<bool> {
         apply_root_context();
 
         let state = self.has_default_acl.upgradable_read();
@@ -161,7 +161,7 @@ macro_rules! tryfuse {
         Err(err) => {
             debug!("return error {} on {}:{}", err, file!(), line!());
             let rc = match err {
-                nix::Error::Sys(errno) => errno as i32,
+                cntr_nix::Error::Sys(errno) => errno as i32,
                 // InvalidPath, InvalidUtf8, UnsupportedOperation
                 _ => libc::EINVAL
             };
@@ -170,7 +170,7 @@ macro_rules! tryfuse {
     })
 }
 
-fn posix_fadvise(fd: RawFd) -> nix::Result<()> {
+fn posix_fadvise(fd: RawFd) -> cntr_nix::Result<()> {
     let res = unsafe { libc::posix_fadvise(fd, 0, 0, libc::POSIX_FADV_DONTNEED) };
     Errno::result(res).map(drop)
 }
@@ -248,7 +248,7 @@ impl CntrFs {
         mut mode: u32,
         umask: u32,
         flags: u32,
-    ) -> nix::Result<RawFd> {
+    ) -> cntr_nix::Result<RawFd> {
         let parent_inode = try!(self.inode(&parent));
         let has_default_acl = try!(parent_inode.check_default_acl());
         let parent_fd = parent_inode.fd.read();
@@ -312,11 +312,11 @@ impl CntrFs {
         );
 
         tryfmt!(
-            nix::mount::mount(
+            cntr_nix::mount::mount(
                 Some(self.prefix.as_str()),
                 mountpoint,
                 Some("fuse.cntr"),
-                nix::mount::MsFlags::empty(),
+                cntr_nix::mount::MsFlags::empty(),
                 Some(mount_flags.as_str()),
             ),
             "failed to mount fuse"
@@ -334,7 +334,7 @@ impl CntrFs {
         size: Option<i64>,
         atime: fuse::UtimeSpec,
         mtime: fuse::UtimeSpec,
-    ) -> nix::Result<()> {
+    ) -> cntr_nix::Result<()> {
 
         if let Some(bits) = mode {
             let mode = stat::Mode::from_bits_truncate(bits);
@@ -441,7 +441,7 @@ impl CntrFs {
         }
     }
 
-    fn inode<'a>(&'a self, ino: &u64) -> nix::Result<Arc<Inode>> {
+    fn inode<'a>(&'a self, ino: &u64) -> cntr_nix::Result<Arc<Inode>> {
         assert!(*ino > 0);
 
         if *ino == fuse::FUSE_ROOT_ID {
@@ -449,12 +449,12 @@ impl CntrFs {
         } else {
             match self.inodes.find(ino) {
                 Some(inode) => Ok(Arc::clone(inode.get())),
-                None => Err(nix::Error::Sys(Errno::ESTALE)),
+                None => Err(cntr_nix::Error::Sys(Errno::ESTALE)),
             }
         }
     }
 
-    fn mutable_inode(&mut self, ino: &mut u64) -> nix::Result<Arc<Inode>> {
+    fn mutable_inode(&mut self, ino: &mut u64) -> cntr_nix::Result<Arc<Inode>> {
         let inode = try!(self.inode(ino));
         try!(inode.open_fd_mutable());
         Ok(inode)
@@ -473,7 +473,7 @@ impl CntrFs {
         (next_number, counter.generation)
     }
 
-    fn lookup_from_fd(&mut self, newfd: RawFd) -> nix::Result<(FileAttr, u64)> {
+    fn lookup_from_fd(&mut self, newfd: RawFd) -> cntr_nix::Result<(FileAttr, u64)> {
         let _stat = try!(stat::fstat(newfd));
         let mut attr = self.attr_from_stat(_stat);
 
@@ -532,7 +532,7 @@ impl CntrFs {
         }
     }
 
-    pub fn lookup_inode(&mut self, parent: u64, name: &OsStr) -> nix::Result<(FileAttr, u64)> {
+    pub fn lookup_inode(&mut self, parent: u64, name: &OsStr) -> cntr_nix::Result<(FileAttr, u64)> {
         apply_root_context();
         let res = {
             let parent_inode = try!(self.inode(&parent));
@@ -571,7 +571,7 @@ fn set_time(
     fd: RawFd,
     mtime: &fuse::UtimeSpec,
     atime: &fuse::UtimeSpec,
-) -> nix::Result<()> {
+) -> cntr_nix::Result<()> {
     if inode.kind == FileType::Symlink {
         // FIXME: fs_perms 660 99 99 100 99 t 1 return NOPERM for
         // utime(file) as user 100:99 when file is owned by 99:99
@@ -624,14 +624,14 @@ fn inode_kind(mode: SFlag) -> FileType {
     }
 }
 
-pub fn readlinkat(fd: RawFd) -> nix::Result<OsString> {
+pub fn readlinkat(fd: RawFd) -> cntr_nix::Result<OsString> {
     let mut buf = vec![0; (libc::PATH_MAX + 1) as usize];
     loop {
         match fcntl::readlinkat(fd, "", &mut buf) {
             Ok(target) => {
                 return Ok(OsString::from(target));
             }
-            Err(nix::Error::Sys(Errno::ENAMETOOLONG)) => {}
+            Err(cntr_nix::Error::Sys(Errno::ENAMETOOLONG)) => {}
             Err(e) => return Err(e),
         };
         // Trigger the internal buffer resizing logic of `Vec` by requiring

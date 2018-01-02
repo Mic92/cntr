@@ -1,11 +1,11 @@
+use cntr_nix::{mount, sched, unistd};
+use cntr_nix::mount::MsFlags;
+use cntr_nix::sched::CloneFlags;
+use cntr_nix::sys::socket::CmsgSpace;
 use fs::CntrFs;
 use ipc;
 use libc;
 use namespace;
-use nix::{mount, sched, unistd};
-use nix::mount::MsFlags;
-use nix::sched::CloneFlags;
-use nix::sys::socket::CmsgSpace;
 use std::ffi::OsStr;
 use std::fs::{remove_dir, create_dir_all};
 use std::io;

@@ -1,6 +1,6 @@
 extern crate argparse;
 extern crate cntr;
-extern crate nix;
+extern crate cntr_nix;
 
 use argparse::{ArgumentParser, Store};
 use std::process;
