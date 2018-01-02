@@ -14,13 +14,12 @@ libc = "0.2.*"
 parking_lot = "*"
 void = "*"
 cntr-nix = "0.10.0-pre1"
+cntr-fuse = "0.3.1"
 
 [dependencies.concurrent-hashmap]
 version = "0.2.*"
 default-features = false
 
-[dependencies.fuse]
-path = "src/rust-fuse"
 
 [[bin]]
 name = "cntr"
