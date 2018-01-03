@@ -147,6 +147,10 @@ fn run_child(container_pid: Pid, mount_ready_sock: &ipc::Socket, fs: fs::CntrFs)
         if !supported_namespaces.contains(kind.name) {
             continue;
         }
+        if kind.is_same(container_pid) {
+            continue
+        }
+
         other_namespaces.push(tryfmt!(
             kind.open(container_pid),
             "failed to open {} namespace",
