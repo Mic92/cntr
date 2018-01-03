@@ -14,7 +14,6 @@ use cntr::fs::{CntrFs, CntrMountOptions};
 use cpuprofiler::PROFILER;
 use nix::unistd;
 use std::env;
-use std::io::Write;
 use std::path::Path;
 use std::process;
 
@@ -41,31 +40,20 @@ fn main() {
     }
     #[cfg(feature = "profiling")] PROFILER.lock().unwrap().start("./cntrfs.profile").unwrap();
 
-    let fs = CntrFs::new(&CntrMountOptions {
+    let cntr = CntrFs::new(&CntrMountOptions {
         prefix: &args[1],
         splice_read: cfg!(feature = "splice_read"),
         splice_write: cfg!(feature = "splice_write"),
         uid_map: cntr::DEFAULT_ID_MAP,
         gid_map: cntr::DEFAULT_ID_MAP,
-    });
+    }).unwrap();
 
-    match fs {
-        Ok(cntr) => {
-            cntr.mount(Path::new(&args[2])).unwrap();
-        }
-        Err(err) => {
-            let _ = writeln!(&mut std::io::stderr(), "{}", err);
-            process::exit(1);
-        }
-    };
+    cntr.mount(Path::new(&args[2])).unwrap();
+    let sessions = cntr.spawn_sessions().unwrap();
+
+    unistd::pause().unwrap();
+
+    drop(sessions);
+
     #[cfg(feature = "profiling")] PROFILER.lock().unwrap().stop().unwrap();
-
-    //let output = Command::new("xfstests-check")
-    //    .arg("-overlay")
-    //    .env("TEST_DIR", "./tests/dest-mnt")
-    //    .env("TEST_DEV", "./tests/dest-src")
-    //    .spawn()
-    //    .unwrap();
-
-    //fs::read_dir("from/abc").unwrap();
 }

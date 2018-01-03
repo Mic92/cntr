@@ -272,7 +272,7 @@ impl CntrFs {
         Ok(fd)
     }
 
-    pub fn spawn_sessions(&self) -> Result<Vec<BackgroundSession>> {
+    pub fn spawn_sessions<'a>(self) -> Result<Vec<BackgroundSession<'a>>> {
         let mut sessions = Vec::new();
 
         // numbers of sessions is optimized for cached read

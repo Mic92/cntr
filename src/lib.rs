@@ -54,7 +54,7 @@ pub struct Options {
     pub container_types: Vec<Box<container::Container>>,
 }
 
-fn run_parent(pid: Pid, mount_ready_sock: &ipc::Socket, fs: &fs::CntrFs) -> Result<Void> {
+fn run_parent(pid: Pid, mount_ready_sock: &ipc::Socket, fs: fs::CntrFs) -> Result<Void> {
     let ns = tryfmt!(
         mountns::MountNamespace::receive(mount_ready_sock),
         "failed to receive mount namespace from child"
@@ -242,7 +242,7 @@ pub fn run(opts: &Options) -> Result<Void> {
     let (parent_sock, child_sock) = tryfmt!(ipc::socket_pair(), "failed to set up ipc");
 
     match tryfmt!(unistd::fork(), "failed to fork") {
-        ForkResult::Parent { child } => run_parent(child, &parent_sock, &cntrfs),
+        ForkResult::Parent { child } => run_parent(child, &parent_sock, cntrfs),
         ForkResult::Child => run_child(container_pid, &child_sock, cntrfs),
     }
 }
