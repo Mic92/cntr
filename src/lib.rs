@@ -10,6 +10,7 @@ extern crate num_cpus;
 extern crate concurrent_hashmap;
 extern crate parking_lot;
 extern crate void;
+extern crate thread_scoped;
 
 use cmd::Cmd;
 pub use container::{AVAILABLE_CONTAINER_TYPES, lookup_container_type};
@@ -47,6 +48,7 @@ mod mountns;
 mod capabilities;
 mod ipc;
 mod container;
+mod inode;
 pub mod fs;
 
 pub struct Options {

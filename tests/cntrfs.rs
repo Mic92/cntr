@@ -2,6 +2,7 @@ extern crate fuse;
 extern crate libc;
 extern crate cntr;
 extern crate nix;
+extern crate thread_scoped;
 
 #[cfg(feature = "profiling")]
 extern crate cpuprofiler;
@@ -12,10 +13,18 @@ use cntr::fs::{CntrFs, CntrMountOptions};
 
 #[cfg(feature = "profiling")]
 use cpuprofiler::PROFILER;
-use nix::unistd;
+use nix::{unistd,mount};
 use std::env;
 use std::path::Path;
 use std::process;
+
+struct MountGuard { mount_point: String }
+
+impl Drop for MountGuard {
+    fn drop(&mut self) {
+        let _ = mount::umount(self.mount_point.as_str());
+    }
+}
 
 fn main() {
     if cfg!(feature = "verbose_fuse_test_log") {
@@ -49,11 +58,9 @@ fn main() {
     }).unwrap();
 
     cntr.mount(Path::new(&args[2])).unwrap();
-    let sessions = cntr.spawn_sessions().unwrap();
-
-    unistd::pause().unwrap();
-
-    drop(sessions);
+    let guard = MountGuard {mount_point: args[2].clone()};
+    cntr.spawn_sessions().unwrap();
+    drop(guard);
 
     #[cfg(feature = "profiling")] PROFILER.lock().unwrap().stop().unwrap();
 }

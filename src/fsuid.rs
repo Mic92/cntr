@@ -8,6 +8,10 @@ thread_local! {
     static FSGID : Cell<u32> = Cell::new(unsafe { setfsgid(CURRENT_FSUID) as u32 });
 }
 
+pub fn set_root() {
+    set_user_group(0, 0);
+}
+
 pub fn set_user_group(uid: u32, gid: u32) {
     // setfsuid/setfsgid set no error on failure
 

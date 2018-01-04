@@ -15,6 +15,7 @@ parking_lot = "*"
 void = "*"
 cntr-nix = "0.10.0-pre1"
 cntr-fuse = "0.3.1"
+thread-scoped = "1"
 
 [dependencies.concurrent-hashmap]
 version = "0.2.*"
