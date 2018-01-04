@@ -1,12 +1,12 @@
-use nix::unistd;
 use nix::fcntl::OFlag;
+use nix::unistd;
 use std::os::unix::prelude::*;
 
-#[derive(PartialOrd,PartialEq)]
+#[derive(PartialOrd, PartialEq)]
 pub enum FdState {
     None,
     Readable,
-    ReadWritable
+    ReadWritable,
 }
 
 pub fn fd_path(fd: &Fd) -> String {

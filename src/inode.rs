@@ -1,4 +1,3 @@
-
 use files::{Fd, FdState, fd_path};
 use fs::POSIX_ACL_DEFAULT_XATTR;
 use fsuid;

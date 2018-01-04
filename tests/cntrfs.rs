@@ -13,12 +13,14 @@ use cntr::fs::{CntrFs, CntrMountOptions};
 
 #[cfg(feature = "profiling")]
 use cpuprofiler::PROFILER;
-use nix::{unistd,mount};
+use nix::{unistd, mount};
 use std::env;
 use std::path::Path;
 use std::process;
 
-struct MountGuard { mount_point: String }
+struct MountGuard {
+    mount_point: String,
+}
 
 impl Drop for MountGuard {
     fn drop(&mut self) {
@@ -58,7 +60,7 @@ fn main() {
     }).unwrap();
 
     cntr.mount(Path::new(&args[2])).unwrap();
-    let guard = MountGuard {mount_point: args[2].clone()};
+    let guard = MountGuard { mount_point: args[2].clone() };
     cntr.spawn_sessions().unwrap();
     drop(guard);
 

@@ -14,6 +14,7 @@ extern crate thread_scoped;
 
 use cmd::Cmd;
 pub use container::{AVAILABLE_CONTAINER_TYPES, lookup_container_type};
+pub use logging::enable_debug_log;
 use nix::pty::PtyMaster;
 use nix::sys::signal::{self, Signal};
 use nix::sys::socket::CmsgSpace;
@@ -27,7 +28,6 @@ use std::process;
 use types::{Error, Result};
 pub use user_namespace::DEFAULT_ID_MAP;
 use user_namespace::IdMap;
-pub use logging::enable_debug_log;
 use void::Void;
 
 #[macro_use]
@@ -150,7 +150,7 @@ fn run_child(container_pid: Pid, mount_ready_sock: &ipc::Socket, fs: fs::CntrFs)
             continue;
         }
         if kind.is_same(container_pid) {
-            continue
+            continue;
         }
 
         other_namespaces.push(tryfmt!(

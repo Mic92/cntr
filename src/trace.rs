@@ -1,4 +1,3 @@
-
 use libc;
 use nix;
 use nix::errno;

@@ -696,7 +696,6 @@ impl Filesystem for CntrFs {
                 tryfuse!(inode.upgrade_fd(state), reply);
                 let fd = inode.fd.read();
 
-
                 tryfuse!(
                     self.setattr_inner(ino, &fd, mode, uid, gid, size, atime, mtime),
                     reply
