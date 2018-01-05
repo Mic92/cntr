@@ -17,10 +17,11 @@ use nix::sys::time::{TimeSpec as NixTimeSpec, TimeValLike};
 use nix::sys::uio::{pread, pwrite};
 use num_cpus;
 use parking_lot::RwLock;
+use readlink::readlinkat;
 use statvfs::fstatvfs;
 use std::{u32, u64};
 use std::cmp;
-use std::ffi::{CStr, OsStr, OsString};
+use std::ffi::{CStr, OsStr};
 use std::io;
 use std::mem;
 use std::os::unix::prelude::*;
@@ -31,7 +32,7 @@ use thread_scoped::{scoped, JoinGuard};
 use time::Timespec;
 use types::{Error, Result};
 use user_namespace::IdMap;
-use xattr::{fsetxattr, fgetxattr, flistxattr, fremovexattr};
+use xattr;
 
 const FH_MAGIC: char = 'F';
 const DIRP_MAGIC: char = 'D';
@@ -466,7 +467,9 @@ impl CntrFs {
                 if lock.get().inode_number == next_number {
                     let fd = RwLock::new(Fd {
                         number: newfd,
-                        state: if attr.kind == FileType::Symlink {
+                        state: if attr.kind == FileType::Symlink ||
+                            attr.kind == FileType::BlockDevice
+                        {
                             // we cannot open a symlink read/writable
                             FdState::Readable
                         } else {
@@ -590,26 +593,6 @@ fn inode_kind(mode: SFlag) -> FileType {
         _ => panic!("Got unexpected File type with value: {}", mode.bits()),
     }
 }
-
-pub fn readlinkat(fd: RawFd) -> nix::Result<OsString> {
-    let mut buf = vec![0; (libc::PATH_MAX + 1) as usize];
-    loop {
-        match fcntl::readlinkat(fd, "", &mut buf) {
-            Ok(target) => {
-                return Ok(OsString::from(target));
-            }
-            Err(nix::Error::Sys(Errno::ENAMETOOLONG)) => {}
-            Err(e) => return Err(e),
-        };
-        // Trigger the internal buffer resizing logic of `Vec` by requiring
-        // more space than the current capacity. The length is guaranteed to be
-        // the same as the capacity due to the if statement above.
-        buf.reserve(1)
-    }
-
-}
-
-
 
 impl Filesystem for CntrFs {
     fn lookup(&mut self, _req: &Request, parent: u64, name: &OsStr, reply: ReplyEntry) {
@@ -1113,15 +1096,18 @@ impl Filesystem for CntrFs {
     ) {
         fsuid::set_root();
 
-        let inode = tryfuse!(self.mutable_inode(&mut ino), reply);
+        let inode = tryfuse!(self.inode(&mut ino), reply);
         let fd = inode.fd.read();
 
         if size == 0 {
-            let size = tryfuse!(fgetxattr(fd.raw(), name, &mut []), reply);
+            let size = tryfuse!(xattr::getxattr(&fd, inode.kind, name, &mut []), reply);
             reply.size(size as u32);
         } else {
             let mut buf = vec![0; size as usize];
-            let size = tryfuse!(fgetxattr(fd.raw(), name, buf.as_mut_slice()), reply);
+            let size = tryfuse!(
+                xattr::getxattr(&fd, inode.kind, name, buf.as_mut_slice()),
+                reply
+            );
             reply.data(&buf[..size]);
         }
     }
@@ -1129,16 +1115,16 @@ impl Filesystem for CntrFs {
     fn listxattr(&mut self, _req: &Request, mut ino: u64, size: u32, reply: ReplyXattr) {
         fsuid::set_root();
 
-        let inode = tryfuse!(self.mutable_inode(&mut ino), reply);
+        let inode = tryfuse!(self.inode(&mut ino), reply);
         let fd = inode.fd.read();
 
         if size == 0 {
-            let res = flistxattr(fd.raw(), &mut []);
+            let res = xattr::listxattr(&fd, inode.kind, &mut []);
             let size = tryfuse!(res, reply);
             reply.size(size as u32);
         } else {
             let mut buf = vec![0; size as usize];
-            let size = tryfuse!(flistxattr(fd.raw(), buf.as_mut_slice()), reply);
+            let size = tryfuse!(xattr::listxattr(&fd, inode.kind, buf.as_mut_slice()), reply);
             reply.data(&buf[..size]);
         }
     }
@@ -1155,15 +1141,15 @@ impl Filesystem for CntrFs {
     ) {
         fsuid::set_root();
 
-        let inode = tryfuse!(self.mutable_inode(&mut ino), reply);
+        let inode = tryfuse!(self.inode(&mut ino), reply);
         let fd = inode.fd.read();
 
         if name == POSIX_ACL_DEFAULT_XATTR {
             let mut default_acl = inode.has_default_acl.write();
-            tryfuse!(fsetxattr(fd.raw(), name, value, flags as i32), reply);
+            tryfuse!(xattr::setxattr(&fd, inode.kind, name, value, flags), reply);
             *default_acl = Some(true);
         } else {
-            tryfuse!(fsetxattr(fd.raw(), name, value, flags as i32), reply);
+            tryfuse!(xattr::setxattr(&fd, inode.kind, name, value, flags), reply);
         }
 
         reply.ok();
@@ -1172,15 +1158,15 @@ impl Filesystem for CntrFs {
     fn removexattr(&mut self, _req: &Request, mut ino: u64, name: &OsStr, reply: ReplyEmpty) {
         fsuid::set_root();
 
-        let inode = tryfuse!(self.mutable_inode(&mut ino), reply);
+        let inode = tryfuse!(self.inode(&mut ino), reply);
         let fd = inode.fd.read();
 
         if name == POSIX_ACL_DEFAULT_XATTR {
             let mut default_acl = inode.has_default_acl.write();
-            tryfuse!(fremovexattr(fd.raw(), name), reply);
+            tryfuse!(xattr::removexattr(&fd, inode.kind, name), reply);
             *default_acl = Some(false);
         } else {
-            tryfuse!(fremovexattr(fd.raw(), name), reply);
+            tryfuse!(xattr::removexattr(&fd, inode.kind, name), reply);
         }
 
         reply.ok();

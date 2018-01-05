@@ -34,6 +34,9 @@ impl Fd {
     pub fn raw(&self) -> RawFd {
         self.number
     }
+    pub fn path(&self) -> String {
+        fd_path(self)
+    }
 }
 
 impl Drop for Fd {

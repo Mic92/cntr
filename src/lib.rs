@@ -39,6 +39,7 @@ mod ioctl;
 mod pty;
 mod logging;
 mod cmd;
+mod readlink;
 mod statvfs;
 mod xattr;
 mod fsuid;

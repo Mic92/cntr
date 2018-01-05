@@ -7,8 +7,9 @@ use nix::fcntl;
 use nix::fcntl::OFlag;
 use nix::sys::stat;
 use parking_lot::RwLock;
+use std::ffi::OsStr;
 use std::path::Path;
-use xattr::fgetxattr;
+use xattr;
 
 pub struct Inode {
     pub fd: RwLock<Fd>,
@@ -57,7 +58,12 @@ impl Inode {
         try!(self.upgrade_fd(FdState::Readable));
         let fd = self.fd.read();
 
-        let res = fgetxattr(fd.raw(), POSIX_ACL_DEFAULT_XATTR, &mut []);
+        let res = xattr::getxattr(
+            &fd,
+            self.kind,
+            &OsStr::new(POSIX_ACL_DEFAULT_XATTR),
+            &mut [],
+        );
         *state = Some(res.is_ok());
         Ok(res.is_ok())
     }
