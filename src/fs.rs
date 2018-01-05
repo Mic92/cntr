@@ -15,6 +15,7 @@ use nix::sys::{stat, resource};
 use nix::sys::stat::SFlag;
 use nix::sys::time::{TimeSpec as NixTimeSpec, TimeValLike};
 use nix::sys::uio::{pread, pwrite};
+use nix::unistd::{Gid, Uid};
 use num_cpus;
 use parking_lot::RwLock;
 use readlink::readlinkat;
@@ -81,6 +82,8 @@ pub struct CntrFs {
     inode_mapping: Arc<ConcHashMap<InodeKey, InodeMapping>>,
     inodes: Arc<ConcHashMap<u64, Arc<Inode>>>,
     inode_counter: Arc<RwLock<InodeCounter>>,
+    effective_uid: Option<Uid>,
+    effective_gid: Option<Gid>,
     fuse_fd: RawFd,
     uid_map: IdMap,
     gid_map: IdMap,
@@ -138,6 +141,8 @@ pub struct CntrMountOptions<'a> {
     pub splice_write: bool,
     pub uid_map: IdMap,
     pub gid_map: IdMap,
+    pub effective_uid: Option<Uid>,
+    pub effective_gid: Option<Gid>,
 }
 
 impl CntrFs {
@@ -186,6 +191,8 @@ impl CntrFs {
             fuse_fd: fuse_fd.into_raw_fd(),
             splice_read: options.splice_read,
             splice_write: options.splice_write,
+            effective_uid: options.effective_uid,
+            effective_gid: options.effective_gid,
         })
     }
 
@@ -247,6 +254,8 @@ impl CntrFs {
                 inode_counter: Arc::clone(&self.inode_counter),
                 uid_map: self.uid_map,
                 gid_map: self.gid_map,
+                effective_uid: self.effective_uid,
+                effective_gid: self.effective_gid,
             };
             let res =
                 fuse::Session::new_from_fd(cntrfs, self.fuse_fd, Path::new(""), self.splice_write);
@@ -302,8 +311,8 @@ impl CntrFs {
         }
 
         if uid.is_some() || gid.is_some() {
-            let _uid = uid.map(|u| unistd::Uid::from_raw(self.uid_map.map_id_up(u)));
-            let _gid = gid.map(|g| unistd::Gid::from_raw(self.gid_map.map_id_up(g)));
+            let _uid = uid.map(|u| Uid::from_raw(self.uid_map.map_id_up(u)));
+            let _gid = gid.map(|g| Gid::from_raw(self.gid_map.map_id_up(g)));
 
             try!(unistd::fchownat(
                 fd.raw(),
@@ -380,10 +389,12 @@ impl CntrFs {
     }
 
     pub fn set_user_group(&self, req: &Request) {
-        fsuid::set_user_group(
-            self.uid_map.map_id_up(req.uid()),
-            self.gid_map.map_id_up(req.gid()),
-        );
+        let real_uid = self.uid_map.map_id_up(req.uid());
+        let uid = self.effective_uid.map_or(real_uid, |u| u.into());
+
+        let real_gid = self.gid_map.map_id_up(req.gid());
+        let gid = self.effective_gid.map_or(real_gid, |g| g.into());
+        fsuid::set_user_group(uid, gid);
     }
 
     fn attr_from_stat(&self, attr: stat::FileStat) -> FileAttr {

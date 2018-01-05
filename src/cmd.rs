@@ -1,10 +1,10 @@
 use nix::unistd;
 use std::collections::HashMap;
 use std::env;
-use std::ffi::OsString;
+use std::ffi::{CStr, OsStr, OsString};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::os::unix::ffi::OsStringExt;
+use std::os::unix::ffi::{OsStringExt, OsStrExt};
 use std::path::PathBuf;
 use std::process::{Command, ExitStatus};
 use types::{Error, Result};
@@ -46,7 +46,7 @@ fn read_environment(pid: unistd::Pid) -> Result<HashMap<OsString, OsString>> {
 }
 
 impl Cmd {
-    pub fn new(pid: unistd::Pid) -> Result<Cmd> {
+    pub fn new(pid: unistd::Pid, home: Option<&CStr>) -> Result<Cmd> {
         let mut variables = tryfmt!(
             read_environment(pid),
             "could not inherit environment variables of container"
@@ -58,6 +58,12 @@ impl Cmd {
             OsString::from("PATH"),
             env::var_os("PATH").unwrap_or(default_path),
         );
+        if let Some(path) = home {
+            variables.insert(
+                OsString::from("HOME"),
+                OsStr::from_bytes(path.to_bytes()).to_os_string(),
+            );
+        }
         Ok(Cmd { environment: variables })
     }
     pub fn run(self) -> Result<ExitStatus> {

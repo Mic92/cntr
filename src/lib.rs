@@ -21,6 +21,7 @@ use nix::sys::socket::CmsgSpace;
 use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
 use nix::unistd::{self, ForkResult, Pid};
 use std::env;
+use std::ffi::CStr;
 use std::fs::File;
 use std::os::unix::io::IntoRawFd;
 use std::os::unix::prelude::*;
@@ -50,11 +51,13 @@ mod capabilities;
 mod ipc;
 mod container;
 mod inode;
+pub mod pwd;
 pub mod fs;
 
 pub struct Options {
     pub container_name: String,
     pub container_types: Vec<Box<container::Container>>,
+    pub effective_user: Option<pwd::Passwd>,
 }
 
 fn run_parent(pid: Pid, mount_ready_sock: &ipc::Socket, fs: fs::CntrFs) -> Result<Void> {
@@ -109,7 +112,12 @@ fn run_parent(pid: Pid, mount_ready_sock: &ipc::Socket, fs: fs::CntrFs) -> Resul
 }
 
 
-fn run_child(container_pid: Pid, mount_ready_sock: &ipc::Socket, fs: fs::CntrFs) -> Result<Void> {
+fn run_child(
+    container_pid: Pid,
+    mount_ready_sock: &ipc::Socket,
+    fs: fs::CntrFs,
+    home: Option<&CStr>,
+) -> Result<Void> {
     let target_caps = tryfmt!(
         capabilities::get(Some(container_pid)),
         "failed to get capabilities of target process"
@@ -120,7 +128,7 @@ fn run_child(container_pid: Pid, mount_ready_sock: &ipc::Socket, fs: fs::CntrFs)
         "failed to change cgroup"
     );
 
-    let cmd = tryfmt!(Cmd::new(container_pid), "");
+    let cmd = tryfmt!(Cmd::new(container_pid, home), "");
 
     let supported_namespaces = tryfmt!(
         namespace::supported_namespaces(),
@@ -232,6 +240,16 @@ pub fn run(opts: &Options) -> Result<Void> {
         container_pid
     );
 
+    let mut home = None;
+    let mut effective_uid = None;
+    let mut effective_gid = None;
+
+    if let Some(ref passwd) = opts.effective_user {
+        effective_uid = Some(passwd.pw_uid);
+        effective_gid = Some(passwd.pw_gid);
+        home = Some(passwd.pw_dir.as_ref());
+    }
+
     let cntrfs = tryfmt!(
         fs::CntrFs::new(&fs::CntrMountOptions {
             prefix: "/",
@@ -239,13 +257,16 @@ pub fn run(opts: &Options) -> Result<Void> {
             splice_write: false,
             uid_map: uid_map,
             gid_map: gid_map,
+            effective_uid: effective_uid,
+            effective_gid: effective_gid,
         }),
         "cannot mount filesystem"
     );
+
     let (parent_sock, child_sock) = tryfmt!(ipc::socket_pair(), "failed to set up ipc");
 
     match tryfmt!(unistd::fork(), "failed to fork") {
         ForkResult::Parent { child } => run_parent(child, &parent_sock, cntrfs),
-        ForkResult::Child => run_child(container_pid, &child_sock, cntrfs),
+        ForkResult::Child => run_child(container_pid, &child_sock, cntrfs, home),
     }
 }

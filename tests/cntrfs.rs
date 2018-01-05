@@ -57,6 +57,8 @@ fn main() {
         splice_write: cfg!(feature = "splice_write"),
         uid_map: cntr::DEFAULT_ID_MAP,
         gid_map: cntr::DEFAULT_ID_MAP,
+        effective_uid: None,
+        effective_gid: None
     }).unwrap();
 
     cntr.mount(Path::new(&args[2])).unwrap();
