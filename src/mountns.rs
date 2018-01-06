@@ -7,7 +7,7 @@ use nix::mount::MsFlags;
 use nix::sched::CloneFlags;
 use nix::sys::socket::CmsgSpace;
 use std::ffi::OsStr;
-use std::fs::{remove_dir, create_dir_all};
+use std::fs::{metadata, remove_dir, create_dir_all};
 use std::io;
 use std::os::unix::prelude::*;
 use std::path::{Path, PathBuf};
@@ -19,6 +19,19 @@ pub struct MountNamespace {
     mountpoint: PathBuf,
     temp_mountpoint: PathBuf,
 }
+
+const MOUNTS: &[&str] = &[
+    "etc/passwd",
+    "etc/group",
+    "etc/resolv.conf",
+    "etc/hosts",
+    "etc/hostname",
+    "etc/localtime",
+    "etc/zoneinfo",
+    "dev",
+    "sys",
+    "proc",
+];
 
 const CNTR_MOUNT_POINT: &str = "var/lib/cntr";
 
@@ -118,6 +131,62 @@ fn mkdir_p<P: AsRef<Path>>(path: &P) -> io::Result<()> {
     Ok(())
 }
 
+pub fn setup_bindmounts(new_root: &Path, mounts: &[&str]) -> Result<()> {
+    for m in mounts {
+        let mountpoint_buf = new_root.join(m);
+        let mountpoint = mountpoint_buf.as_path();
+        let source_buf = PathBuf::from("/").join(m);
+        let source = source_buf.as_path();
+
+        let mountpoint_stat = match metadata(mountpoint) {
+            Err(e) => {
+                if e.kind() == io::ErrorKind::NotFound {
+                    continue;
+                }
+                return tryfmt!(
+                    Err(e),
+                    "failed to get metadata of path {}",
+                    mountpoint.display()
+                );
+            }
+            Ok(data) => data,
+        };
+
+        let source_stat = match metadata(source) {
+            Err(e) => {
+                if e.kind() == io::ErrorKind::NotFound {
+                    continue;
+                }
+                return tryfmt!(
+                    Err(e),
+                    "failed to get metadata of path {}",
+                    source.display()
+                );
+            }
+            Ok(data) => data,
+        };
+
+        if !((source_stat.is_file() && mountpoint_stat.is_file()) ||
+                 (source_stat.is_dir() && mountpoint_stat.is_dir()))
+        {
+            continue;
+        }
+
+        let res = mount::mount(
+            Some(source),
+            mountpoint,
+            NONE,
+            MsFlags::MS_REC | MsFlags::MS_BIND,
+            NONE,
+        );
+
+        if res.is_err() {
+            warn!("could not bind mount {:?}", mountpoint);
+        }
+    }
+    Ok(())
+}
+
 pub fn setup(
     fs: &CntrFs,
     socket: &ipc::Socket,
@@ -168,22 +237,10 @@ pub fn setup(
         "unable to move container mounts to new mountpoint"
     );
 
-
-    for m in &["dev", "sys", "proc"] {
-        let mountpoint = &ns.mountpoint.join(m);
-        tryfmt!(mkdir_p(mountpoint), "cannot create /{}", m);
-
-        let res = mount::mount(
-            Some(&PathBuf::from("/").join(m)),
-            mountpoint,
-            NONE,
-            MsFlags::MS_REC | MsFlags::MS_BIND,
-            NONE,
-        );
-        if res.is_err() {
-            warn!("could not bind mount {:?}", mountpoint);
-        }
-    }
+    tryfmt!(
+        setup_bindmounts(&ns.mountpoint, MOUNTS),
+        "failed to setup bind mounts"
+    );
 
     tryfmt!(
         unistd::chdir(&ns.mountpoint),
