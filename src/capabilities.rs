@@ -15,11 +15,17 @@ struct cap_user_header_t {
     pid: c_int,
 }
 
+
 #[repr(C)]
-pub struct cap_user_data_t {
-    pub effective: u32,
-    pub permitted: u32,
-    pub inheritable: u32,
+struct cap_user_data_t {
+    effective: u32,
+    permitted: u32,
+    inheritable: u32,
+}
+
+pub struct Capabilities {
+    user_data: cap_user_data_t,
+    last_capability: u64,
 }
 
 fn last_capability() -> Result<u64> {
@@ -36,33 +42,40 @@ fn last_capability() -> Result<u64> {
     ))
 }
 
-pub fn get(pid: Option<Pid>) -> Result<cap_user_data_t> {
+pub fn get(pid: Option<Pid>) -> Result<Capabilities> {
     let header = cap_user_header_t {
         version: _LINUX_CAPABILITY_VERSION_3,
         pid: pid.map_or(0, Into::into),
     };
-    unsafe {
+
+    let last_capability = tryfmt!(last_capability(), "failed to get capability limit");
+    let capabilities = unsafe {
         let mut data: cap_user_data_t = mem::uninitialized();
         let res = libc::syscall(libc::SYS_capget, &header, &mut data);
-        Ok(tryfmt!(Errno::result(res).map(|_| data), ""))
-    }
+        tryfmt!(Errno::result(res).map(|_| data), "")
+    };
+
+    Ok(Capabilities {
+        user_data: capabilities,
+        last_capability: last_capability,
+    })
 }
 
-pub fn set(pid: Option<Pid>, data: &cap_user_data_t) -> Result<()> {
-    let header = cap_user_header_t {
-        version: _LINUX_CAPABILITY_VERSION_3,
-        pid: pid.map_or(0, Into::into),
-    };
-    let res = unsafe { libc::syscall(libc::SYS_capset, &header, data) };
-    tryfmt!(Errno::result(res).map(drop), "");
+impl Capabilities {
+    pub fn set(&self, pid: Option<Pid>) -> Result<()> {
+        let header = cap_user_header_t {
+            version: _LINUX_CAPABILITY_VERSION_3,
+            pid: pid.map_or(0, Into::into),
+        };
+        let res = unsafe { libc::syscall(libc::SYS_capset, &header, &self.user_data) };
+        tryfmt!(Errno::result(res).map(drop), "");
 
-    let last = tryfmt!(last_capability(), "failed to get capability limit");
-
-    for cap in 0..last {
-        if (u64::from(data.effective)) & (1 << cap) == 0 {
-            // TODO: do not ignore result
-            let _ = prctl::prctl(prctl::PrctlOption::PR_CAPBSET_DROP, cap, 0, 0, 0);
+        for cap in 0..self.last_capability {
+            if (u64::from(self.user_data.effective)) & (1 << cap) == 0 {
+                // TODO: do not ignore result
+                let _ = prctl::prctl(prctl::PrctlOption::PR_CAPBSET_DROP, cap, 0, 0, 0);
+            }
         }
+        Ok(())
     }
-    Ok(())
 }
