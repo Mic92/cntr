@@ -10,13 +10,17 @@ use nix::sys::signal::{self, Signal};
 use nix::unistd;
 use nix::unistd::{Uid, Gid};
 use procfs::ProcStatus;
+use procfs::unix;
 use pty;
+use socket_proxy::{self, Listener};
 use std::env;
-use std::ffi::CStr;
+use std::ffi::{CStr, OsStr};
 use std::fs::File;
-use std::os::unix::io::IntoRawFd;
+use std::os::unix::ffi::OsStrExt;
 use std::os::unix::prelude::*;
+use std::path::PathBuf;
 use std::process;
+use tempdir::TempDir;
 use types::{Error, Result};
 use void::Void;
 
@@ -31,36 +35,60 @@ pub struct ChildOptions<'a> {
     pub gid: Gid,
 }
 
-pub fn run(options: &ChildOptions) -> Result<Void> {
-    let lsm_profile = tryfmt!(
-        lsm::read_profile(options.process_status.global_pid),
-        "failed to get lsm profile"
-    );
+fn send_fds(mount_ready_sock: &ipc::Socket, listeners: &Vec<Listener>) -> Result<()> {
+    let pty_master = tryfmt!(pty::open_ptm(), "open pty master");
+    tryfmt!(pty::attach_pts(&pty_master), "failed to setup pty master");
+    let pty_file = unsafe { File::from_raw_fd(pty_master.into_raw_fd()) };
 
-    let mount_label = if let Some(ref p) = lsm_profile {
-        tryfmt!(
-            p.mount_label(options.process_status.global_pid),
-            "failed to read mount options"
-        )
-    } else {
-        None
-    };
-
+    let socket_num = listeners.len().to_string();
     tryfmt!(
-        cgroup::move_to(unistd::getpid(), options.process_status.global_pid),
-        "failed to change cgroup"
+        mount_ready_sock.send(&[socket_num.as_ref()], &[&pty_file]),
+        "failed to send pty master"
     );
 
-    let cmd = tryfmt!(
-        Cmd::new(
-            options.command.clone(),
-            options.arguments.clone(),
-            options.process_status.global_pid,
-            options.home,
-        ),
-        ""
-    );
+    for listener in listeners {
+        let path: &OsStr = listener.address.as_ref();
+        assert!(path.len() < 255);
 
+        tryfmt!(
+            mount_ready_sock.send(&[path.as_bytes()], &[&listener.socket]),
+            "failed to send unix sockets to parent process"
+        );
+
+    }
+
+    Ok(())
+}
+
+fn _run(cmd: Cmd) -> Result<Void> {
+    let status = tryfmt!(cmd.run(), "");
+    if let Some(signum) = status.signal() {
+        let signal = tryfmt!(
+            Signal::from_c_int(signum),
+            "invalid signal received: {}",
+            signum
+        );
+        tryfmt!(
+            signal::kill(unistd::getpid(), signal),
+            "failed to send signal {:?} to own pid",
+            signal
+        );
+    }
+    if let Some(code) = status.code() {
+        process::exit(code);
+    }
+    eprintln!(
+        "BUG! command exited successfully, \
+        but was neither terminated by a signal nor has an exit code"
+    );
+    process::exit(1);
+}
+
+fn setup_nested_namespaces(
+    options: &ChildOptions,
+    mount_label: &Option<String>,
+    sockets: Vec<PathBuf>,
+) -> Result<(TempDir, Vec<Listener>)> {
     let supported_namespaces = tryfmt!(
         namespace::supported_namespaces(),
         "failed to list namespaces"
@@ -103,15 +131,15 @@ pub fn run(options: &ChildOptions) -> Result<Void> {
 
     tryfmt!(mount_namespace.apply(), "failed to apply mount namespace");
 
-    tryfmt!(
+    try!(
         mountns::setup(
             &options.fs,
             options.mount_ready_sock,
             mount_namespace,
             &mount_label,
         ),
-        ""
     );
+
     let dropped_groups = if supported_namespaces.contains(namespace::USER.name) {
         unistd::setgroups(&[]).is_ok()
     } else {
@@ -121,6 +149,12 @@ pub fn run(options: &ChildOptions) -> Result<Void> {
     for ns in other_namespaces {
         tryfmt!(ns.apply(), "failed to apply namespace");
     }
+
+
+    let (tempdir, listeners) = tryfmt!(
+        socket_proxy::bind_paths(&sockets),
+        "failed to setup socket proxy"
+    );
 
     if supported_namespaces.contains(namespace::USER.name) {
         if let Err(e) = unistd::setgroups(&[]) {
@@ -132,19 +166,52 @@ pub fn run(options: &ChildOptions) -> Result<Void> {
         tryfmt!(unistd::setuid(options.uid), "could not set user id");
     }
 
+    Ok((tempdir, listeners))
+}
+
+pub fn run(options: &ChildOptions) -> Result<Void> {
+    let lsm_profile = tryfmt!(
+        lsm::read_profile(options.process_status.global_pid),
+        "failed to get lsm profile"
+    );
+
+    let mount_label = if let Some(ref p) = lsm_profile {
+        tryfmt!(
+            p.mount_label(options.process_status.global_pid),
+            "failed to read mount options"
+        )
+    } else {
+        None
+    };
+
+    tryfmt!(
+        cgroup::move_to(unistd::getpid(), options.process_status.global_pid),
+        "failed to change cgroup"
+    );
+
+    let cmd = tryfmt!(
+        Cmd::new(
+            options.command.clone(),
+            options.arguments.clone(),
+            options.process_status.global_pid,
+            options.home,
+        ),
+        ""
+    );
+
+    let sockets = tryfmt!(
+        unix::read_open_sockets(),
+        "failed to get current open unix sockets"
+    );
+
+    let (socket_dir, listeners) = try!(setup_nested_namespaces(options, &mount_label, sockets));
+
+    try!(send_fds(options.mount_ready_sock, &listeners));
+
     tryfmt!(
         capabilities::drop(options.process_status.effective_capabilities),
         "failed to apply capabilities"
     );
-
-    let pty_master = tryfmt!(pty::open_ptm(), "open pty master");
-    tryfmt!(pty::attach_pts(&pty_master), "failed to setup pty master");
-
-    // we have to destroy f manually, since we only borrow fd here.
-    let f = unsafe { File::from_raw_fd(pty_master.as_raw_fd()) };
-    let res = options.mount_ready_sock.send(&[], &[&f]);
-    f.into_raw_fd();
-    tryfmt!(res, "failed to send pty file descriptor to parent process");
 
     if let Err(e) = env::set_current_dir("/var/lib/cntr") {
         warn!("failed to change directory to /var/lib/cntr: {}", e);
@@ -154,25 +221,5 @@ pub fn run(options: &ChildOptions) -> Result<Void> {
         tryfmt!(profile.inherit_profile(), "failed to inherit lsm profile");
     }
 
-    let status = tryfmt!(cmd.run(), "");
-    if let Some(signum) = status.signal() {
-        let signal = tryfmt!(
-            Signal::from_c_int(signum),
-            "invalid signal received: {}",
-            signum
-        );
-        tryfmt!(
-            signal::kill(unistd::getpid(), signal),
-            "failed to send signal {:?} to own pid",
-            signal
-        );
-    }
-    if let Some(code) = status.code() {
-        process::exit(code);
-    }
-    eprintln!(
-        "BUG! command exited successfully, \
-        but was neither terminated by a signal nor has an exit code"
-    );
-    process::exit(1);
+    _run(cmd)
 }

@@ -3,6 +3,7 @@ use log;
 use nix;
 use std::{error, fmt, io, result};
 use std::boxed::Box;
+use std::str::Utf8Error;
 
 pub struct Error {
     pub desc: String,
@@ -51,6 +52,7 @@ from!(io::Error);
 from!(nix::Error);
 from!(log::SetLoggerError);
 from!(ParseIntError);
+from!(Utf8Error);
 
 impl From<(Error, String)> for Error {
     fn from((error, desc): (Error, String)) -> Error {

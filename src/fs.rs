@@ -1,6 +1,6 @@
 use concurrent_hashmap::ConcHashMap;
 use dotcntr::DotcntrDir;
-use files::{Fd, FdState, fd_path};
+use fd::{Fd, FdState, fd_path};
 use fsuid;
 use fuse::{self, FileAttr, FileType, Filesystem, ReplyAttr, ReplyXattr, ReplyData, ReplyEmpty,
            ReplyEntry, ReplyOpen, ReplyWrite, ReplyStatfs, ReplyCreate, ReplyIoctl, Request,
@@ -238,7 +238,7 @@ impl CntrFs {
         umask: u32,
         flags: u32,
     ) -> nix::Result<RawFd> {
-        let parent_inode = try!(self.inode(&parent));
+        let parent_inode = try!(self.inode(parent));
         let has_default_acl = try!(parent_inode.check_default_acl());
         let parent_fd = parent_inode.fd.read();
 
@@ -367,7 +367,7 @@ impl CntrFs {
             try!(unistd::ftruncate(fd.raw(), s));
         }
         if mtime != fuse::UtimeSpec::Omit || atime != fuse::UtimeSpec::Omit {
-            let inode = try!(self.inode(&ino));
+            let inode = try!(self.inode(ino));
             try!(set_time(&inode, fd, &mtime, &atime));
         }
         Ok(())
@@ -458,21 +458,20 @@ impl CntrFs {
         }
     }
 
-    fn inode<'a>(&'a self, ino: &u64) -> nix::Result<Arc<Inode>> {
-        assert!(*ino > 0);
+    fn inode<'a>(&'a self, ino: u64) -> nix::Result<Arc<Inode>> {
+        assert!(ino > 0);
 
-        if *ino == fuse::FUSE_ROOT_ID {
+        if ino == fuse::FUSE_ROOT_ID {
             Ok(Arc::clone(&self.root_inode))
         } else {
-            match self.inodes.find(ino) {
+            match self.inodes.find(&ino) {
                 Some(inode) => Ok(Arc::clone(inode.get())),
                 None => Err(nix::Error::Sys(Errno::ESTALE)),
             }
         }
     }
 
-    fn mutable_inode(&mut self, ino: &mut u64) -> nix::Result<Arc<Inode>> {
-
+    fn mutable_inode(&mut self, ino: u64) -> nix::Result<Arc<Inode>> {
         let inode = try!(self.inode(ino));
         try!(inode.upgrade_fd(&FdState::Readable));
         Ok(inode)
@@ -553,7 +552,7 @@ impl CntrFs {
             }
         }
 
-        let parent_inode = try!(self.inode(&parent));
+        let parent_inode = try!(self.inode(parent));
         let parent_fd = parent_inode.fd.read();
         let fd = try!(fcntl::openat(
             parent_fd.raw(),
@@ -682,7 +681,7 @@ impl Filesystem for CntrFs {
     fn getattr(&mut self, _req: &Request, ino: u64, reply: ReplyAttr) {
         fsuid::set_root();
 
-        let inode = tryfuse!(self.inode(&ino), reply);
+        let inode = tryfuse!(self.inode(ino), reply);
         let fd = inode.fd.read();
 
         let mut attr = self.attr_from_stat(tryfuse!(stat::fstat(fd.raw()), reply));
@@ -718,7 +717,7 @@ impl Filesystem for CntrFs {
                     reply
                 );
             } else {
-                let inode = tryfuse!(self.inode(&ino), reply);
+                let inode = tryfuse!(self.inode(ino), reply);
                 let state = if size.is_some() {
                     FdState::ReadWritable
                 } else {
@@ -740,7 +739,7 @@ impl Filesystem for CntrFs {
     fn readlink(&mut self, _req: &Request, ino: u64, reply: ReplyData) {
         fsuid::set_root();
 
-        let inode = tryfuse!(self.inode(&ino), reply);
+        let inode = tryfuse!(self.inode(ino), reply);
         let fd = inode.fd.read();
         let target = tryfuse!(readlinkat(fd.raw()), reply);
         reply.data(&target.into_vec());
@@ -757,7 +756,7 @@ impl Filesystem for CntrFs {
         reply: ReplyEntry,
     ) {
         {
-            let inode = tryfuse!(self.inode(&parent), reply);
+            let inode = tryfuse!(self.inode(parent), reply);
             let has_default_acl = tryfuse!(inode.check_default_acl(), reply);
             if !has_default_acl {
                 mode &= !umask;
@@ -786,7 +785,7 @@ impl Filesystem for CntrFs {
         reply: ReplyEntry,
     ) {
         {
-            let inode = tryfuse!(self.inode(&parent), reply);
+            let inode = tryfuse!(self.inode(parent), reply);
             let has_default_acl = tryfuse!(inode.check_default_acl(), reply);
             if !has_default_acl {
                 mode &= !umask;
@@ -803,7 +802,7 @@ impl Filesystem for CntrFs {
     fn unlink(&mut self, _req: &Request, parent: u64, name: &OsStr, reply: ReplyEmpty) {
         fsuid::set_root();
 
-        let inode = tryfuse!(self.inode(&parent), reply);
+        let inode = tryfuse!(self.inode(parent), reply);
         let fd = inode.fd.read();
 
         let res = unistd::unlinkat(fd.raw(), name, fcntl::AtFlags::empty());
@@ -814,7 +813,7 @@ impl Filesystem for CntrFs {
     fn rmdir(&mut self, _req: &Request, parent: u64, name: &OsStr, reply: ReplyEmpty) {
         fsuid::set_root();
 
-        let inode = tryfuse!(self.inode(&parent), reply);
+        let inode = tryfuse!(self.inode(parent), reply);
         let fd = inode.fd.read();
 
         tryfuse!(
@@ -835,7 +834,7 @@ impl Filesystem for CntrFs {
         self.set_user_group(req);
 
         {
-            let inode = tryfuse!(self.inode(&parent), reply);
+            let inode = tryfuse!(self.inode(parent), reply);
             let fd = inode.fd.read();
             let res = unistd::symlinkat(link, fd.raw(), name);
             tryfuse!(res, reply);
@@ -854,9 +853,9 @@ impl Filesystem for CntrFs {
     ) {
         self.set_user_group(req);
 
-        let parent_inode = tryfuse!(self.inode(&parent), reply);
+        let parent_inode = tryfuse!(self.inode(parent), reply);
         let parent_fd = parent_inode.fd.read();
-        let new_inode = tryfuse!(self.inode(&newparent), reply);
+        let new_inode = tryfuse!(self.inode(newparent), reply);
         let new_fd = new_inode.fd.read();
         tryfuse!(
             fcntl::renameat(parent_fd.raw(), name, new_fd.raw(), newname),
@@ -878,9 +877,9 @@ impl Filesystem for CntrFs {
     ) {
         self.set_user_group(req);
 
-        let parent_inode = tryfuse!(self.inode(&parent), reply);
+        let parent_inode = tryfuse!(self.inode(parent), reply);
         let parent_fd = parent_inode.fd.read();
-        let new_inode = tryfuse!(self.inode(&newparent), reply);
+        let new_inode = tryfuse!(self.inode(newparent), reply);
         let new_fd = new_inode.fd.read();
         let res = fcntl::renameat2(
             parent_fd.raw(),
@@ -905,9 +904,9 @@ impl Filesystem for CntrFs {
         fsuid::set_root();
 
         {
-            let source_inode = tryfuse!(self.inode(&ino), reply);
+            let source_inode = tryfuse!(self.inode(ino), reply);
             let source_fd = source_inode.fd.read();
-            let newparent_inode = tryfuse!(self.inode(&newparent), reply);
+            let newparent_inode = tryfuse!(self.inode(newparent), reply);
             let newparent_fd = newparent_inode.fd.read();
 
             let res = unistd::linkat(
@@ -927,7 +926,7 @@ impl Filesystem for CntrFs {
         fsuid::set_root();
 
         let mut oflags = fcntl::OFlag::from_bits_truncate(flags as i32);
-        let inode = tryfuse!(self.inode(&ino), reply);
+        let inode = tryfuse!(self.inode(ino), reply);
         let fd = inode.fd.read();
         let path = fd_path(&fd);
 
@@ -1050,10 +1049,10 @@ impl Filesystem for CntrFs {
         reply.ok();
     }
 
-    fn opendir(&mut self, _req: &Request, mut ino: u64, _flags: u32, reply: ReplyOpen) {
+    fn opendir(&mut self, _req: &Request, ino: u64, _flags: u32, reply: ReplyOpen) {
         fsuid::set_root();
 
-        let inode = tryfuse!(self.mutable_inode(&mut ino), reply);
+        let inode = tryfuse!(self.mutable_inode(ino), reply);
         let fd = inode.fd.read();
         let path = fd_path(&fd);
         let dp = tryfuse!(dirent::opendir(Path::new(&path)), reply);
@@ -1112,10 +1111,10 @@ impl Filesystem for CntrFs {
         reply.ok();
     }
 
-    fn statfs(&mut self, _req: &Request, mut ino: u64, reply: ReplyStatfs) {
+    fn statfs(&mut self, _req: &Request, ino: u64, reply: ReplyStatfs) {
         fsuid::set_root();
 
-        let inode = tryfuse!(self.mutable_inode(&mut ino), reply);
+        let inode = tryfuse!(self.mutable_inode(ino), reply);
 
         let fd = inode.fd.read();
         let stat = tryfuse!(fstatvfs(fd.raw()), reply);
@@ -1134,7 +1133,7 @@ impl Filesystem for CntrFs {
     fn getxattr(&mut self, _req: &Request, ino: u64, name: &OsStr, size: u32, reply: ReplyXattr) {
         fsuid::set_root();
 
-        let inode = tryfuse!(self.inode(&ino), reply);
+        let inode = tryfuse!(self.inode(ino), reply);
         let fd = inode.fd.read();
 
         // as unify multiple filesystems with one mountpoint, some filesystems might not
@@ -1180,7 +1179,7 @@ impl Filesystem for CntrFs {
     fn listxattr(&mut self, _req: &Request, ino: u64, size: u32, reply: ReplyXattr) {
         fsuid::set_root();
 
-        let inode = tryfuse!(self.inode(&ino), reply);
+        let inode = tryfuse!(self.inode(ino), reply);
         let fd = inode.fd.read();
 
         if size == 0 {
@@ -1206,7 +1205,7 @@ impl Filesystem for CntrFs {
     ) {
         fsuid::set_root();
 
-        let inode = tryfuse!(self.inode(&ino), reply);
+        let inode = tryfuse!(self.inode(ino), reply);
         let fd = inode.fd.read();
 
         if name == POSIX_ACL_DEFAULT_XATTR {
@@ -1223,7 +1222,7 @@ impl Filesystem for CntrFs {
     fn removexattr(&mut self, _req: &Request, ino: u64, name: &OsStr, reply: ReplyEmpty) {
         fsuid::set_root();
 
-        let inode = tryfuse!(self.inode(&ino), reply);
+        let inode = tryfuse!(self.inode(ino), reply);
         let fd = inode.fd.read();
 
         if name == POSIX_ACL_DEFAULT_XATTR {
@@ -1240,7 +1239,7 @@ impl Filesystem for CntrFs {
     fn access(&mut self, _req: &Request, ino: u64, mask: u32, reply: ReplyEmpty) {
         fsuid::set_root();
 
-        let inode = tryfuse!(self.inode(&ino), reply);
+        let inode = tryfuse!(self.inode(ino), reply);
         let mode = unistd::AccessMode::from_bits_truncate(mask as i32);
         tryfuse!(
             unistd::access(fd_path(&inode.fd.read()).as_str(), mode),

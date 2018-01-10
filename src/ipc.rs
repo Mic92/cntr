@@ -3,6 +3,8 @@ use nix::errno::Errno;
 use nix::sys::socket::*;
 use nix::sys::uio::IoVec;
 use std::fs::File;
+use std::mem;
+use std::os::unix::io::AsRawFd;
 use std::os::unix::prelude::*;
 use types::{Error, Result};
 
@@ -27,11 +29,7 @@ impl Socket {
         Ok(())
     }
 
-    pub fn receive<T>(
-        &self,
-        message_length: usize,
-        cmsgspace: &mut CmsgSpace<T>,
-    ) -> Result<(Vec<u8>, Vec<File>)> {
+    pub fn receive(&self, message_length: usize, n_files: usize) -> Result<(Vec<u8>, Vec<File>)> {
         let mut msg_buf = vec![0; (message_length) as usize];
         let received;
         let mut files: Vec<File> = Vec::with_capacity(1);
@@ -41,7 +39,7 @@ impl Socket {
                 match recvmsg(
                     self.fd.as_raw_fd(),
                     &iov,
-                    Some(&mut *cmsgspace),
+                    mem::size_of::<RawFd>() * n_files,
                     MsgFlags::empty(),
                 ) {
                     Err(nix::Error::Sys(Errno::EAGAIN)) |
@@ -63,6 +61,12 @@ impl Socket {
         }
         msg_buf.resize(received, 0);
         Ok((msg_buf, files))
+    }
+}
+
+impl AsRawFd for Socket {
+    fn as_raw_fd(&self) -> RawFd {
+        self.fd.as_raw_fd()
     }
 }
 

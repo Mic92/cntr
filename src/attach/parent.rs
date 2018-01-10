@@ -3,16 +3,67 @@ use ipc;
 use mountns;
 use nix::pty::PtyMaster;
 use nix::sys::signal::{self, Signal};
-use nix::sys::socket::CmsgSpace;
 use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
 use nix::unistd;
 use nix::unistd::Pid;
 use pty;
+use socket_proxy::{self, SocketProxy, Listener};
+use std::ffi::OsString;
+use std::os::unix::ffi::OsStringExt;
 use std::os::unix::io::IntoRawFd;
 use std::os::unix::prelude::*;
+use std::path::PathBuf;
 use std::process;
+use std::str;
 use types::{Error, Result};
 use void::Void;
+
+fn setup_pty(mount_ready_sock: &ipc::Socket) -> Result<(PtyMaster, usize)> {
+    let (sockets_bytes, mut fd) = tryfmt!(
+        mount_ready_sock.receive(255, 1),
+        "failed to receive pty file descriptor"
+    );
+    assert!(fd.len() == 1);
+    let master = unsafe { PtyMaster::from_raw_fd(fd.pop().unwrap().into_raw_fd()) };
+
+    let sockets_str = tryfmt!(
+        str::from_utf8(sockets_bytes.as_slice()),
+        "failed to decode message from child"
+    );
+
+    let n_sockets = tryfmt!(
+        sockets_str.parse::<usize>(),
+        "received socket number string is not a number"
+    );
+
+    Ok((master, n_sockets))
+}
+
+fn setup_proxy(mount_ready_sock: &ipc::Socket, n_sockets: usize) -> Result<SocketProxy> {
+    let mut listeners = Vec::new();
+    listeners.reserve(n_sockets);
+
+    for i in 1..n_sockets {
+        let (path, mut fd) = tryfmt!(
+            mount_ready_sock.receive(255, 1),
+            "failed to receive unix socket file descriptor"
+        );
+        assert!(fd.len() == 1);
+
+        listeners.push(Listener {
+            address: PathBuf::from(OsString::from_vec(path)),
+            socket: fd.pop().unwrap(),
+        });
+    }
+
+
+    let proxy = tryfmt!(
+        socket_proxy::start(listeners),
+        "failed to start socket proxy"
+    );
+
+    Ok(proxy)
+}
 
 pub fn run(pid: Pid, mount_ready_sock: &ipc::Socket, fs: fs::CntrFs) -> Result<Void> {
     let ns = tryfmt!(
@@ -22,15 +73,9 @@ pub fn run(pid: Pid, mount_ready_sock: &ipc::Socket, fs: fs::CntrFs) -> Result<V
 
     let sessions = fs.spawn_sessions();
 
-    let mut cmsgspace: CmsgSpace<[RawFd; 1]> = CmsgSpace::new();
-    let (_, mut fds) = tryfmt!(
-        mount_ready_sock.receive(1, &mut cmsgspace),
-        "failed to receive pty file descriptor"
-    );
-    assert!(fds.len() == 1);
-    let fd = fds.pop().unwrap();
+    let (master, n_sockets) = try!(setup_pty(mount_ready_sock));
 
-    let master = unsafe { PtyMaster::from_raw_fd(fd.into_raw_fd()) };
+    let proxy = try!(setup_proxy(mount_ready_sock, n_sockets));
 
     ns.cleanup();
 
@@ -59,6 +104,7 @@ pub fn run(pid: Pid, mount_ready_sock: &ipc::Socket, fs: fs::CntrFs) -> Result<V
             }
             Err(e) => {
                 drop(sessions);
+                drop(proxy);
                 return tryfmt!(Err(e), "waitpid failed");
             }
         };

@@ -1,16 +1,16 @@
+use file_utils::mkdir_p;
 use fs::CntrFs;
 use ipc;
 use libc;
+use mount_utils;
 use namespace;
-use nix::{mount, sched, unistd};
-use nix::mount::MsFlags;
+use nix::{sched, unistd};
 use nix::sched::CloneFlags;
-use nix::sys::socket::CmsgSpace;
 use std::ffi::OsStr;
-use std::fs::{metadata, remove_dir, create_dir_all};
+use std::fs::{metadata, remove_dir};
 use std::io;
 use std::os::unix::prelude::*;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use tempdir::TempDir;
 use types::{Error, Result};
 
@@ -81,9 +81,8 @@ impl MountNamespace {
     }
 
     pub fn receive(sock: &ipc::Socket) -> Result<MountNamespace> {
-        let mut cmsgspace: CmsgSpace<[RawFd; 2]> = CmsgSpace::new();
         let (paths, mut fds) = tryfmt!(
-            sock.receive((libc::PATH_MAX * 2) as usize, &mut cmsgspace),
+            sock.receive((libc::PATH_MAX * 2) as usize, 2),
             "failed to receive mount namespace"
         );
         let paths: Vec<&[u8]> = paths.splitn(2, |c| *c == b'\0').collect();
@@ -122,17 +121,6 @@ impl MountNamespace {
     }
 }
 
-
-const NONE: Option<&'static [u8]> = None;
-
-fn mkdir_p<P: AsRef<Path>>(path: &P) -> io::Result<()> {
-    if let Err(e) = create_dir_all(path) {
-        if e.kind() != io::ErrorKind::AlreadyExists {
-            return Err(e);
-        }
-    }
-    Ok(())
-}
 
 pub fn setup_bindmounts(mounts: &[&str]) -> Result<()> {
     for m in mounts {
@@ -175,13 +163,7 @@ pub fn setup_bindmounts(mounts: &[&str]) -> Result<()> {
             continue;
         }
 
-        let res = mount::mount(
-            Some(source),
-            mountpoint,
-            NONE,
-            MsFlags::MS_REC | MsFlags::MS_BIND,
-            NONE,
-        );
+        let res = mount_utils::bind_mount(source, mountpoint);
 
         if res.is_err() {
             warn!("could not bind mount {:?}", mountpoint);
@@ -198,26 +180,11 @@ pub fn setup(
 ) -> Result<()> {
     let ns = tryfmt!(MountNamespace::new(container_namespace), "");
 
-    tryfmt!(
-        mount::mount(
-            Some("none"),
-            "/",
-            NONE,
-            MsFlags::MS_REC | MsFlags::MS_PRIVATE,
-            NONE,
-        ),
-        "unable to bind mount /"
-    );
+    tryfmt!(mount_utils::mount_private("/"), "unable to bind mount /");
 
     // prepare bind mounts
     tryfmt!(
-        mount::mount(
-            Some("/"),
-            &ns.temp_mountpoint,
-            NONE,
-            MsFlags::MS_REC | MsFlags::MS_BIND,
-            NONE,
-        ),
+        mount_utils::bind_mount("/", &ns.temp_mountpoint),
         "unable to move container mounts to new mountpoint"
     );
     tryfmt!(fs.mount(ns.mountpoint.as_path(), mount_label), "mount()");
@@ -231,13 +198,7 @@ pub fn setup(
     );
 
     tryfmt!(
-        mount::mount(
-            Some(&ns.temp_mountpoint),
-            &ns.mountpoint.join(CNTR_MOUNT_POINT),
-            NONE,
-            MsFlags::MS_REC | MsFlags::MS_MOVE,
-            NONE,
-        ),
+        mount_utils::move_mounts(&ns.temp_mountpoint, &ns.mountpoint.join(CNTR_MOUNT_POINT)),
         "unable to move container mounts to new mountpoint"
     );
 

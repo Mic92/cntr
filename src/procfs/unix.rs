@@ -12,7 +12,7 @@ pub fn read_open_sockets() -> Result<Vec<PathBuf>> {
 
     for line in BufReader::new(file).lines().skip(1) {
         let line = tryfmt!(line, "failed to read /proc/net/unix");
-        let fields: Vec<&str> = line.splitn(7, ' ').collect();
+        let fields: Vec<&str> = line.splitn(8, ' ').collect();
         if fields.len() != 8 || fields[7].starts_with('@') {
             continue;
         }

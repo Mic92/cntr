@@ -34,10 +34,9 @@ impl Container for Command {
                         *byte = b' ';
                     }
                 }
-                if arguments
-                    .windows(needle.len())
-                    .position(|window| window == needle)
-                    .is_some()
+                if arguments.windows(needle.len()).any(
+                    |window| window == needle,
+                )
                 {
                     return Ok(pid);
                 }
@@ -47,6 +46,6 @@ impl Container for Command {
         errfmt!(format!("No command found that matches {}", container_id))
     }
     fn check_required_tools(&self) -> Result<()> {
-        return Ok(());
+        Ok(())
     }
 }

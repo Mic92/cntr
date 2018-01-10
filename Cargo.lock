@@ -47,7 +47,7 @@ version = "1.2.0"
 dependencies = [
  "argparse 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "cntr-fuse 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
- "cntr-nix 0.11.0-pre1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "cntr-nix 0.11.3-pre1 (registry+https://github.com/rust-lang/crates.io-index)",
  "concurrent-hashmap 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "cpuprofiler 0.0.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "libc 0.2.41 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -74,7 +74,7 @@ dependencies = [
 
 [[package]]
 name = "cntr-nix"
-version = "0.11.0-pre1"
+version = "0.11.3-pre1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "bitflags 1.0.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -317,7 +317,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum cc 1.0.15 (registry+https://github.com/rust-lang/crates.io-index)" = "0ebb87d1116151416c0cf66a0e3fb6430cccd120fd6300794b4dfaa050ac40ba"
 "checksum cfg-if 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)" = "405216fd8fe65f718daa7102ea808a946b6ce40c742998fbfd3463645552de18"
 "checksum cntr-fuse 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)" = "5c708230a858d8747540ffba80cd41a93df9a86ba5b24d86f159869b506b020c"
-"checksum cntr-nix 0.11.0-pre1 (registry+https://github.com/rust-lang/crates.io-index)" = "19fe5d0b11ee17826ac3c2fbac250bae08daceed1a53937fde70360afe2969cd"
+"checksum cntr-nix 0.11.3-pre1 (registry+https://github.com/rust-lang/crates.io-index)" = "9b7b31c2969c1f895f4d6327f2319336c255429a25780758fc2198b7a44dafef"
 "checksum concurrent-hashmap 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)" = "9b497d3441e4e31ef52273f344aacf0a24d28a353837451a45df9b3e9cf7d44a"
 "checksum cpuprofiler 0.0.3 (registry+https://github.com/rust-lang/crates.io-index)" = "33f07976bb6821459632d7a18d97ccca005cb5c552f251f822c7c1781c1d7035"
 "checksum dbghelp-sys 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)" = "97590ba53bcb8ac28279161ca943a924d1fd4a8fb3fa63302591647c4fc5b850"

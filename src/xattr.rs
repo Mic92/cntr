@@ -1,4 +1,4 @@
-use files::Fd;
+use fd::Fd;
 use fuse::FileType;
 use nix::Result;
 use nix::sys::xattr as _xattr;

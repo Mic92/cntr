@@ -8,7 +8,7 @@ use std::io::prelude::*;
 use std::path::PathBuf;
 use types::{Error, Result};
 
-mod unix;
+pub mod unix;
 
 pub fn get_path() -> PathBuf {
     PathBuf::from(&env::var_os("CNTR_PROC").unwrap_or_else(
