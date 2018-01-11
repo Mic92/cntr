@@ -146,6 +146,29 @@ pub struct CntrMountOptions<'a> {
     pub effective_gid: Option<Gid>,
 }
 
+pub enum LookupFile<'a> {
+    Donate(File),
+    Borrow(&'a File),
+}
+
+impl<'a> AsRawFd for LookupFile<'a> {
+    fn as_raw_fd(&self) -> RawFd {
+        match self {
+            &LookupFile::Donate(ref f) => f.as_raw_fd(),
+            &LookupFile::Borrow(ref f) => f.as_raw_fd(),
+        }
+    }
+}
+
+impl<'a> LookupFile<'a> {
+    fn into_raw_fd(self) -> nix::Result<RawFd> {
+        match self {
+            LookupFile::Donate(f) => Ok(f.into_raw_fd()),
+            LookupFile::Borrow(f) => unistd::dup(f.as_raw_fd()),
+        }
+    }
+}
+
 impl CntrFs {
     pub fn new(options: &CntrMountOptions) -> Result<CntrFs> {
         let fuse_fd = tryfmt!(fusefd::open(), "failed to initialize fuse");
@@ -449,7 +472,7 @@ impl CntrFs {
         (next_number, counter.generation)
     }
 
-    fn lookup_from_fd(&mut self, new_file: File) -> nix::Result<(FileAttr, u64)> {
+    fn lookup_from_fd<'a>(&mut self, new_file: LookupFile<'a>) -> nix::Result<(FileAttr, u64)> {
         let _stat = try!(stat::fstat(new_file.as_raw_fd()));
         let mut attr = self.attr_from_stat(_stat);
 
@@ -475,7 +498,7 @@ impl CntrFs {
             if let Some(mut lock) = self.inode_mapping.find_mut(&key2) {
                 if lock.get().inode_number == next_number {
                     let fd = RwLock::new(Fd::new(
-                        new_file.into_raw_fd(),
+                        try!(new_file.into_raw_fd()),
                         if attr.kind == FileType::Symlink ||
                             attr.kind == FileType::BlockDevice
                         {
@@ -530,7 +553,7 @@ impl CntrFs {
 
         let file = unsafe { File::from_raw_fd(res) };
 
-        self.lookup_from_fd(file)
+        self.lookup_from_fd(LookupFile::Donate(file))
     }
 }
 
@@ -1207,9 +1230,10 @@ impl Filesystem for CntrFs {
             reply
         );
 
-        let fh = Fh::new(Fd::new(fd, FdState::Readable));
-        let new_file = unsafe { File::from_raw_fd(tryfuse!(unistd::dup(fd), reply)) };
-        let (attr, generation) = tryfuse!(self.lookup_from_fd(new_file), reply);
+        let new_file = unsafe { File::from_raw_fd(fd) };
+        let (attr, generation) =
+            tryfuse!(self.lookup_from_fd(LookupFile::Borrow(&new_file)), reply);
+        let fh = Fh::new(Fd::new(new_file.into_raw_fd(), FdState::Readable));
 
         let fp = Box::into_raw(fh) as u64; // freed by close
         reply.created(&TTL, &attr, generation, fp, flags);
