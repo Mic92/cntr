@@ -3,8 +3,8 @@ use log;
 struct Logger;
 
 impl log::Log for Logger {
-    fn enabled(&self, metadata: &log::LogMetadata) -> bool {
-        metadata.level() <= log::LogLevel::Info
+    fn enabled(&self, _metadata: &log::LogMetadata) -> bool {
+        true
     }
 
     fn log(&self, record: &log::LogRecord) {
