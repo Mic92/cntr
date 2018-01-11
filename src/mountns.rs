@@ -166,7 +166,7 @@ pub fn setup_bindmounts(new_root: &Path, mounts: &[&str]) -> Result<()> {
             Ok(data) => data,
         };
 
-        if !((source_stat.is_file() && mountpoint_stat.is_file()) ||
+        if !((source_stat.is_file() && !mountpoint_stat.is_dir()) ||
                  (source_stat.is_dir() && mountpoint_stat.is_dir()))
         {
             continue;
