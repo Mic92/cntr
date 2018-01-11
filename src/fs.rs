@@ -17,11 +17,12 @@ use nix::sys::time::{TimeSpec as NixTimeSpec, TimeValLike};
 use nix::sys::uio::{pread, pwrite};
 use nix::unistd::{Gid, Uid};
 use num_cpus;
-use parking_lot::RwLock;
+use parking_lot::{RwLock, Mutex};
 use readlink::readlinkat;
 use statvfs::fstatvfs;
 use std::{u32, u64};
 use std::cmp;
+use std::collections::HashMap;
 use std::ffi::{CStr, OsStr};
 use std::fs::File;
 use std::io;
@@ -44,11 +45,6 @@ pub const POSIX_ACL_DEFAULT_XATTR: &str = "system.posix_acl_default";
 struct InodeKey {
     ino: u64,
     dev: u64,
-}
-
-struct InodeMapping {
-    inode_number: u64,
-    initialized: bool,
 }
 
 struct DirP {
@@ -80,7 +76,7 @@ struct InodeCounter {
 pub struct CntrFs {
     prefix: String,
     root_inode: Arc<Inode>,
-    inode_mapping: Arc<ConcHashMap<InodeKey, InodeMapping>>,
+    inode_mapping: Arc<Mutex<HashMap<InodeKey, u64>>>,
     inodes: Arc<ConcHashMap<u64, Arc<Inode>>>,
     inode_counter: Arc<RwLock<InodeCounter>>,
     effective_uid: Option<Uid>,
@@ -201,7 +197,7 @@ impl CntrFs {
                 nlookup: RwLock::new(2),
                 has_default_acl: RwLock::new(None),
             }),
-            inode_mapping: Arc::new(ConcHashMap::<InodeKey, InodeMapping>::new()),
+            inode_mapping: Arc::new(Mutex::new(HashMap::<InodeKey, u64>::new())),
             inodes: Arc::new(ConcHashMap::<u64, Arc<Inode>>::new()),
             inode_counter: Arc::new(RwLock::new(InodeCounter {
                 next_number: 3,
@@ -459,7 +455,7 @@ impl CntrFs {
         Ok(inode)
     }
 
-    fn next_inode_number(&mut self) -> (u64, u64) {
+    fn next_inode_number(&self) -> (u64, u64) {
         let mut counter = self.inode_counter.write();
         let next_number = counter.next_number;
         counter.next_number += 1;
@@ -476,66 +472,51 @@ impl CntrFs {
         let _stat = try!(stat::fstat(new_file.as_raw_fd()));
         let mut attr = self.attr_from_stat(_stat);
 
-        loop {
-            let key1 = InodeKey {
-                ino: attr.ino,
-                dev: _stat.st_dev,
+        let key = InodeKey {
+            ino: attr.ino,
+            dev: _stat.st_dev,
+        };
+
+        let mut inode_mapping = self.inode_mapping.lock();
+
+        if let Some(ino) = inode_mapping.get(&key) {
+            if let Some(mut inode) = self.inodes.find_mut(ino) {
+                *inode.get().nlookup.write() += 1;
+                let mut counter = self.inode_counter.read();
+                attr.ino = *ino;
+                return Ok((attr, counter.generation));
+            } else {
+                panic!("BUG! could not find inode {} also its mapping exists.", ino);
             };
-            let key2 = key1.clone();
-
-            // FIXME only increase inode number, when insertion succeed.
-            let (next_number, generation) = self.next_inode_number();
-
-            self.inode_mapping.upsert(
-                key1,
-                InodeMapping {
-                    inode_number: next_number,
-                    initialized: false,
-                },
-                &|_| {},
-            );
-
-            if let Some(mut lock) = self.inode_mapping.find_mut(&key2) {
-                if lock.get().inode_number == next_number {
-                    let fd = RwLock::new(Fd::new(
-                        try!(new_file.into_raw_fd()),
-                        if attr.kind == FileType::Symlink ||
-                            attr.kind == FileType::BlockDevice
-                        {
-                            // we cannot open a symlink read/writable
-                            FdState::Readable
-                        } else {
-                            FdState::None
-                        },
-                    ));
-                    let inode = Arc::new(Inode {
-                        fd: fd,
-                        kind: attr.kind,
-                        ino: attr.ino,
-                        dev: _stat.st_dev,
-                        nlookup: RwLock::new(1),
-                        has_default_acl: RwLock::new(None),
-                    });
-                    self.inodes.upsert(next_number, inode, &|_| {
-                        assert!(false, "BUG! Same inode number was inserted twice");
-                    });
-                    lock.get().initialized = true;
-                } else {
-                    assert!(lock.get().initialized);
-
-                    match self.inodes.find_mut(&lock.get().inode_number) {
-                        Some(mut inode) => *inode.get().nlookup.write() += 1,
-                        // some one else removed our inode again
-                        None => {
-                            debug!("could not find {}", lock.get().inode_number);
-                        }
-                    };
-                }
-
-                attr.ino = lock.get().inode_number;
-                return Ok((attr, generation));
-            } // else try to insert again
         }
+
+        let (next_number, generation) = self.next_inode_number();
+        let fd = RwLock::new(Fd::new(
+            try!(new_file.into_raw_fd()),
+            if attr.kind == FileType::Symlink ||
+                attr.kind == FileType::BlockDevice
+            {
+                // we cannot open a symlink read/writable
+                FdState::Readable
+            } else {
+                FdState::None
+            },
+        ));
+
+        let inode = Arc::new(Inode {
+            fd: fd,
+            kind: attr.kind,
+            ino: attr.ino,
+            dev: _stat.st_dev,
+            nlookup: RwLock::new(1),
+            has_default_acl: RwLock::new(None),
+        });
+        assert!(self.inodes.insert(next_number, inode).is_none());
+        attr.ino = next_number;
+
+        inode_mapping.insert(key, next_number);
+
+        return Ok((attr, generation));
     }
 
     pub fn lookup_inode(&mut self, parent: u64, name: &OsStr) -> nix::Result<(FileAttr, u64)> {
@@ -638,9 +619,12 @@ impl Filesystem for CntrFs {
     fn forget(&mut self, _req: &Request, ino: u64, nlookup: u64) {
         fsuid::set_root();
 
+        let mut inode_mapping = self.inode_mapping.lock();
+
         let key = match self.inodes.find_mut(&ino) {
-            Some(ref mut inode) => {
-                let mut old_nlookup = inode.get().nlookup.write();
+            Some(ref mut inode_lock) => {
+                let inode = inode_lock.get();
+                let mut old_nlookup = inode.nlookup.write();
                 assert!(*old_nlookup >= nlookup);
 
                 *old_nlookup -= nlookup;
@@ -649,15 +633,16 @@ impl Filesystem for CntrFs {
                     return;
                 };
 
-                let ino = inode.get().ino;
-                let dev = inode.get().dev;
-                InodeKey { ino: ino, dev: dev }
+                InodeKey {
+                    ino: inode.ino,
+                    dev: inode.dev,
+                }
             }
             None => return,
         };
 
         self.inodes.remove(&ino);
-        self.inode_mapping.remove(&key);
+        inode_mapping.remove(&key);
     }
 
     fn destroy(&mut self, _req: &Request) {
