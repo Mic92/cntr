@@ -23,6 +23,7 @@ use statvfs::fstatvfs;
 use std::{u32, u64};
 use std::cmp;
 use std::ffi::{CStr, OsStr};
+use std::fs::File;
 use std::io;
 use std::mem;
 use std::os::unix::prelude::*;
@@ -170,10 +171,7 @@ impl CntrFs {
         Ok(CntrFs {
             prefix: String::from(options.prefix),
             root_inode: Arc::new(Inode {
-                fd: RwLock::new(Fd {
-                    number: fd,
-                    state: FdState::Readable,
-                }),
+                fd: RwLock::new(Fd::new(fd, FdState::Readable)),
                 kind: FileType::Directory,
                 ino: fuse::FUSE_ROOT_ID,
                 dev: fuse::FUSE_ROOT_ID,
@@ -451,8 +449,8 @@ impl CntrFs {
         (next_number, counter.generation)
     }
 
-    fn lookup_from_fd(&mut self, newfd: RawFd) -> nix::Result<(FileAttr, u64)> {
-        let _stat = try!(stat::fstat(newfd));
+    fn lookup_from_fd(&mut self, new_file: File) -> nix::Result<(FileAttr, u64)> {
+        let _stat = try!(stat::fstat(new_file.as_raw_fd()));
         let mut attr = self.attr_from_stat(_stat);
 
         loop {
@@ -476,9 +474,9 @@ impl CntrFs {
 
             if let Some(mut lock) = self.inode_mapping.find_mut(&key2) {
                 if lock.get().inode_number == next_number {
-                    let fd = RwLock::new(Fd {
-                        number: newfd,
-                        state: if attr.kind == FileType::Symlink ||
+                    let fd = RwLock::new(Fd::new(
+                        new_file.into_raw_fd(),
+                        if attr.kind == FileType::Symlink ||
                             attr.kind == FileType::BlockDevice
                         {
                             // we cannot open a symlink read/writable
@@ -486,7 +484,7 @@ impl CntrFs {
                         } else {
                             FdState::None
                         },
-                    });
+                    ));
                     let inode = Arc::new(Inode {
                         fd: fd,
                         kind: attr.kind,
@@ -522,15 +520,17 @@ impl CntrFs {
         let res = {
             let parent_inode = try!(self.inode(&parent));
             let parent_fd = parent_inode.fd.read();
-            fcntl::openat(
+            try!(fcntl::openat(
                 parent_fd.raw(),
                 name,
                 OFlag::O_PATH | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
                 stat::Mode::empty(),
-            )
+            ))
         };
 
-        self.lookup_from_fd(try!(res))
+        let file = unsafe { File::from_raw_fd(res) };
+
+        self.lookup_from_fd(file)
     }
 }
 
@@ -908,10 +908,7 @@ impl Filesystem for CntrFs {
 
         // avoid double caching
         //tryfuse!(posix_fadvise(res), reply);
-        let fh = Fh::new(Fd {
-            number: res,
-            state: FdState::from(oflags),
-        });
+        let fh = Fh::new(Fd::new(res, FdState::from(oflags)));
         reply.opened(Box::into_raw(fh) as u64, fuse::consts::FOPEN_KEEP_CACHE); // freed by close
     }
 
@@ -1210,12 +1207,9 @@ impl Filesystem for CntrFs {
             reply
         );
 
-        let fh = Fh::new(Fd {
-            number: fd,
-            state: FdState::Readable,
-        });
-        let newfd = tryfuse!(unistd::dup(fd), reply);
-        let (attr, generation) = tryfuse!(self.lookup_from_fd(newfd), reply);
+        let fh = Fh::new(Fd::new(fd, FdState::Readable));
+        let new_file = unsafe { File::from_raw_fd(tryfuse!(unistd::dup(fd), reply)) };
+        let (attr, generation) = tryfuse!(self.lookup_from_fd(new_file), reply);
 
         let fp = Box::into_raw(fh) as u64; // freed by close
         reply.created(&TTL, &attr, generation, fp, flags);

@@ -1,5 +1,5 @@
 use nix::fcntl::OFlag;
-use nix::unistd;
+use std::fs::File;
 use std::os::unix::prelude::*;
 
 #[derive(PartialOrd, PartialEq)]
@@ -26,21 +26,21 @@ impl From<OFlag> for FdState {
 }
 
 pub struct Fd {
-    pub number: RawFd,
+    pub file: File,
     pub state: FdState,
 }
 
 impl Fd {
+    pub fn new(fd: RawFd, state: FdState) -> Fd {
+        Fd {
+            file: unsafe { File::from_raw_fd(fd) },
+            state: state,
+        }
+    }
     pub fn raw(&self) -> RawFd {
-        self.number
+        self.file.as_raw_fd()
     }
     pub fn path(&self) -> String {
         fd_path(self)
-    }
-}
-
-impl Drop for Fd {
-    fn drop(&mut self) {
-        unistd::close(self.number).unwrap();
     }
 }
