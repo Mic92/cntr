@@ -253,7 +253,7 @@ pub fn run(opts: &Options) -> Result<Void> {
     let cntrfs = tryfmt!(
         fs::CntrFs::new(&fs::CntrMountOptions {
             prefix: "/",
-            splice_read: false,
+            splice_read: cfg!(feature = "splice_read"),
             splice_write: false,
             uid_map: uid_map,
             gid_map: gid_map,

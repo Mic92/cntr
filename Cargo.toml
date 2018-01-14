@@ -45,7 +45,7 @@ lto = true
 debug = true
 
 [features]
-default = []
+default = ["splice_read"]
 verbose_fuse_test_log = []
 splice_read = []
 splice_write = []
