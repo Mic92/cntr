@@ -127,10 +127,10 @@ macro_rules! tryfuse {
 }
 
 // TODO: evaluate if this option increases performance
-//fn posix_fadvise(fd: RawFd) -> nix::Result<()> {
-//    let res = unsafe { libc::posix_fadvise(fd, 0, 0, libc::POSIX_FADV_DONTNEED) };
-//    Errno::result(res).map(drop)
-//}
+fn posix_fadvise(fd: RawFd) -> nix::Result<()> {
+    let res = unsafe { libc::posix_fadvise(fd, 0, 0, libc::POSIX_FADV_DONTNEED) };
+    Errno::result(res).map(drop)
+}
 
 pub struct CntrMountOptions<'a> {
     pub prefix: &'a str,
@@ -915,7 +915,7 @@ impl Filesystem for CntrFs {
         );
 
         // avoid double caching
-        //tryfuse!(posix_fadvise(res), reply);
+        tryfuse!(posix_fadvise(res), reply);
         let fh = Fh::new(Fd::new(res, FdState::from(oflags)));
         reply.opened(Box::into_raw(fh) as u64, fuse::consts::FOPEN_KEEP_CACHE); // freed by close
     }
