@@ -62,14 +62,7 @@ pub fn get(pid: Option<Pid>) -> Result<Capabilities> {
 }
 
 impl Capabilities {
-    pub fn set(&self, pid: Option<Pid>) -> Result<()> {
-        let header = cap_user_header_t {
-            version: _LINUX_CAPABILITY_VERSION_3,
-            pid: pid.map_or(0, Into::into),
-        };
-        let res = unsafe { libc::syscall(libc::SYS_capset, &header, &self.user_data) };
-        tryfmt!(Errno::result(res).map(drop), "");
-
+    pub fn set(&self) -> Result<()> {
         for cap in 0..self.last_capability {
             if (u64::from(self.user_data.effective)) & (1 << cap) == 0 {
                 // TODO: do not ignore result

@@ -188,7 +188,7 @@ fn run_child(
     }
 
     tryfmt!(
-        target_caps.set(Some(unistd::getpid())),
+        target_caps.set(),
         "failed to apply capabilities"
     );
 
