@@ -128,7 +128,7 @@ macro_rules! tryfuse {
 
 // TODO: evaluate if this option increases performance
 fn posix_fadvise(fd: RawFd) -> nix::Result<()> {
-    let res = unsafe { libc::posix_fadvise(fd, 0, 0, libc::POSIX_FADV_DONTNEED) };
+    let res = unsafe { libc::posix_fadvise(fd, 0, 0, libc::POSIX_FADV_NOREUSE) };
     Errno::result(res).map(drop)
 }
 
