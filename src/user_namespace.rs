@@ -115,7 +115,8 @@ impl IdMap {
                 return id - first + self.extent[idx].lower_first;
             }
         }
-        (0 as u32).wrapping_sub(1)
+        // FIXME: should be replaced by overflowgid/overflowuid
+        65534
     }
     pub fn map_id_up(&self, id: u32) -> u32 {
         for idx in 0..self.nr_extents {
@@ -125,6 +126,7 @@ impl IdMap {
                 return id - first + self.extent[idx].first;
             }
         }
-        (0 as u32).wrapping_sub(1)
+        // FIXME: should be replaced by overflowgid/overflowuid
+        65534
     }
 }
