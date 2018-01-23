@@ -5,7 +5,6 @@ use nix::{Result, NixPath};
 use nix::errno::Errno;
 use readlink::readlinkat;
 use std::ffi::OsStr;
-use std::os::unix::io::RawFd;
 
 pub fn setxattr(fd: &Fd, kind: FileType, name: &OsStr, value: &[u8], flags: u32) -> Result<()> {
     if kind == FileType::Symlink {
@@ -60,20 +59,6 @@ fn getxattr_<P1: ?Sized + NixPath, P2: ?Sized + NixPath>(
             })
         })
     }));
-    Errno::result(res).map(|size| size as usize)
-}
-
-fn fgetxattr<P: ?Sized + NixPath>(fd: RawFd, name: &P, buf: &mut [u8]) -> Result<usize> {
-    let res = try!(unsafe {
-        name.with_nix_path(|cstr| {
-            libc::fgetxattr(
-                fd,
-                cstr.as_ptr(),
-                buf.as_mut_ptr() as *mut libc::c_void,
-                buf.len(),
-            )
-        })
-    });
     Errno::result(res).map(|size| size as usize)
 }
 
@@ -178,6 +163,19 @@ fn lremovexattr<P1: ?Sized + NixPath, P2: ?Sized + NixPath>(path: &P1, name: &P2
 }
 
 // TODO interesting for rust-nix?
+//fn fgetxattr<P: ?Sized + NixPath>(fd: RawFd, name: &P, buf: &mut [u8]) -> Result<usize> {
+//    let res = try!(unsafe {
+//        name.with_nix_path(|cstr| {
+//            libc::fgetxattr(
+//                fd,
+//                cstr.as_ptr(),
+//                buf.as_mut_ptr() as *mut libc::c_void,
+//                buf.len(),
+//            )
+//        })
+//    });
+//    Errno::result(res).map(|size| size as usize)
+//}
 //fn flistxattr(fd: RawFd, list: &mut [u8]) -> Result<usize> {
 //    let res = unsafe { libc::flistxattr(fd, list.as_mut_ptr() as *mut i8, list.len()) };
 //    Errno::result(res).map(|size| size as usize)
