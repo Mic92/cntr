@@ -12,7 +12,7 @@ pub struct Docker {}
 impl Container for Docker {
     fn lookup(&self, container_id: &str) -> Result<Pid> {
         let command = format!(
-            "docker inspect --format '{{.State.Status}};{{.State.Pid}}' {}",
+            "docker inspect --format '{{.State.Running}};{{.State.Pid}}' {}",
             container_id
         );
         let output = tryfmt!(
@@ -21,7 +21,7 @@ impl Container for Docker {
                     &[
                         "inspect",
                         "--format",
-                        "{{.State.Status}};{{.State.Pid}}",
+                        "{{.State.Running}};{{.State.Pid}}",
                         container_id,
                     ],
                 )
@@ -43,12 +43,10 @@ impl Container for Docker {
         let fields: Vec<&[u8]> = output.stdout.splitn(2, |c| *c == b';').collect();
         assert!(fields.len() == 2);
 
-        if fields[0] != b"running" {
-            let state = String::from_utf8_lossy(fields[0]);
+        if fields[0] != b"true" {
             return errfmt!(format!(
-                "container '{}' is not running, got state: {}",
+                "container '{}' is not running",
                 container_id,
-                state
             ));
         }
 
