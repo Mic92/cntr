@@ -51,6 +51,7 @@ mod capabilities;
 mod ipc;
 mod container;
 mod inode;
+mod lsm;
 pub mod pwd;
 pub mod fs;
 
@@ -123,6 +124,11 @@ fn run_child(
         "failed to get capabilities of target process"
     );
 
+    let lsm_profile = tryfmt!(
+        lsm::read_profile(container_pid),
+        "failed to get lsm profile"
+    );
+
     tryfmt!(
         cgroup::move_to(unistd::getpid(), container_pid),
         "failed to change cgroup"
@@ -187,10 +193,7 @@ fn run_child(
         );
     }
 
-    tryfmt!(
-        target_caps.set(),
-        "failed to apply capabilities"
-    );
+    tryfmt!(target_caps.set(), "failed to apply capabilities");
 
     let pty_master = tryfmt!(pty::open_ptm(), "open pty master");
     tryfmt!(pty::attach_pts(&pty_master), "failed to setup pty master");
@@ -203,6 +206,10 @@ fn run_child(
 
     if let Err(e) = env::set_current_dir("/var/lib/cntr") {
         warn!("failed to change directory to /var/lib/cntr: {}", e);
+    }
+
+    if let Some(profile) = lsm_profile {
+        tryfmt!(profile.inherit_profile(), "failed to inherit lsm profile");
     }
 
     let status = tryfmt!(cmd.run(), "");

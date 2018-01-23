@@ -1,0 +1,133 @@
+use nix::unistd::Pid;
+use std::fs::{File, OpenOptions};
+use std::io::BufReader;
+use std::io::ErrorKind;
+use std::io::prelude::*;
+use types::{Error, Result};
+
+#[derive(PartialEq, Eq)]
+enum LSMKind {
+    AppArmor,
+    SELinux,
+}
+
+pub struct LSMProfile {
+    label: String,
+    kind: LSMKind,
+    label_file: File,
+}
+
+
+fn is_apparmor_enabled() -> Result<bool> {
+    let aa_path = "/sys/module/apparmor/parameters/enabled";
+    match File::open(aa_path) {
+        Ok(mut file) => {
+            let mut contents = String::new();
+            tryfmt!(
+                file.read_to_string(&mut contents),
+                "failed to read {}",
+                aa_path
+            );
+            Ok(contents == "Y\n")
+        }
+        Err(err) => {
+            if err.kind() != ErrorKind::NotFound {
+                tryfmt!(Err(err), "failed to open {}", aa_path);
+            }
+            Ok(false)
+        }
+    }
+}
+
+fn is_selinux_enabled() -> Result<bool> {
+    let file = tryfmt!(
+        File::open("/proc/filesystems"),
+        "failed to open /proc/filesystems"
+    );
+    let reader = BufReader::new(file);
+    for line in reader.lines() {
+        let l = tryfmt!(line, "failed to read from /proc/filesystems");
+        if l.contains("selinuxfs") {
+            return Ok(true);
+        }
+    }
+    return Ok(false);
+}
+
+fn check_type() -> Result<Option<LSMKind>> {
+    if tryfmt!(
+        is_apparmor_enabled(),
+        "failed to check availability of apparmor"
+    )
+    {
+        Ok(Some(LSMKind::AppArmor))
+    } else if tryfmt!(
+        is_selinux_enabled(),
+        "failed to check availability of selinux"
+    )
+    {
+        Ok(Some(LSMKind::SELinux))
+    } else {
+        Ok(None)
+    }
+}
+
+fn read_proclabel(path: &str, kind: &LSMKind) -> Result<String> {
+    let mut attr = String::new();
+    let mut file = tryfmt!(File::open(&path), "failed to open {}", path);
+    tryfmt!(file.read_to_string(&mut attr), "failed to read {}", path);
+
+    if *kind == LSMKind::AppArmor {
+        let fields: Vec<&str> = attr.trim_right().splitn(2, " ").collect();
+        Ok(fields[0].to_owned())
+    } else {
+        Ok(attr)
+    }
+}
+
+pub fn read_profile(pid: Pid) -> Result<Option<LSMProfile>> {
+    let kind = tryfmt!(check_type(), "");
+
+    if let Some(kind) = kind {
+        let target_path = format!("/proc/{}/attr/current", pid);
+        let target_label = tryfmt!(
+            read_proclabel(&target_path, &kind),
+            "failed to get security label of target process"
+        );
+
+        let own_path = "/proc/self/attr/current";
+        let own_label = tryfmt!(
+            read_proclabel(own_path, &kind),
+            "failed to get own security label"
+        );
+
+        if target_label == own_label {
+            // nothing to do
+            return Ok(None);
+        }
+
+        let res = OpenOptions::new().write(true).open(own_path);
+
+        return Ok(Some(LSMProfile {
+            kind: kind,
+            label: target_label,
+            label_file: tryfmt!(res, "failed to open {}", own_path),
+        }));
+    }
+    Ok(None)
+}
+
+impl LSMProfile {
+    pub fn inherit_profile(mut self) -> Result<()> {
+        let attr = match self.kind {
+            LSMKind::AppArmor => format!("changeprofile {}", self.label),
+            // TODO not working for selinux yet
+            //LSMKind::SELinux => self.label,
+            LSMKind::SELinux => return Ok(()),
+        };
+
+        let res = self.label_file.write_all(attr.as_bytes());
+        tryfmt!(res, "failed to write '{}' to /proc/self/attr/current", attr);
+        Ok(())
+    }
+}
