@@ -482,7 +482,7 @@ impl CntrFs {
         if let Some(ino) = inode_mapping.get(&key) {
             if let Some(mut inode) = self.inodes.find_mut(ino) {
                 *inode.get().nlookup.write() += 1;
-                let mut counter = self.inode_counter.read();
+                let counter = self.inode_counter.read();
                 attr.ino = *ino;
                 return Ok((attr, counter.generation));
             } else {
