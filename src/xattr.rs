@@ -106,11 +106,6 @@ fn listxattr_<P: ?Sized + NixPath>(path: &P, list: &mut [u8]) -> Result<usize> {
     Errno::result(res).map(|size| size as usize)
 }
 
-fn flistxattr(fd: RawFd, list: &mut [u8]) -> Result<usize> {
-    let res = unsafe { libc::flistxattr(fd, list.as_mut_ptr() as *mut i8, list.len()) };
-    Errno::result(res).map(|size| size as usize)
-}
-
 fn llistxattr<P: ?Sized + NixPath>(path: &P, list: &mut [u8]) -> Result<usize> {
     let res = try!(unsafe {
         path.with_nix_path(|cstr| {
@@ -164,34 +159,12 @@ fn setxattr_<P1: ?Sized + NixPath, P2: ?Sized + NixPath>(
     Errno::result(res).map(drop)
 }
 
-fn fsetxattr<P: ?Sized + NixPath>(fd: RawFd, name: &P, buf: &[u8], flags: c_int) -> Result<()> {
-    let res = try!(unsafe {
-        name.with_nix_path(|cstr| {
-            libc::fsetxattr(
-                fd,
-                cstr.as_ptr(),
-                buf.as_ptr() as *const libc::c_void,
-                buf.len(),
-                flags,
-            )
-        })
-    });
-    Errno::result(res).map(drop)
-}
-
 fn removexattr_<P1: ?Sized + NixPath, P2: ?Sized + NixPath>(path: &P1, name: &P2) -> Result<()> {
     let res = try!(try!(unsafe {
         path.with_nix_path(|p| {
             name.with_nix_path(|n| libc::removexattr(p.as_ptr(), n.as_ptr()))
         })
     }));
-    Errno::result(res).map(drop)
-}
-
-fn fremovexattr<P: ?Sized + NixPath>(fd: RawFd, name: &P) -> Result<()> {
-    let res = try!(unsafe {
-        name.with_nix_path(|cstr| libc::fremovexattr(fd, cstr.as_ptr()))
-    });
     Errno::result(res).map(drop)
 }
 
@@ -203,3 +176,31 @@ fn lremovexattr<P1: ?Sized + NixPath, P2: ?Sized + NixPath>(path: &P1, name: &P2
     }));
     Errno::result(res).map(drop)
 }
+
+// TODO interesting for rust-nix?
+//fn flistxattr(fd: RawFd, list: &mut [u8]) -> Result<usize> {
+//    let res = unsafe { libc::flistxattr(fd, list.as_mut_ptr() as *mut i8, list.len()) };
+//    Errno::result(res).map(|size| size as usize)
+//}
+//
+//fn fsetxattr<P: ?Sized + NixPath>(fd: RawFd, name: &P, buf: &[u8], flags: c_int) -> Result<()> {
+//    let res = try!(unsafe {
+//        name.with_nix_path(|cstr| {
+//            libc::fsetxattr(
+//                fd,
+//                cstr.as_ptr(),
+//                buf.as_ptr() as *const libc::c_void,
+//                buf.len(),
+//                flags,
+//            )
+//        })
+//    });
+//    Errno::result(res).map(drop)
+//}
+//
+//fn fremovexattr<P: ?Sized + NixPath>(fd: RawFd, name: &P) -> Result<()> {
+//    let res = try!(unsafe {
+//        name.with_nix_path(|cstr| libc::fremovexattr(fd, cstr.as_ptr()))
+//    });
+//    Errno::result(res).map(drop)
+//}
