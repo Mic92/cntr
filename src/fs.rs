@@ -274,8 +274,10 @@ impl CntrFs {
                 effective_uid: self.effective_uid,
                 effective_gid: self.effective_gid,
             };
+
+            let max_background = num_sessions as u16;
             let res =
-                fuse::Session::new_from_fd(cntrfs, self.fuse_fd, Path::new(""), self.splice_write);
+                fuse::Session::new_from_fd(cntrfs, self.fuse_fd, Path::new(""), self.splice_write, max_background, max_background);
             let session = tryfmt!(res, "failed to inherit fuse session");
 
             let guard = unsafe {
