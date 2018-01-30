@@ -1,9 +1,0 @@
-[submodule "src/rust-fuse"]
-	path = src/rust-fuse
-	url = https://github.com/Mic92/rust-fuse.git
-[submodule "src/nix"]
-	path = src/nix
-	url = https://github.com/Mic92/nix.git
-[submodule "src/libc"]
-	path = src/libc
-	url = https://github.com/Mic92/libc.git
