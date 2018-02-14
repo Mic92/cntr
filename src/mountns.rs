@@ -72,7 +72,9 @@ impl MountNamespace {
             sock.send(message, &[self.old_namespace.file()])
         };
         match res {
-            Ok(_) => Ok(self),
+            Ok(_) => {
+                Ok(self)
+            },
             Err(e) => {
                 self.cleanup();
                 Err(e)
@@ -134,11 +136,11 @@ fn mkdir_p<P: AsRef<Path>>(path: &P) -> io::Result<()> {
     Ok(())
 }
 
-pub fn setup_bindmounts(new_root: &Path, mounts: &[&str]) -> Result<()> {
+pub fn setup_bindmounts(mounts: &[&str]) -> Result<()> {
     for m in mounts {
-        let mountpoint_buf = new_root.join(m);
+        let mountpoint_buf = PathBuf::from("/").join(m);
         let mountpoint = mountpoint_buf.as_path();
-        let source_buf = PathBuf::from("/").join(m);
+        let source_buf = PathBuf::from("/var/lib/cntr").join(m);
         let source = source_buf.as_path();
 
         let mountpoint_stat = match metadata(mountpoint) {
@@ -241,11 +243,6 @@ pub fn setup(
     );
 
     tryfmt!(
-        setup_bindmounts(&ns.mountpoint, MOUNTS),
-        "failed to setup bind mounts"
-    );
-
-    tryfmt!(
         unistd::chdir(&ns.mountpoint),
         "failed to chdir to new mountpoint"
     );
@@ -254,6 +251,12 @@ pub fn setup(
         unistd::chroot(&ns.mountpoint),
         "failed to chroot to new mountpoint"
     );
+
+    tryfmt!(
+        setup_bindmounts(MOUNTS),
+        "failed to setup bind mounts"
+    );
+
 
     Ok(())
 }
