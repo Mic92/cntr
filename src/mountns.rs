@@ -37,6 +37,9 @@ const CNTR_MOUNT_POINT: &str = "var/lib/cntr";
 
 impl MountNamespace {
     fn new(old_namespace: namespace::Namespace) -> Result<MountNamespace> {
+        let path = PathBuf::from("/tmp");
+        tryfmt!(mkdir_p(&path), "failed to create /tmp");
+
         let mountpoint = tryfmt!(
             TempDir::new("cntrfs"),
             "failed to create temporary mountpoint"
