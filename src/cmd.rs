@@ -67,8 +67,8 @@ impl Cmd {
         Ok(Cmd { environment: variables })
     }
     pub fn run(self) -> Result<ExitStatus> {
-        let cmd = Command::new("sh")
-            .args(&["-l"])
+        let shell = env::var("SHELL").unwrap_or(String::from("sh"));
+        let cmd = Command::new(shell)
             .envs(self.environment)
             .status();
         Ok(tryfmt!(cmd, "failed to run `sh -l`"))
