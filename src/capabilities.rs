@@ -42,10 +42,10 @@ fn last_capability() -> Result<u64> {
     ))
 }
 
-pub fn get(pid: Option<Pid>) -> Result<Capabilities> {
+pub fn get(pid: Pid) -> Result<Capabilities> {
     let header = cap_user_header_t {
         version: _LINUX_CAPABILITY_VERSION_3,
-        pid: pid.map_or(0, Into::into),
+        pid: pid.into(),
     };
 
     let last_capability = tryfmt!(last_capability(), "failed to get capability limit");
@@ -64,7 +64,7 @@ pub fn get(pid: Option<Pid>) -> Result<Capabilities> {
 impl Capabilities {
     pub fn set(&self) -> Result<()> {
         for cap in 0..self.last_capability {
-            if (u64::from(self.user_data.effective)) & (1 << cap) == 0 {
+            if (u64::from(self.user_data.inheritable)) & (1 << cap) == 0 {
                 // TODO: do not ignore result
                 let _ = prctl::prctl(prctl::PrctlOption::PR_CAPBSET_DROP, cap, 0, 0, 0);
             }
