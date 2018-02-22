@@ -80,17 +80,17 @@ impl RawTty {
         let mut attr = orig_attr.clone();
         attr.input_flags.remove(
             InputFlags::IGNBRK | InputFlags::BRKINT | InputFlags::PARMRK | InputFlags::ISTRIP |
-            InputFlags::INLCR | InputFlags::IGNCR |
-            InputFlags::ICRNL | InputFlags::IXON,
-            );
+                InputFlags::INLCR |
+                InputFlags::IGNCR | InputFlags::ICRNL | InputFlags::IXON,
+        );
         attr.output_flags.remove(OutputFlags::OPOST);
         attr.local_flags.remove(
             LocalFlags::ECHO | LocalFlags::ECHONL | LocalFlags::ICANON |
-            LocalFlags::ISIG | LocalFlags::IEXTEN,
-            );
+                LocalFlags::ISIG | LocalFlags::IEXTEN,
+        );
         attr.control_flags.remove(
             ControlFlags::CSIZE | ControlFlags::PARENB,
-            );
+        );
         attr.control_flags.insert(ControlFlags::CS8);
         attr.control_chars[VMIN as usize] = 1; // One character-at-a-time input
         attr.control_chars[VTIME as usize] = 0; // with blocking read
@@ -99,7 +99,10 @@ impl RawTty {
             tcsetattr(stdin, SetArg::TCSAFLUSH, &attr),
             "failed to set termios attributes"
         );
-        Ok(RawTty{fd: stdin, attr: orig_attr})
+        Ok(RawTty {
+            fd: stdin,
+            attr: orig_attr,
+        })
     }
 }
 
@@ -171,7 +174,7 @@ fn shovel(pairs: &mut [FilePair]) {
 
 extern "C" fn handle_sigwinch(_: i32) {
     let fd = unsafe { PTY_MASTER_FD };
-    if  fd != -1 {
+    if fd != -1 {
         resize_pty(fd);
     }
 }
@@ -196,7 +199,10 @@ pub fn forward(pty: &PtyMaster) -> Result<()> {
         SaFlags::empty(),
         SigSet::empty(),
     );
-    tryfmt!(unsafe { sigaction(SIGWINCH, &sig_action) }, "failed to install SIGWINCH handler");
+    tryfmt!(
+        unsafe { sigaction(SIGWINCH, &sig_action) },
+        "failed to install SIGWINCH handler"
+    );
 
     let stdin: File = unsafe { File::from_raw_fd(libc::STDIN_FILENO) };
     let stdout: File = unsafe { File::from_raw_fd(libc::STDOUT_FILENO) };
@@ -235,7 +241,6 @@ fn get_winsize(term_fd: RawFd) -> winsize {
         }
     }
 }
-
 
 fn resize_pty(pty_master: RawFd) {
     unsafe {

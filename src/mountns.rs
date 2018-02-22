@@ -72,9 +72,7 @@ impl MountNamespace {
             sock.send(message, &[self.old_namespace.file()])
         };
         match res {
-            Ok(_) => {
-                Ok(self)
-            },
+            Ok(_) => Ok(self),
             Err(e) => {
                 self.cleanup();
                 Err(e)
@@ -252,10 +250,7 @@ pub fn setup(
         "failed to chroot to new mountpoint"
     );
 
-    tryfmt!(
-        setup_bindmounts(MOUNTS),
-        "failed to setup bind mounts"
-    );
+    tryfmt!(setup_bindmounts(MOUNTS), "failed to setup bind mounts");
 
 
     Ok(())

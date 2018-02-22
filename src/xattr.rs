@@ -163,7 +163,7 @@ fn lremovexattr<P1: ?Sized + NixPath, P2: ?Sized + NixPath>(path: &P1, name: &P2
 }
 
 // TODO interesting for rust-nix?
-//fn fgetxattr<P: ?Sized + NixPath>(fd: RawFd, name: &P, buf: &mut [u8]) -> Result<usize> {
+//pub fn fgetxattr<P: ?Sized + NixPath>(fd: RawFd, name: &P, buf: &mut [u8]) -> Result<usize> {
 //    let res = try!(unsafe {
 //        name.with_nix_path(|cstr| {
 //            libc::fgetxattr(
@@ -176,12 +176,12 @@ fn lremovexattr<P1: ?Sized + NixPath, P2: ?Sized + NixPath>(path: &P1, name: &P2
 //    });
 //    Errno::result(res).map(|size| size as usize)
 //}
-//fn flistxattr(fd: RawFd, list: &mut [u8]) -> Result<usize> {
+//pub fn flistxattr(fd: RawFd, list: &mut [u8]) -> Result<usize> {
 //    let res = unsafe { libc::flistxattr(fd, list.as_mut_ptr() as *mut i8, list.len()) };
 //    Errno::result(res).map(|size| size as usize)
 //}
 //
-//fn fsetxattr<P: ?Sized + NixPath>(fd: RawFd, name: &P, buf: &[u8], flags: c_int) -> Result<()> {
+//pub fn fsetxattr<P: ?Sized + NixPath>(fd: RawFd, name: &P, buf: &[u8], flags: c_int) -> Result<()> {
 //    let res = try!(unsafe {
 //        name.with_nix_path(|cstr| {
 //            libc::fsetxattr(
@@ -196,7 +196,7 @@ fn lremovexattr<P1: ?Sized + NixPath, P2: ?Sized + NixPath>(path: &P1, name: &P2
 //    Errno::result(res).map(drop)
 //}
 //
-//fn fremovexattr<P: ?Sized + NixPath>(fd: RawFd, name: &P) -> Result<()> {
+//pub fn fremovexattr<P: ?Sized + NixPath>(fd: RawFd, name: &P) -> Result<()> {
 //    let res = try!(unsafe {
 //        name.with_nix_path(|cstr| libc::fremovexattr(fd, cstr.as_ptr()))
 //    });
