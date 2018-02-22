@@ -4,13 +4,13 @@ use nix::errno::Errno;
 use nix::fcntl::OFlag;
 use nix::pty::*;
 use nix::sys::select;
+use nix::sys::signal::{SIGWINCH, sigaction, SigAction, SigSet, SaFlags, SigHandler};
 use nix::sys::stat;
 use nix::sys::termios::{InputFlags, SetArg, OutputFlags, LocalFlags, ControlFlags, tcsetattr,
                         tcgetattr, Termios};
 use nix::sys::termios::SpecialCharacterIndices::*;
 use std::fs::File;
 use std::io::{Read, Write};
-use std::mem;
 use std::os::unix::prelude::*;
 use types::{Error, Result};
 
@@ -65,6 +65,47 @@ impl<'a> FilePair<'a> {
             }
             Err(_) => false,
         }
+    }
+}
+
+struct RawTty {
+    fd: RawFd,
+    attr: Termios,
+}
+
+impl RawTty {
+    fn new(stdin: RawFd) -> Result<RawTty> {
+        let orig_attr = tryfmt!(tcgetattr(stdin), "failed to get termios attributes");
+
+        let mut attr = orig_attr.clone();
+        attr.input_flags.remove(
+            InputFlags::IGNBRK | InputFlags::BRKINT | InputFlags::PARMRK | InputFlags::ISTRIP |
+            InputFlags::INLCR | InputFlags::IGNCR |
+            InputFlags::ICRNL | InputFlags::IXON,
+            );
+        attr.output_flags.remove(OutputFlags::OPOST);
+        attr.local_flags.remove(
+            LocalFlags::ECHO | LocalFlags::ECHONL | LocalFlags::ICANON |
+            LocalFlags::ISIG | LocalFlags::IEXTEN,
+            );
+        attr.control_flags.remove(
+            ControlFlags::CSIZE | ControlFlags::PARENB,
+            );
+        attr.control_flags.insert(ControlFlags::CS8);
+        attr.control_chars[VMIN as usize] = 1; // One character-at-a-time input
+        attr.control_chars[VTIME as usize] = 0; // with blocking read
+
+        tryfmt!(
+            tcsetattr(stdin, SetArg::TCSAFLUSH, &attr),
+            "failed to set termios attributes"
+        );
+        Ok(RawTty{fd: stdin, attr: orig_attr})
+    }
+}
+
+impl Drop for RawTty {
+    fn drop(&mut self) {
+        let _ = tcsetattr(self.fd, SetArg::TCSANOW, &self.attr);
     }
 }
 
@@ -128,16 +169,34 @@ fn shovel(pairs: &mut [FilePair]) {
     }
 }
 
+extern "C" fn handle_sigwinch(_: i32) {
+    let fd = unsafe { PTY_MASTER_FD };
+    if  fd != -1 {
+        resize_pty(fd);
+    }
+}
+
+static mut PTY_MASTER_FD: i32 = -1;
+
 pub fn forward(pty: &PtyMaster) -> Result<()> {
-    let mut old_attr = None;
+    let mut raw_tty = None;
 
     if unsafe { libc::isatty(libc::STDIN_FILENO as i32) } != 0 {
-        resize_pty(pty);
-        old_attr = Some(tryfmt!(
-            set_tty_raw(libc::STDIN_FILENO),
+        resize_pty(pty.as_raw_fd());
+
+        raw_tty = Some(tryfmt!(
+            RawTty::new(libc::STDIN_FILENO),
             "failed to set stdin tty into raw mode"
         ))
     };
+
+    unsafe { PTY_MASTER_FD = pty.as_raw_fd() };
+    let sig_action = SigAction::new(
+        SigHandler::Handler(handle_sigwinch),
+        SaFlags::empty(),
+        SigSet::empty(),
+    );
+    tryfmt!(unsafe { sigaction(SIGWINCH, &sig_action) }, "failed to install SIGWINCH handler");
 
     let stdin: File = unsafe { File::from_raw_fd(libc::STDIN_FILENO) };
     let stdout: File = unsafe { File::from_raw_fd(libc::STDOUT_FILENO) };
@@ -148,59 +207,16 @@ pub fn forward(pty: &PtyMaster) -> Result<()> {
             FilePair::new(&pty_file, &stdout),
         ],
     );
-    mem::forget(stdin);
-    mem::forget(stdout);
-    mem::forget(pty_file);
+    stdin.into_raw_fd();
+    stdout.into_raw_fd();
+    pty_file.into_raw_fd();
 
-    if let Some(attr) = old_attr {
-        tryfmt!(
-            tcsetattr(libc::STDIN_FILENO, SetArg::TCSANOW, &attr),
-            "failed to restore stdin tty"
-        );
-    }
+    unsafe { PTY_MASTER_FD = -1 };
+
+    raw_tty.map(drop);
 
     Ok(())
 }
-
-fn set_tty_raw(fd: RawFd) -> Result<Termios> {
-    let orig_attr = tryfmt!(tcgetattr(fd), "failed to get termios attributes");
-
-    let mut attr = orig_attr.clone();
-    attr.input_flags.remove(
-        InputFlags::IGNBRK | InputFlags::BRKINT | InputFlags::PARMRK | InputFlags::ISTRIP |
-            InputFlags::INLCR | InputFlags::IGNCR |
-            InputFlags::ICRNL | InputFlags::IXON,
-    );
-    attr.output_flags.remove(OutputFlags::OPOST);
-    attr.local_flags.remove(
-        LocalFlags::ECHO | LocalFlags::ECHONL | LocalFlags::ICANON |
-            LocalFlags::ISIG | LocalFlags::IEXTEN,
-    );
-    attr.control_flags.remove(
-        ControlFlags::CSIZE | ControlFlags::PARENB,
-    );
-    attr.control_flags.insert(ControlFlags::CS8);
-    attr.control_chars[VMIN as usize] = 1; // One character-at-a-time input
-    attr.control_chars[VTIME as usize] = 0; // with blocking read
-
-    tryfmt!(
-        tcsetattr(fd, SetArg::TCSAFLUSH, &attr),
-        "failed to set termios attributes"
-    );
-    Ok(orig_attr)
-}
-
-//pub fn fork() -> Result<PtyFork> {
-//    let pty_master = tryfmt!(open_ptm(), "open pty master");
-//
-//    match tryfmt!(unistd::fork(), "fork()") {
-//        unistd::ForkResult::Parent { child } => setup_parent(child, pty_master),
-//        unistd::ForkResult::Child => {
-//            tryfmt!(attach_pts(&pty_master), "attach to pty");
-//            Ok(PtyFork::Child)
-//        }
-//    }
-//}
 
 fn get_winsize(term_fd: RawFd) -> winsize {
     use std::mem::zeroed;
@@ -221,10 +237,10 @@ fn get_winsize(term_fd: RawFd) -> winsize {
 }
 
 
-fn resize_pty(pty_master: &PtyMaster) {
+fn resize_pty(pty_master: RawFd) {
     unsafe {
         libc::ioctl(
-            pty_master.as_raw_fd(),
+            pty_master,
             libc::TIOCSWINSZ,
             &mut get_winsize(libc::STDOUT_FILENO),
         );
