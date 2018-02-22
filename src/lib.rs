@@ -120,7 +120,7 @@ fn run_child(
     home: Option<&CStr>,
 ) -> Result<Void> {
     let target_caps = tryfmt!(
-        capabilities::get(Some(container_pid)),
+        capabilities::get(container_pid),
         "failed to get capabilities of target process"
     );
 
