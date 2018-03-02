@@ -1,6 +1,6 @@
+use nix::unistd::Pid;
 use std::fmt::Debug;
 use types::{Result, Error};
-use unistd::Pid;
 
 mod process_id;
 mod docker;

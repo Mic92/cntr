@@ -2,12 +2,32 @@ extern crate argparse;
 extern crate cntr;
 extern crate nix;
 
-use argparse::{ArgumentParser, Store};
+use argparse::{ArgumentParser, Store, List};
 use cntr::pwd::pwnam;
+use std::io::{stdout, stderr};
 use std::process;
+use std::str::FromStr;
 
-fn parse_args() -> cntr::Options {
-    let mut options = cntr::Options {
+#[allow(non_camel_case_types)]
+#[derive(Debug)]
+enum Command {
+    attach,
+    exec,
+}
+
+impl FromStr for Command {
+    type Err = ();
+    fn from_str(src: &str) -> Result<Command, ()> {
+        return match src {
+            "attach" => Ok(Command::attach),
+            "exec" => Ok(Command::exec),
+            _ => Err(()),
+        };
+    }
+}
+
+fn parse_attach_args(args: Vec<String>) -> cntr::AttachOptions {
+    let mut options = cntr::AttachOptions {
         container_name: String::from(""),
         container_types: vec![],
         effective_user: None,
@@ -33,10 +53,14 @@ fn parse_args() -> cntr::Options {
             Store,
             "container id, container name or process id",
         );
-        ap.parse_args_or_exit();
+        match ap.parse(args, &mut stdout(), &mut stderr()) {
+            Ok(()) =>  {}
+            Err(x) => {
+                std::process::exit(x);
+            }
+        }
     }
     options.container_name = container_name;
-
     if !container_type.is_empty() {
         options.container_types = match cntr::lookup_container_type(container_type.as_str()) {
             Some(container) => vec![container],
@@ -74,10 +98,45 @@ fn parse_args() -> cntr::Options {
     options
 }
 
-fn main() {
-    let opts = parse_args();
-    if let Err(err) = cntr::run(&opts) {
+fn attach_command(args: Vec<String>) {
+    let opts = parse_attach_args(args);
+    if let Err(err) = cntr::attach(&opts) {
         eprintln!("{}", err);
         process::exit(1);
     };
+}
+
+fn exec_command(args: Vec<String>) {
+    if let Err(err) = cntr::exec(&args[1], &args[2..]) {
+        eprintln!("{}", err);
+        process::exit(1);
+    }
+}
+
+fn main() {
+    let mut subcommand = Command::attach;
+    let mut args = vec![];
+    {
+        let mut ap = ArgumentParser::new();
+        ap.set_description("Enter or executed in container");
+        ap.refer(&mut subcommand).add_argument(
+            "command",
+            Store,
+            r#"Command to run (either "attach" or "exec")"#,
+        );
+        ap.refer(&mut args).add_argument(
+            "arguments",
+            List,
+            r#"Arguments for command"#,
+        );
+
+        ap.parse_args_or_exit();
+    }
+
+    args.insert(0, format!("subcommand {:?}", subcommand));
+
+    match subcommand {
+        Command::attach => attach_command(args),
+        Command::exec => exec_command(args),
+    }
 }

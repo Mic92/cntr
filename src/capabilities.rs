@@ -1,13 +1,15 @@
 use libc::{self, c_int};
 use nix::errno::Errno;
 use nix::sys::prctl;
-use nix::unistd::Pid;
+use nix::unistd::{Pid, getpid};
 use std::fs::File;
 use std::io::Read;
 use std::mem;
 use types::{Error, Result};
 
 pub const _LINUX_CAPABILITY_VERSION_3: u32 = 0x2008_0522;
+pub const CAP_SYS_CHROOT: u64 = 18;
+pub const CAP_SYS_PTRACE: u64 = 19;
 
 #[repr(C)]
 struct cap_user_header_t {
@@ -24,7 +26,7 @@ struct cap_user_data_t {
 }
 
 pub struct Capabilities {
-    user_data: cap_user_data_t,
+    user_data: [cap_user_data_t; 2],
     last_capability: u64,
 }
 
@@ -42,6 +44,32 @@ fn last_capability() -> Result<u64> {
     ))
 }
 
+pub fn inherit_capabilities() -> Result<()> {
+    unsafe {
+        let header = cap_user_header_t {
+            version: _LINUX_CAPABILITY_VERSION_3,
+            pid: 0,
+        };
+
+        let mut data: [cap_user_data_t; 2] = mem::uninitialized();
+        let res = libc::syscall(libc::SYS_capget, &header, &mut data);
+        tryfmt!(Errno::result(res), "");
+        data[0].inheritable = 1 << CAP_SYS_CHROOT as u32;
+
+        let res = libc::syscall(libc::SYS_capset, &header, &mut data);
+        tryfmt!(Errno::result(res), "");
+
+        prctl::prctl(
+            prctl::PrctlOption::PR_CAP_AMBIENT,
+            libc::PR_CAP_AMBIENT_RAISE as u64,
+            CAP_SYS_CHROOT,
+            0,
+            0,
+        );
+    }
+    Ok(())
+}
+
 pub fn get(pid: Pid) -> Result<Capabilities> {
     let header = cap_user_header_t {
         version: _LINUX_CAPABILITY_VERSION_3,
@@ -49,8 +77,8 @@ pub fn get(pid: Pid) -> Result<Capabilities> {
     };
 
     let last_capability = tryfmt!(last_capability(), "failed to get capability limit");
-    let capabilities = unsafe {
-        let mut data: cap_user_data_t = mem::uninitialized();
+    let mut capabilities = unsafe {
+        let mut data: [cap_user_data_t; 2] = mem::uninitialized();
         let res = libc::syscall(libc::SYS_capget, &header, &mut data);
         tryfmt!(Errno::result(res).map(|_| data), "")
     };
@@ -63,8 +91,13 @@ pub fn get(pid: Pid) -> Result<Capabilities> {
 
 impl Capabilities {
     pub fn set(&self) -> Result<()> {
+        // we need chroot at the moment for `exec` command
+        let mut inheritable = self.user_data[0].inheritable as u64;
+        inheritable |= self.user_data[1].inheritable as u64;
+        inheritable |= 1 << CAP_SYS_CHROOT | 1 << CAP_SYS_PTRACE;
+
         for cap in 0..self.last_capability {
-            if (u64::from(self.user_data.inheritable)) & (1 << cap) == 0 {
+            if (u64::from(inheritable)) & (1 << cap) == 0 {
                 // TODO: do not ignore result
                 let _ = prctl::prctl(prctl::PrctlOption::PR_CAPBSET_DROP, cap, 0, 0, 0);
             }

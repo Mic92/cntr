@@ -2,11 +2,11 @@
 
 use container::Container;
 use libc::pid_t;
+use nix::unistd::Pid;
 use std::fs;
 use std::io::ErrorKind;
 use std::path::PathBuf;
 use types::{Result, Error};
-use unistd::Pid;
 
 #[derive(Clone, Debug)]
 pub struct ProcessId {}
