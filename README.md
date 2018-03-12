@@ -2,6 +2,15 @@
 
 A FS to keep debug tools out of container images.
 
-## Testing
 
-- test requires utillinux installed
+## Features
+
+- attach to containers
+
+## Usage
+
+## Installing
+
+```console
+$ cargo install --git https://github.com/Mic92/cntr
+```

@@ -3,12 +3,11 @@ sudo: false
 rust: stable
 matrix:
   include:
-    - env: TARGET=x86_64-unknown-linux-musl DEPLOY=1
+    - env: TARGET=x86_64-unknown-linux-musl DEPLOY=1 CARGO_VENDOR_VERSION=0.1.13
       before_script:
         - rustup target add $TARGET
-        - curl -L https://github.com/alexcrichton/cargo-vendor/releases/download/0.1.13/cargo-vendor-0.1.13-x86_64-unknown-linux-musl.tar.gz | \
-          tar xzf - -C $HOME/bin --strip-components=1
-        - cargo-vendor --version
+        - curl -sSfL https://github.com/alexcrichton/cargo-vendor/releases/download/${CARGO_VENDOR_VERSION}/cargo-vendor-${CARGO_VENDOR_VERSION}-x86_64-unknown-linux-musl.tar.gz | tar xzf - -C $HOME/bin --strip-components=1
+        - cargo vendor --version
 script:
   - cargo build --release --target $TARGET --locked
 
