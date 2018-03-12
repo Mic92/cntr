@@ -71,10 +71,7 @@ impl From<(Error, String)> for Error {
 
 impl From<String> for Error {
     fn from(desc: String) -> Error {
-        Error {
-            desc: desc,
-            cause: None,
-        }
+        Error { desc, cause: None }
     }
 }
 

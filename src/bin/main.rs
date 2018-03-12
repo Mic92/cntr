@@ -18,11 +18,11 @@ enum Command {
 impl FromStr for Command {
     type Err = ();
     fn from_str(src: &str) -> Result<Command, ()> {
-        return match src {
+        match src {
             "attach" => Ok(Command::attach),
             "exec" => Ok(Command::exec),
             _ => Err(()),
-        };
+        }
     }
 }
 
@@ -106,7 +106,7 @@ fn attach_command(args: Vec<String>) {
     };
 }
 
-fn exec_command(args: Vec<String>) {
+fn exec_command(args: &[String]) {
     if let Err(err) = cntr::exec(&args[1], &args[2..]) {
         eprintln!("{}", err);
         process::exit(1);
@@ -138,6 +138,6 @@ fn main() {
 
     match subcommand {
         Command::attach => attach_command(args),
-        Command::exec => exec_command(args),
+        Command::exec => exec_command(&args),
     }
 }

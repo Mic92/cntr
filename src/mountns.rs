@@ -56,7 +56,7 @@ impl MountNamespace {
         );
 
         Ok(MountNamespace {
-            old_namespace: old_namespace,
+            old_namespace,
             mountpoint: mountpoint.into_path(),
             temp_mountpoint: temp_mountpoint.into_path(),
         })

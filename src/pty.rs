@@ -31,8 +31,8 @@ struct FilePair<'a> {
 impl<'a> FilePair<'a> {
     fn new(from: &'a File, to: &'a File) -> FilePair<'a> {
         FilePair {
-            from: from,
-            to: to,
+            from,
+            to,
             buf: [8; libc::BUFSIZ as usize],
             write_offset: 0,
             read_offset: 0,

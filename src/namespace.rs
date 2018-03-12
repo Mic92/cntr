@@ -20,7 +20,7 @@ pub struct Kind {
     pub name: &'static str,
 }
 
-pub fn supported_namespaces<'a>() -> Result<HashSet<String>> {
+pub fn supported_namespaces() -> Result<HashSet<String>> {
     let mut namespaces = HashSet::new();
     let entries = tryfmt!(
         fs::read_dir(PathBuf::from("/proc/self/ns")),
@@ -42,15 +42,12 @@ impl Kind {
         let file = tryfmt!(File::open(path), "failed to open namespace file '{}'", path);
         Ok(Namespace {
             kind: self,
-            file: file,
+            file,
         })
     }
 
     pub fn namespace_from_file(&'static self, file: File) -> Namespace {
-        Namespace {
-            kind: self,
-            file: file,
-        }
+        Namespace { kind: self, file }
     }
 
     pub fn is_same(&self, pid: unistd::Pid) -> bool {

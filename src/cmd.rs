@@ -67,7 +67,7 @@ impl Cmd {
         Ok(Cmd { environment: variables })
     }
     pub fn run(self) -> Result<ExitStatus> {
-        let shell = env::var("SHELL").unwrap_or(String::from("sh"));
+        let shell = env::var("SHELL").unwrap_or_else(|_| String::from("sh"));
         let cmd = Command::new(shell)
             .args(&["-l"])
             .envs(self.environment)

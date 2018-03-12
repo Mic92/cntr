@@ -63,7 +63,7 @@ impl Fh {
     fn new(fd: Fd) -> Box<Self> {
         Box::new(Fh {
             magic: FH_MAGIC,
-            fd: fd,
+            fd,
         })
     }
 }
@@ -149,9 +149,9 @@ pub enum LookupFile<'a> {
 
 impl<'a> AsRawFd for LookupFile<'a> {
     fn as_raw_fd(&self) -> RawFd {
-        match self {
-            &LookupFile::Donate(ref f) => f.as_raw_fd(),
-            &LookupFile::Borrow(ref f) => f.as_raw_fd(),
+        match *self {
+            LookupFile::Donate(ref f) => f.as_raw_fd(),
+            LookupFile::Borrow(ref f) => f.as_raw_fd(),
         }
     }
 }
@@ -430,7 +430,7 @@ impl CntrFs {
             blocks: attr.st_blocks as u64,
             atime: Timespec::new(attr.st_atime, attr.st_atime_nsec as i32),
             mtime: Timespec::new(attr.st_mtime, attr.st_mtime_nsec as i32),
-            ctime: ctime,
+            ctime,
             crtime: ctime,
             uid: self.uid_map.map_id_down(attr.st_uid),
             gid: self.gid_map.map_id_down(attr.st_gid),
@@ -459,7 +459,7 @@ impl CntrFs {
     fn mutable_inode(&mut self, ino: &mut u64) -> nix::Result<Arc<Inode>> {
 
         let inode = try!(self.inode(ino));
-        try!(inode.upgrade_fd(FdState::Readable));
+        try!(inode.upgrade_fd(&FdState::Readable));
         Ok(inode)
     }
 
@@ -512,7 +512,7 @@ impl CntrFs {
         ));
 
         let inode = Arc::new(Inode {
-            fd: fd,
+            fd,
             kind: attr.kind,
             ino: attr.ino,
             dev: _stat.st_dev,
@@ -524,7 +524,7 @@ impl CntrFs {
 
         inode_mapping.insert(key, next_number);
 
-        return Ok((attr, generation));
+        Ok((attr, generation))
     }
 
     pub fn lookup_inode(&mut self, parent: u64, name: &OsStr) -> nix::Result<(FileAttr, u64)> {
@@ -703,7 +703,7 @@ impl Filesystem for CntrFs {
                 } else {
                     FdState::Readable
                 };
-                tryfuse!(inode.upgrade_fd(state), reply);
+                tryfuse!(inode.upgrade_fd(&state), reply);
                 let fd = inode.fd.read();
 
                 tryfuse!(
@@ -1039,7 +1039,7 @@ impl Filesystem for CntrFs {
 
         let dirp = Box::new(DirP {
             magic: DIRP_MAGIC,
-            dp: dp,
+            dp,
             offset: 0,
             entry: None,
         });
@@ -1113,14 +1113,14 @@ impl Filesystem for CntrFs {
     fn getxattr(
         &mut self,
         _req: &Request,
-        mut ino: u64,
+        ino: u64,
         name: &OsStr,
         size: u32,
         reply: ReplyXattr,
     ) {
         fsuid::set_root();
 
-        let inode = tryfuse!(self.inode(&mut ino), reply);
+        let inode = tryfuse!(self.inode(&ino), reply);
         let fd = inode.fd.read();
 
         if size == 0 {
@@ -1136,10 +1136,10 @@ impl Filesystem for CntrFs {
         }
     }
 
-    fn listxattr(&mut self, _req: &Request, mut ino: u64, size: u32, reply: ReplyXattr) {
+    fn listxattr(&mut self, _req: &Request, ino: u64, size: u32, reply: ReplyXattr) {
         fsuid::set_root();
 
-        let inode = tryfuse!(self.inode(&mut ino), reply);
+        let inode = tryfuse!(self.inode(&ino), reply);
         let fd = inode.fd.read();
 
         if size == 0 {
@@ -1156,7 +1156,7 @@ impl Filesystem for CntrFs {
     fn setxattr(
         &mut self,
         _req: &Request,
-        mut ino: u64,
+        ino: u64,
         name: &OsStr,
         value: &[u8],
         flags: u32,
@@ -1165,7 +1165,7 @@ impl Filesystem for CntrFs {
     ) {
         fsuid::set_root();
 
-        let inode = tryfuse!(self.inode(&mut ino), reply);
+        let inode = tryfuse!(self.inode(&ino), reply);
         let fd = inode.fd.read();
 
         if name == POSIX_ACL_DEFAULT_XATTR {
@@ -1179,10 +1179,10 @@ impl Filesystem for CntrFs {
         reply.ok();
     }
 
-    fn removexattr(&mut self, _req: &Request, mut ino: u64, name: &OsStr, reply: ReplyEmpty) {
+    fn removexattr(&mut self, _req: &Request, ino: u64, name: &OsStr, reply: ReplyEmpty) {
         fsuid::set_root();
 
-        let inode = tryfuse!(self.inode(&mut ino), reply);
+        let inode = tryfuse!(self.inode(&ino), reply);
         let fd = inode.fd.read();
 
         if name == POSIX_ACL_DEFAULT_XATTR {

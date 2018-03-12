@@ -1,14 +1,11 @@
 use capabilities;
-use capabilities::CAP_SYS_CHROOT;
 use cgroup;
 use cmd::Cmd;
 use fs;
 use ipc;
-use libc;
 use lsm;
 use mountns;
 use namespace;
-use nix::sys::prctl;
 use nix::sys::signal::{self, Signal};
 use nix::unistd;
 use nix::unistd::{Pid, Uid, Gid};
@@ -95,11 +92,11 @@ pub fn run(options: &ChildOptions) -> Result<Void> {
         mountns::setup(&options.fs, options.mount_ready_sock, mount_namespace),
         ""
     );
-
-    let mut dropped_groups = false;
-    if supported_namespaces.contains(namespace::USER.name) {
-        dropped_groups = unistd::setgroups(&[]).is_ok();
-    }
+    let dropped_groups = if supported_namespaces.contains(namespace::USER.name) {
+        unistd::setgroups(&[]).is_ok()
+    } else {
+        false
+    };
 
     for ns in other_namespaces {
         tryfmt!(ns.apply(), "failed to apply namespace");

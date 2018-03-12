@@ -51,7 +51,7 @@ fn is_selinux_enabled() -> Result<bool> {
             return Ok(true);
         }
     }
-    return Ok(false);
+    Ok(false)
 }
 
 fn check_type() -> Result<Option<LSMKind>> {
@@ -78,7 +78,7 @@ fn read_proclabel(path: &str, kind: &LSMKind) -> Result<String> {
     tryfmt!(file.read_to_string(&mut attr), "failed to read {}", path);
 
     if *kind == LSMKind::AppArmor {
-        let fields: Vec<&str> = attr.trim_right().splitn(2, " ").collect();
+        let fields: Vec<&str> = attr.trim_right().splitn(2, ' ').collect();
         Ok(fields[0].to_owned())
     } else {
         Ok(attr)
@@ -109,7 +109,7 @@ pub fn read_profile(pid: Pid) -> Result<Option<LSMProfile>> {
         let res = OpenOptions::new().write(true).open(own_path);
 
         return Ok(Some(LSMProfile {
-            kind: kind,
+            kind,
             label: target_label,
             label_file: tryfmt!(res, "failed to open {}", own_path),
         }));

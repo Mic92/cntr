@@ -21,14 +21,14 @@ pub struct Inode {
 }
 
 impl Inode {
-    pub fn upgrade_fd(&self, state: FdState) -> nix::Result<()> {
+    pub fn upgrade_fd(&self, state: &FdState) -> nix::Result<()> {
         let fd = self.fd.upgradable_read();
-        if fd.state >= state {
+        if fd.state >= *state {
             return Ok(());
         }
         let mut fd = fd.upgrade();
 
-        let perm = if state == FdState::ReadWritable {
+        let perm = if *state == FdState::ReadWritable {
             OFlag::O_RDWR
         } else {
             OFlag::O_RDONLY
@@ -55,13 +55,13 @@ impl Inode {
         }
         let mut state = state.upgrade();
 
-        try!(self.upgrade_fd(FdState::Readable));
+        try!(self.upgrade_fd(&FdState::Readable));
         let fd = self.fd.read();
 
         let res = xattr::getxattr(
             &fd,
             self.kind,
-            &OsStr::new(POSIX_ACL_DEFAULT_XATTR),
+            OsStr::new(POSIX_ACL_DEFAULT_XATTR),
             &mut [],
         );
         *state = Some(res.is_ok());

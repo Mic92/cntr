@@ -1,4 +1,3 @@
-use capabilities;
 use container;
 use fs;
 use ipc;
@@ -54,10 +53,10 @@ pub fn attach(opts: &AttachOptions) -> Result<Void> {
             prefix: "/",
             splice_read: cfg!(feature = "splice_read"),
             splice_write: false,
-            uid_map: uid_map,
-            gid_map: gid_map,
-            effective_uid: effective_uid,
-            effective_gid: effective_gid,
+            uid_map,
+            gid_map,
+            effective_uid,
+            effective_gid,
         }),
         "cannot mount filesystem"
     );
@@ -68,12 +67,12 @@ pub fn attach(opts: &AttachOptions) -> Result<Void> {
         ForkResult::Parent { child } => parent::run(child, &parent_sock, cntrfs),
         ForkResult::Child => {
             let opts = child::ChildOptions {
-                container_pid: container_pid,
+                container_pid,
                 mount_ready_sock: &child_sock,
                 uid: container_uid,
                 gid: container_gid,
                 fs: cntrfs,
-                home: home,
+                home,
             };
             child::run(&opts)
         }

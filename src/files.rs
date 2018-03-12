@@ -34,7 +34,7 @@ impl Fd {
     pub fn new(fd: RawFd, state: FdState) -> Fd {
         Fd {
             file: unsafe { File::from_raw_fd(fd) },
-            state: state,
+            state,
         }
     }
     pub fn raw(&self) -> RawFd {

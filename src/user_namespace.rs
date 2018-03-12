@@ -61,7 +61,7 @@ impl IdMap {
         let f = tryfmt!(File::open(&path), "failed to open {}", path.display());
         let buf_reader = BufReader::new(f);
         let mut id_map = IdMap {
-            kind: kind,
+            kind,
             nr_extents: 0,
             extent: [DEFAULT_EXTENT; 5],
         };
@@ -90,7 +90,7 @@ impl IdMap {
                     line
                 ),
             };
-            id_map.nr_extents = id_map.nr_extents + 1;
+            id_map.nr_extents += 1;
         }
         Ok(id_map)
     }
@@ -116,7 +116,7 @@ impl IdMap {
             }
         }
         // FIXME: should be replaced by overflowgid/overflowuid
-        65534
+        65_534
     }
     pub fn map_id_up(&self, id: u32) -> u32 {
         for idx in 0..self.nr_extents {
@@ -127,6 +127,6 @@ impl IdMap {
             }
         }
         // FIXME: should be replaced by overflowgid/overflowuid
-        65534
+        65_534
     }
 }

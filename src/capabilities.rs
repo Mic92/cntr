@@ -1,7 +1,7 @@
 use libc::{self, c_int};
 use nix::errno::Errno;
 use nix::sys::prctl;
-use nix::unistd::{Pid, getpid};
+use nix::unistd::Pid;
 use std::fs::File;
 use std::io::Read;
 use std::mem;
@@ -59,12 +59,15 @@ pub fn inherit_capabilities() -> Result<()> {
         let res = libc::syscall(libc::SYS_capset, &header, &mut data);
         tryfmt!(Errno::result(res), "");
 
-        prctl::prctl(
-            prctl::PrctlOption::PR_CAP_AMBIENT,
-            libc::PR_CAP_AMBIENT_RAISE as u64,
-            CAP_SYS_CHROOT,
-            0,
-            0,
+        tryfmt!(
+            prctl::prctl(
+                prctl::PrctlOption::PR_CAP_AMBIENT,
+                libc::PR_CAP_AMBIENT_RAISE as u64,
+                CAP_SYS_CHROOT,
+                0,
+                0,
+            ),
+            "failed to keep SYS_CHROOT capability"
         );
     }
     Ok(())
@@ -77,7 +80,7 @@ pub fn get(pid: Pid) -> Result<Capabilities> {
     };
 
     let last_capability = tryfmt!(last_capability(), "failed to get capability limit");
-    let mut capabilities = unsafe {
+    let capabilities = unsafe {
         let mut data: [cap_user_data_t; 2] = mem::uninitialized();
         let res = libc::syscall(libc::SYS_capget, &header, &mut data);
         tryfmt!(Errno::result(res).map(|_| data), "")
@@ -85,19 +88,19 @@ pub fn get(pid: Pid) -> Result<Capabilities> {
 
     Ok(Capabilities {
         user_data: capabilities,
-        last_capability: last_capability,
+        last_capability,
     })
 }
 
 impl Capabilities {
     pub fn set(&self) -> Result<()> {
         // we need chroot at the moment for `exec` command
-        let mut inheritable = self.user_data[0].inheritable as u64;
-        inheritable |= self.user_data[1].inheritable as u64;
+        let mut inheritable = u64::from(self.user_data[0].inheritable);
+        inheritable |= u64::from(self.user_data[1].inheritable);
         inheritable |= 1 << CAP_SYS_CHROOT | 1 << CAP_SYS_PTRACE;
 
         for cap in 0..self.last_capability {
-            if (u64::from(inheritable)) & (1 << cap) == 0 {
+            if (inheritable & (1 << cap)) == 0 {
                 // TODO: do not ignore result
                 let _ = prctl::prctl(prctl::PrctlOption::PR_CAPBSET_DROP, cap, 0, 0, 0);
             }
