@@ -1,5 +1,8 @@
 # cntr
 
+[![Build Status](https://travis-ci.org/Mic92/cntr.svg?branch=master)](https://travis-ci.org/Mic92/cntr)
+
+
 A FS to keep debug tools out of container images.
 
 
