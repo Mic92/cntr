@@ -19,8 +19,7 @@ notifications:
 before_deploy:
   - name="cntr-$TRAVIS_TAG-$TARGET"
   - depsname="cntr-src-$TRAVIS_TAG"
-  - mkdir $name
-  - cp target/$TARGET/release/cargo-vendor $name/
+  - install -D target/$TARGET/release/cntr $name/cntr
   - tar czvf $name.tar.gz $name
   - mkdir $depsname
   - git archive HEAD | tar -x -C $depsname
