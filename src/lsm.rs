@@ -4,6 +4,7 @@ use std::io::BufReader;
 use std::io::ErrorKind;
 use std::io::prelude::*;
 use types::{Error, Result};
+use mount_context;
 
 #[derive(PartialEq, Eq)]
 enum LSMKind {
@@ -95,7 +96,7 @@ pub fn read_profile(pid: Pid) -> Result<Option<LSMProfile>> {
             "failed to get security label of target process"
         );
 
-        let own_path = "/proc/self/attr/current";
+        let own_path = "/proc/thread-self/attr/exec";
         let own_label = tryfmt!(
             read_proclabel(own_path, &kind),
             "failed to get own security label"
@@ -121,13 +122,21 @@ impl LSMProfile {
     pub fn inherit_profile(mut self) -> Result<()> {
         let attr = match self.kind {
             LSMKind::AppArmor => format!("changeprofile {}", self.label),
-            // TODO not working for selinux yet
-            //LSMKind::SELinux => self.label,
-            LSMKind::SELinux => return Ok(()),
+            LSMKind::SELinux => self.label,
         };
 
         let res = self.label_file.write_all(attr.as_bytes());
         tryfmt!(res, "failed to write '{}' to /proc/self/attr/current", attr);
         Ok(())
+    }
+
+    pub fn mount_label(&self, pid: Pid) -> Result<String> {
+        match self.kind {
+            LSMKind::AppArmor => Ok(String::from("")),
+            LSMKind::SELinux => {
+                let context = tryfmt!(mount_context::parse_selinux_context(pid), "failed to parse selinux mount options");
+                Ok(String::from(context))
+            }
+        }
     }
 }

@@ -299,10 +299,16 @@ impl CntrFs {
         Ok(sessions)
     }
 
-    pub fn mount(&self, mountpoint: &Path) -> Result<()> {
+    pub fn mount(&self, mountpoint: &Path, selinux_context: Option<&str>) -> Result<()> {
+        let context = if let Some(context) = selinux_context {
+            format!("context=\"{}\"", context)
+        } else {
+            "".to_owned()
+        };
         let mount_flags = format!(
-            "fd={},rootmode=40000,user_id=0,group_id=0,allow_other,default_permissions",
-            self.fuse_fd
+            "fd={},rootmode=40000,user_id=0,group_id=0,allow_other,default_permissions,{}",
+            self.fuse_fd,
+            context
         );
 
         tryfmt!(

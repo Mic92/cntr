@@ -41,6 +41,12 @@ pub fn run(options: &ChildOptions) -> Result<Void> {
         "failed to get lsm profile"
     );
 
+    let mount_label = if let &Some(ref p) = &lsm_profile {
+        tryfmt!(p.mount_label(options.container_pid), "failed to read mount options")
+    } else { 
+        String::from("")
+    };
+
     tryfmt!(
         cgroup::move_to(unistd::getpid(), options.container_pid),
         "failed to change cgroup"
@@ -87,9 +93,11 @@ pub fn run(options: &ChildOptions) -> Result<Void> {
         ));
     }
 
+
     tryfmt!(mount_namespace.apply(), "failed to apply mount namespace");
+
     tryfmt!(
-        mountns::setup(&options.fs, options.mount_ready_sock, mount_namespace),
+        mountns::setup(&options.fs, options.mount_ready_sock, mount_namespace, &mount_label),
         ""
     );
     let dropped_groups = if supported_namespaces.contains(namespace::USER.name) {
@@ -147,8 +155,9 @@ pub fn run(options: &ChildOptions) -> Result<Void> {
     if let Some(code) = status.code() {
         process::exit(code);
     }
-    panic!(
+    eprintln!(
         "BUG! command exited successfully, \
         but was neither terminated by a signal nor has an exit code"
     );
+    process::exit(1);
 }

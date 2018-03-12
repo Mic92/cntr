@@ -41,5 +41,6 @@ pub mod pwd;
 pub mod fs;
 mod attach;
 mod exec;
+mod mount_context;
 pub use attach::{attach, AttachOptions};
 pub use exec::exec;

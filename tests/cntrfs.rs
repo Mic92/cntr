@@ -61,7 +61,7 @@ fn main() {
         effective_gid: None,
     }).unwrap();
 
-    cntr.mount(Path::new(&args[2])).unwrap();
+    cntr.mount(Path::new(&args[2]), None).unwrap();
     let guard = MountGuard { mount_point: args[2].clone() };
     cntr.spawn_sessions().unwrap();
     drop(guard);
