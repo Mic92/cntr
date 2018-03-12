@@ -1,6 +1,7 @@
 language: rust
 sudo: false
 rust: stable
+cache: cargo
 matrix:
   include:
     - env: TARGET=x86_64-unknown-linux-musl DEPLOY=1 CARGO_VENDOR_VERSION=0.1.13
