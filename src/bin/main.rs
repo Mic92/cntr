@@ -46,7 +46,7 @@ fn parse_attach_args(args: Vec<String>) -> cntr::AttachOptions {
         ap.refer(&mut container_type).add_option(
             &["--type"],
             Store,
-            "Container type (docker|generic)",
+            "Container type (docker|lxc|rkt|process_id|nspawn)",
         );
         ap.refer(&mut container_name).add_argument(
             "id",
@@ -130,6 +130,7 @@ fn main() {
             r#"Arguments for command"#,
         );
 
+        ap.stop_on_first_argument(true);
         ap.parse_args_or_exit();
     }
 
