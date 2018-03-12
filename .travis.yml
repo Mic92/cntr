@@ -6,7 +6,9 @@ matrix:
     - env: TARGET=x86_64-unknown-linux-musl DEPLOY=1
       before_script:
         - rustup target add $TARGET
-        - cargo install cargo-vendor
+        - curl -L https://github.com/alexcrichton/cargo-vendor/releases/download/0.1.13/cargo-vendor-0.1.13-x86_64-unknown-linux-musl.tar.gz | \
+          tar xzf - -C $HOME/bin --strip-components=1
+        - cargo-vendor --version
 script:
   - cargo build --release --target $TARGET --locked
 
