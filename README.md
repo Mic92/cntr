@@ -5,10 +5,10 @@
 Say no to `$ apt install vim` in containers!
 
 Cntr is a tool that allows to attach you to container from your host. It allows
-to users to use their favorite debugging tools (tcpdump, curl, htop, strace,
+you to use your favorite debugging tools (tcpdump, curl, htop, strace,
 rg/ag, shell + dotfiles, $EDITOR), installed on the host within the container.
-Therefore it spawns a shell that inherits the full context of the
-container and mount itself as a fuse filesystem.
+Under the hood it spawns a shell or user defined program that inherits the full
+context of the container and mount itself as a fuse filesystem.
 
 ## Demo
 
@@ -16,14 +16,16 @@ container and mount itself as a fuse filesystem.
 
 ## Features
 
-- supports the following container engines natively:
+- Cntr is container-agnostic: Instead of interfacing with container engines, it
+  implements the underlying operating system API. It treats every container as a
+  group of processes, that it can inherit properties from.
+- For user's convenience cntr also supports container names/identifier for the following container engines natively:
   * docker
   * LXC
   * rkt
   * systemd-nspawn
-- Additional all other containers/sandboxes should work too, however the process
-  id has to be provided instead of container names/ids
-- the following container properties are inherited:
+  * for other container engines cntr also takes process ids instead of identifiers.
+- Cntr inherits the following container properties:
   * namespaces (mount, uts, pid, net, cgroup, ipc)
   * cgroups
   * apparamor/selinux
@@ -31,8 +33,25 @@ container and mount itself as a fuse filesystem.
   * user/group ids
   * environment variables
   * the following files: /etc/passwd, /etc/hostname, /etc/hosts, /etc/resolv.conf
+- We extensively evaluated the correctness and performance of cntr's filesystem
+  using xfstests and a wide range of filesystem performance benchmarks (iozone,
+  pgbench, dbench, fio, fs-mark, postmark, ...)
 
 ## Usage
+
+At a high-level cntr provides two subcommands: `attach` and `exec`:
+
+- `attach`: Allows you to attach to a container with your own native shell/commands.
+  Cntr will mount the container itself at `/var/lib/cntr`.
+  The container itself will run unaffected as the mount event is not visible to container processes.
+  - Example: `cntr attach <container_id>` where `container_id` can be a
+    container identifier or process id (see examples below).
+- `exec`: Once you are in the container, you can also run commands from the
+  container filesystem itself. Since those might need there native mount layout
+  `/` instead of `/var/lib/cntr`, cntr provides `exec` to chroot to container
+  again and also resets the environment variables that might have been changed
+  by our shell.
+  - Example: `cntr exec <command>` where `command` is an executable in the container
 
 ```console
 $ cntr --help
@@ -78,6 +97,7 @@ optional arguments:
 
 ### Docker
 
+1: Find out the container name/container id:
 ```
 $ docker run --name boxbusy -ti busybox
 $ docker ps
@@ -112,26 +132,116 @@ $ cntr attach boxbusy
 
 ### LXC
 
+1: Create a container and start it
+
+```console
+$ lxc-create --name ubuntu -t download -- -d ubuntu -r xenial -a amd64
+$ lxc-start --name ubuntu -F
 ...
+Ubuntu 16.04.4 LTS ubuntu console
+ubuntu login:
+$ lxc-ls
+ubuntu
+```
+
+2: Attach to container with cntr:
+
+```console
+$ cntr attach ubuntu
+[root@ubuntu2:/var/lib/cntr]# cat etc/os-release
+NAME="Ubuntu"
+VERSION="16.04.4 LTS (Xenial Xerus)"
+ID=ubuntu
+ID_LIKE=debian
+PRETTY_NAME="Ubuntu 16.04.4 LTS"
+VERSION_ID="16.04"
+HOME_URL="http://www.ubuntu.com/"
+SUPPORT_URL="http://help.ubuntu.com/"
+BUG_REPORT_URL="http://bugs.launchpad.net/ubuntu/"
+VERSION_CODENAME=xenial
+UBUNTU_CODENAME=xenial
+```
 
 ### rkt
 
+1: Find out the container uuid:
+
+```console
+$ rkt run --interactive=true docker://busybox
+$ rkt list
+UUID            APP     IMAGE NAME                                      STATE   CREATED         STARTED         NETWORKS
+c2d2e87e        busybox registry-1.docker.io/library/busybox:latest     running 6 minutes ago   6 minutes ago   default:ip4=172.16.28.3
+```
+
+2: Attach with cntr
+
+```console
+# make sure your container is still running!
+$ cntr attach c2d2e87e
+# Finally not the old ugly top!
+[gen0@rkt-c2d2e87e-e798-4341-ae93-26f6cbb7c017:/var/lib/cntr]# htop
 ...
+```
+
+With cntr you can also debug stage1 of rkt - even there is no support from rkt itself.
+
+```console
+$ ps aux | grep stage1
+joerg    13546  0.0  0.0 120808  1608 pts/12   S+   11:10   0:00 grep --binary-files=without-match --directories=skip --color=auto stage1
+root     22232  0.0  0.0  54208  2656 pts/7    S+   10:54   0:00 stage1/rootfs/usr/lib/ld-linux-x86-64.so.2 stage1/rootfs/usr/bin/systemd-nspawn --boot --notify-ready=yes --register=true --link-journal=try-guest --quiet --uuid=c2d2e87e-e798-4341-ae93-26f6cbb7c017 --machine=rkt-c2d2e87e-e798-4341-ae93-26f6cbb7c017 --directory=stage1/rootfs --capability=CAP_AUDIT_WRITE,CAP_CHOWN,CAP_DAC_OVERRIDE,CAP_FSETID,CAP_FOWNER,CAP_KILL,CAP_MKNOD,CAP_NET_RAW,CAP_NET_BIND_SERVICE,CAP_SETUID,CAP_SETGID,CAP_SETPCAP,CAP_SETFCAP,CAP_SYS_CHROOT -- --default-standard-output=tty --log-target=null --show-status=0
+```
+
+Therefore we use the process id instead of the container uuid:
+
+```console
+$ cntr attach 22232
+# new and exiting territory!
+[root@turingmachine:/var/lib/cntr]# mount | grep pods
+sysfs on /var/lib/cntr/var/lib/rkt/pods/run/c2d2e87e-e798-4341-ae93-26f6cbb7c017/stage1/rootfs/sys type sysfs (ro,nosuid,nodev,noexec,relatime)
+tmpfs on /var/lib/cntr/var/lib/rkt/pods/run/c2d2e87e-e798-4341-ae93-26f6cbb7c017/stage1/rootfs/sys/fs/cgroup type tmpfs (ro,nosuid,nodev,noexec,mode=755)
+cgroup on /var/lib/cntr/var/lib/rkt/pods/run/c2d2e87e-e798-4341-ae93-26f6cbb7c017/stage1/rootfs/sys/fs/cgroup/memory type cgroup (ro,nosuid,nodev,noexec,relatime,memory)
+```
 
 ### systemd-nspawn
 
-...
+```console
+$ wget https://cloud-images.ubuntu.com/releases/16.04/release/ubuntu-16.04-server-cloudimg-amd64-root.tar.xz
+$ mkdir /var/lib/machines/ubuntu
+$ tar -xf ubuntu-16.04-server-cloudimg-amd64-root.tar.xz -C /var/lib/machines/ubuntu
+$ systemd-nspawn -b -M ubuntu
+$ machinectl list
+MACHINE CLASS     SERVICE        OS     VERSION ADDRESSES
+ubuntu  container systemd-nspawn ubuntu 16.04   -
+```
+
+```
+cntr attach ubuntu
+```
 
 ### Generic process id
 
-...
+The minimal information needed by cntr is the process id of a container process you want to attach to.
+
+```console
+# let's open a process we can find easily
+random-container> cat
+$ ps aux | grep cat
+100000    1707  0.0  0.0   1228     4 pts/0    S+   15:11   0:00 cat
+```
+
+In this case 1707 is the pid we are looking for.
+
+```
+$ cntr attach 1707
+```
 
 ## Installing
 
 ### Pre-build static-linked binary
 
 For linux x86_64 we build static binaries for every release. More platforms can added on request.
-See the [release tab](https://github.com/Mic92/cntr/releases/download/1.0-beta/cntr-1.0-beta-x86_64-unknown-linux-musl.tar.gz) for pre-build tarballs.
+See the [release tab](https://github.com/Mic92/cntr/releases/) for pre-build tarballs.
+
 
 ### Build from source
 
