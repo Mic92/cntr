@@ -8,7 +8,8 @@ use mountns;
 use namespace;
 use nix::sys::signal::{self, Signal};
 use nix::unistd;
-use nix::unistd::{Pid, Uid, Gid};
+use nix::unistd::{Uid, Gid};
+use procfs::ProcStatus;
 use pty;
 use std::env;
 use std::ffi::CStr;
@@ -22,7 +23,7 @@ use void::Void;
 pub struct ChildOptions<'a> {
     pub command: Option<String>,
     pub arguments: Vec<String>,
-    pub container_pid: Pid,
+    pub process_status: ProcStatus,
     pub mount_ready_sock: &'a ipc::Socket,
     pub fs: fs::CntrFs,
     pub home: Option<&'a CStr>,
@@ -31,21 +32,14 @@ pub struct ChildOptions<'a> {
 }
 
 pub fn run(options: &ChildOptions) -> Result<Void> {
-    let target_caps = tryfmt!(
-        capabilities::get(options.container_pid),
-        "failed to get capabilities of target process"
-    );
-
-    capabilities::inherit_capabilities().unwrap();
-
     let lsm_profile = tryfmt!(
-        lsm::read_profile(options.container_pid),
+        lsm::read_profile(options.process_status.global_pid),
         "failed to get lsm profile"
     );
 
     let mount_label = if let &Some(ref p) = &lsm_profile {
         tryfmt!(
-            p.mount_label(options.container_pid),
+            p.mount_label(options.process_status.global_pid),
             "failed to read mount options"
         )
     } else {
@@ -53,7 +47,7 @@ pub fn run(options: &ChildOptions) -> Result<Void> {
     };
 
     tryfmt!(
-        cgroup::move_to(unistd::getpid(), options.container_pid),
+        cgroup::move_to(unistd::getpid(), options.process_status.global_pid),
         "failed to change cgroup"
     );
 
@@ -61,7 +55,7 @@ pub fn run(options: &ChildOptions) -> Result<Void> {
         Cmd::new(
             options.command.clone(),
             options.arguments.clone(),
-            options.container_pid,
+            options.process_status.global_pid,
             options.home,
         ),
         ""
@@ -77,7 +71,7 @@ pub fn run(options: &ChildOptions) -> Result<Void> {
     };
 
     let mount_namespace = tryfmt!(
-        namespace::MOUNT.open(options.container_pid),
+        namespace::MOUNT.open(options.process_status.global_pid),
         "could not access mount namespace"
     );
     let mut other_namespaces = Vec::new();
@@ -95,12 +89,12 @@ pub fn run(options: &ChildOptions) -> Result<Void> {
         if !supported_namespaces.contains(kind.name) {
             continue;
         }
-        if kind.is_same(options.container_pid) {
+        if kind.is_same(options.process_status.global_pid) {
             continue;
         }
 
         other_namespaces.push(tryfmt!(
-            kind.open(options.container_pid),
+            kind.open(options.process_status.global_pid),
             "failed to open {} namespace",
             kind.name
         ));
@@ -138,7 +132,10 @@ pub fn run(options: &ChildOptions) -> Result<Void> {
         tryfmt!(unistd::setuid(options.uid), "could not set user id");
     }
 
-    tryfmt!(target_caps.set(), "failed to apply capabilities");
+    tryfmt!(
+        capabilities::drop(options.process_status.effective_capabilities),
+        "failed to apply capabilities"
+    );
 
     let pty_master = tryfmt!(pty::open_ptm(), "open pty master");
     tryfmt!(pty::attach_pts(&pty_master), "failed to setup pty master");

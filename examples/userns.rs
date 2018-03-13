@@ -7,6 +7,7 @@ extern crate nix;
 
 use cntr::namespace;
 use nix::unistd;
+use procfs;
 use std::fs::read_link;
 use std::io::{Write, Read};
 use std::process::{self, Command, Stdio};
@@ -29,10 +30,11 @@ fn testname_space() -> (process::ChildStdin, process::ChildStdout) {
     stdout.read_exact(&mut buf).unwrap();
     assert_eq!(buf, [b't']);
 
+
     println!(
         "{} -> {}",
         read_link("/proc/self/ns/user").unwrap().display(),
-        read_link(format!("/proc/{}/ns/user", pid))
+        read_link(procfs::get_path().join(format!("{}/ns/user", pid)))
             .unwrap()
             .display()
     );

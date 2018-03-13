@@ -3,7 +3,7 @@ use nix;
 use nix::errno::Errno;
 use nix::sys::prctl;
 use nix::sys::xattr;
-use nix::unistd::Pid;
+use procfs;
 use std::fs::File;
 use std::io::Read;
 use std::mem;
@@ -52,10 +52,11 @@ struct vfs_cap_data {
 }
 
 pub fn has_chroot() -> Result<bool> {
-    let cap = tryfmt!(get(nix::unistd::getpid()), "Failed to get capabilities");
-    Ok(
-        u32::from_le(cap.user_data[0].effective) == (1 << CAP_SYS_CHROOT),
-    )
+    let status = tryfmt!(
+        procfs::status(nix::unistd::getpid()),
+        "Failed to get capabilities"
+    );
+    Ok(status.effective_capabilities & (1 << CAP_SYS_CHROOT) > 0)
 }
 
 pub fn set_chroot_capability(path: &Path) -> Result<()> {
@@ -103,11 +104,6 @@ pub fn set_chroot_capability(path: &Path) -> Result<()> {
     Ok(())
 }
 
-pub struct Capabilities {
-    user_data: [cap_user_data_t; 2],
-    last_capability: u64,
-}
-
 fn last_capability() -> Result<u64> {
     let path = "/proc/sys/kernel/cap_last_cap";
     let mut f = tryfmt!(File::open(path), "failed to open {}", path);
@@ -122,86 +118,16 @@ fn last_capability() -> Result<u64> {
     ))
 }
 
-fn ambient_capabilities_supported() -> bool {
-    /* If PR_CAP_AMBIENT returns something valid, or an unexpected error code we assume that ambient caps are available. */
-    let res = prctl::prctl(
-        prctl::PrctlOption::PR_CAP_AMBIENT,
-        libc::PR_CAP_AMBIENT_IS_SET as u64,
-        5, // CAP_KILL
-        0,
-        0,
-    );
-    match res {
-        Err(nix::Error::Sys(Errno::EINVAL)) |
-        Err(nix::Error::Sys(Errno::EOPNOTSUPP)) |
-        Err(nix::Error::Sys(Errno::ENOSYS)) => false,
-        _ => true,
-    }
-}
+pub fn drop(inheritable_capabilities: u64) -> Result<()> {
+    // we need chroot at the moment for `exec` command
+    let inheritable = inheritable_capabilities | 1 << CAP_SYS_CHROOT | 1 << CAP_SYS_PTRACE;
+    let last_capability = tryfmt!(last_capability(), "failed to read capability limit");
 
-pub fn inherit_capabilities() -> Result<()> {
-    unsafe {
-        let header = cap_user_header_t {
-            version: _LINUX_CAPABILITY_VERSION_3,
-            pid: 0,
-        };
-
-        let mut data: [cap_user_data_t; 2] = mem::uninitialized();
-        let res = libc::syscall(libc::SYS_capget, &header, &mut data);
-        tryfmt!(Errno::result(res), "");
-        data[0].inheritable = 1 << CAP_SYS_CHROOT;
-
-        let res = libc::syscall(libc::SYS_capset, &header, &mut data);
-        tryfmt!(Errno::result(res), "");
-
-        if ambient_capabilities_supported() {
-            tryfmt!(
-                prctl::prctl(
-                    prctl::PrctlOption::PR_CAP_AMBIENT,
-                    libc::PR_CAP_AMBIENT_RAISE as u64,
-                    CAP_SYS_CHROOT as u64,
-                    0,
-                    0,
-                ),
-                "failed to keep SYS_CHROOT capability"
-            );
+    for cap in 0..last_capability {
+        if (inheritable & (1 << cap)) == 0 {
+            // TODO: do not ignore result
+            let _ = prctl::prctl(prctl::PrctlOption::PR_CAPBSET_DROP, cap, 0, 0, 0);
         }
     }
     Ok(())
-}
-
-pub fn get(pid: Pid) -> Result<Capabilities> {
-    let header = cap_user_header_t {
-        version: _LINUX_CAPABILITY_VERSION_3,
-        pid: pid.into(),
-    };
-
-    let last_capability = tryfmt!(last_capability(), "failed to get capability limit");
-    let capabilities = unsafe {
-        let mut data: [cap_user_data_t; 2] = mem::uninitialized();
-        let res = libc::syscall(libc::SYS_capget, &header, &mut data);
-        tryfmt!(Errno::result(res).map(|_| data), "")
-    };
-
-    Ok(Capabilities {
-        user_data: capabilities,
-        last_capability,
-    })
-}
-
-impl Capabilities {
-    pub fn set(&self) -> Result<()> {
-        // we need chroot at the moment for `exec` command
-        let mut inheritable = u64::from(u32::from_le(self.user_data[0].inheritable));
-        inheritable |= u64::from(u32::from_le(self.user_data[1].inheritable)) >> 5;
-        inheritable |= 1 << CAP_SYS_CHROOT | 1 << CAP_SYS_PTRACE;
-
-        for cap in 0..self.last_capability {
-            if (inheritable & (1 << cap)) == 0 {
-                // TODO: do not ignore result
-                let _ = prctl::prctl(prctl::PrctlOption::PR_CAPBSET_DROP, cap, 0, 0, 0);
-            }
-        }
-        Ok(())
-    }
 }

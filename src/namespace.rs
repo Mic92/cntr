@@ -1,5 +1,6 @@
 use nix::sched;
 use nix::unistd;
+use procfs;
 use std::collections::HashSet;
 use std::fs::{self, File};
 use std::os::unix::prelude::*;
@@ -49,10 +50,9 @@ impl Kind {
 
     pub fn is_same(&self, pid: unistd::Pid) -> bool {
         let path = self.path(pid);
-        let path2 = self.path(unistd::getpid());
         match fs::read_link(path) {
             Ok(dest) => {
-                match fs::read_link(path2) {
+                match fs::read_link(self.own_path()) {
                     Ok(dest2) => dest == dest2,
                     _ => false,
                 }
@@ -61,11 +61,13 @@ impl Kind {
         }
     }
     fn path(&self, pid: unistd::Pid) -> PathBuf {
-        let mut buf = PathBuf::from("/proc/");
-        buf.push(pid.to_string());
-        buf.push("ns");
-        buf.push(self.name);
-        buf
+        procfs::get_path().join(pid.to_string()).join("ns").join(
+            self.name,
+        )
+    }
+
+    fn own_path(&self) -> PathBuf {
+        PathBuf::from("/proc/self/ns").join(self.name)
     }
 }
 

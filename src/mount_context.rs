@@ -1,4 +1,5 @@
 use nix::unistd::Pid;
+use procfs;
 use std::fs::File;
 use std::io::BufReader;
 use std::io::prelude::*;
@@ -8,11 +9,11 @@ use types::{Error, Result};
 //$ cat /proc/self/mounts
 // tmpfs /proc/kcore tmpfs rw,context="system_u:object_r:container_file_t:s0:c125,c287",nosuid,mode=755 0 0
 fn find_mount_options(p: Pid) -> Result<String> {
-    let path = format!("/proc/{}/mounts", p);
-    let f = tryfmt!(File::open(&path), "failed to open {}", path);
+    let path = procfs::get_path().join(format!("{}/mounts", p));
+    let f = tryfmt!(File::open(&path), "failed to open {}", path.display());
     let reader = BufReader::new(f);
     for line in reader.lines() {
-        let line = tryfmt!(line, "failed to read {}", path);
+        let line = tryfmt!(line, "failed to read {}", path.display());
         let line = line.trim();
         let mut tokens = line.split_terminator(|s: char| s == ' ' || s == '\t')
             .filter(|s| s != &"");
@@ -25,7 +26,7 @@ fn find_mount_options(p: Pid) -> Result<String> {
             }
         }
     }
-    errfmt!(format!("did not find / in {}", path))
+    errfmt!(format!("did not find / in {}", path.display()))
 }
 
 pub fn parse_selinux_context(p: Pid) -> Result<String> {
