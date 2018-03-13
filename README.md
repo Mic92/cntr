@@ -37,6 +37,28 @@ context of the container and mount itself as a fuse filesystem.
   using xfstests and a wide range of filesystem performance benchmarks (iozone,
   pgbench, dbench, fio, fs-mark, postmark, ...)
 
+## Installation
+
+### Pre-build static-linked binary
+
+For linux x86_64 we build static binaries for every release. More platforms can added on request.
+See the [release tab](https://github.com/Mic92/cntr/releases/) for pre-build tarballs.
+At runtime only commandline utils of the container engine in questions are required.
+
+### Build from source
+
+All you need for compilation is rust + cargo.
+Checkout [rustup.rs](https://rustup.rs/) on how to get a working rust toolchain.
+Then run:
+
+```console
+$ cargo install --git https://github.com/Mic92/cntr
+```
+
+For offline builds we also provided a tarball with all dependencies bundled
+[here](https://github.com/Mic92/cntr/releases) for compilation with
+[cargo-vendor](https://github.com/alexcrichton/cargo-vendor).
+
 ## Usage
 
 At a high-level cntr provides two subcommands: `attach` and `exec`:
@@ -52,6 +74,10 @@ At a high-level cntr provides two subcommands: `attach` and `exec`:
   again and also resets the environment variables that might have been changed
   by our shell.
   - Example: `cntr exec <command>` where `command` is an executable in the container
+
+**Note**: Cntr needs to run on the same host as the container. It does not work
+if the container is running in a virtual machine while cntr is running on the
+supervisor
 
 ```console
 $ cntr --help
@@ -246,18 +272,4 @@ drwxr-xr-x    8 nobody nogroup     8 Feb  9 22:10 mnt
 dr-xr-xr-x  306 nobody nogroup     0 Mar 13 09:38 proc
 drwx------   22 nobody nogroup    43 Mar 13 15:09 root
 ...
-```
-
-## Installing
-
-### Pre-build static-linked binary
-
-For linux x86_64 we build static binaries for every release. More platforms can added on request.
-See the [release tab](https://github.com/Mic92/cntr/releases/) for pre-build tarballs.
-
-
-### Build from source
-
-```console
-$ cargo install --git https://github.com/Mic92/cntr
 ```
