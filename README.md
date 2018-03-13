@@ -225,6 +225,8 @@ cgroup on /var/lib/cntr/var/lib/rkt/pods/run/c2d2e87e-e798-4341-ae93-26f6cbb7c01
 
 ### systemd-nspawn
 
+1: Start container
+
 ```console
 $ wget https://cloud-images.ubuntu.com/releases/16.04/release/ubuntu-16.04-server-cloudimg-amd64-root.tar.xz
 $ mkdir /var/lib/machines/ubuntu
@@ -235,8 +237,9 @@ MACHINE CLASS     SERVICE        OS     VERSION ADDRESSES
 ubuntu  container systemd-nspawn ubuntu 16.04   -
 ```
 
-```
-cntr attach ubuntu
+2: Attach
+```console
+$ cntr attach ubuntu
 ```
 
 ### Generic process id
