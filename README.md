@@ -273,3 +273,11 @@ dr-xr-xr-x  306 nobody nogroup     0 Mar 13 09:38 proc
 drwx------   22 nobody nogroup    43 Mar 13 15:09 root
 ...
 ```
+
+# Related projects
+- [nsenter](https://manpages.debian.org/testing/manpages-de/nsenter.1.de.html)
+  - Only covers linux namespaces and the user is limited to tools installed in the
+    containers
+- [toolbox](https://github.com/coreos/toolbox)
+  - Does attach from a container to the host, this is the opposite of what Cntr
+    is doing
