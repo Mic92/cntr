@@ -3,7 +3,7 @@ name = "cntr"
 description = "A container debugging tool based on FUSE"
 version = "1.1.0"
 authors = ["Jörg Thalheim <joerg@thalheim.io>"]
-categories = ["tools::Debugging", "systems::Unix APIs"]
+categories = ["development-tools::debugging", "os::unix-apis"]
 repository = "https://github.com/Mic92/cntr"
 license = "MIT"
 
