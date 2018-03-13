@@ -29,16 +29,6 @@ path = "src/bin/main.rs"
 name = "cntr"
 path = "src/lib.rs"
 
-[[bin]]
-name = "cntrfs-test"
-path = "tests/cntrfs.rs"
-doc = false
-
-[[bin]]
-name = "unserns-test"
-path = "tests/userns.rs"
-doc = false
-
 [profile.release]
 lto = true
 

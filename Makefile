@@ -8,7 +8,7 @@ TARGET = target/release/cntr
 all: $(TARGET)
 
 $(TARGET):
-	$(CARGO) build --release --bin cntr
+	$(CARGO) build --release
 
 install: all
 	$(INSTALL_PROGRAM) -D $(TARGET) $(BINDIR)/cntr
