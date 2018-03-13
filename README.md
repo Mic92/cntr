@@ -52,7 +52,7 @@ Checkout [rustup.rs](https://rustup.rs/) on how to get a working rust toolchain.
 Then run:
 
 ```console
-$ cargo install --git https://github.com/Mic92/cntr
+$ cargo install --git https://github.com/Mic92/cntr --bin cntr
 ```
 
 For offline builds we also provided a tarball with all dependencies bundled
