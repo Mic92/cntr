@@ -3,12 +3,8 @@
 [![Build Status](https://travis-ci.org/Mic92/cntr.svg?branch=master)](https://travis-ci.org/Mic92/cntr)
 
 Say no to `$ apt install vim` in containers!
-
-Cntr is a tool that allows to attach you to container from your host. It allows
-you to use your favorite debugging tools (tcpdump, curl, htop, strace,
-rg/ag, shell + dotfiles, $EDITOR), installed on the host within the container.
-Under the hood it spawns a shell or user defined program that inherits the full
-context of the container and mount itself as a fuse filesystem.
+`cntr` is a replacement for `docker exec` that brings all your developers tools with you.
+This allows to ship minimal runtime image in production and limit the surface for exploits.
 
 ## Demo
 
@@ -18,26 +14,12 @@ In this two minute recording you learn all the basics of cntr:
 
 ## Features
 
-- Cntr is container-agnostic: Instead of interfacing with container engines, it
-  implements the underlying operating system API. It treats every container as a
-  group of processes, that it can inherit properties from.
-- For user's convenience cntr also supports container names/identifier for the following container engines natively:
+- For convenience cntr supports container names/identifier for the following container engines natively:
   * docker
   * LXC
   * rkt
   * systemd-nspawn
-  * for other container engines cntr also takes process ids instead of identifiers.
-- Cntr inherits the following container properties:
-  * namespaces (mount, uts, pid, net, cgroup, ipc)
-  * cgroups
-  * apparamor/selinux
-  * capabilities
-  * user/group ids
-  * environment variables
-  * the following files: /etc/passwd, /etc/hostname, /etc/hosts, /etc/resolv.conf
-- We extensively evaluated the correctness and performance of cntr's filesystem
-  using xfstests and a wide range of filesystem performance benchmarks (iozone,
-  pgbench, dbench, fio, fs-mark, postmark, ...)
+- For other container engines cntr also takes process ids (PIDs) instead of container names.
 
 ## Installation
 
@@ -52,6 +34,14 @@ At runtime only commandline utils of the container engine in questions are requi
 All you need for compilation is rust + cargo.
 Checkout [rustup.rs](https://rustup.rs/) on how to get a working rust toolchain.
 Then run:
+
+Either:
+
+```console
+$ cargo install cntr
+```
+
+Or the latest master:
 
 ```console
 $ cargo install --git https://github.com/Mic92/cntr
@@ -71,10 +61,10 @@ At a high-level cntr provides two subcommands: `attach` and `exec`:
   - Example: `cntr attach <container_id>` where `container_id` can be a
     container identifier or process id (see examples below).
 - `exec`: Once you are in the container, you can also run commands from the
-  container filesystem itself. Since those might need there native mount layout
+  container filesystem itself. Since those might need their native mount layout
   at `/` instead of `/var/lib/cntr`, cntr provides `exec` subcommand to chroot to container
   again and also resets the environment variables that might have been changed
-  by our shell.
+  by the shell.
   - Example: `cntr exec <command>` where `command` is an executable in the container
 
 **Note**: Cntr needs to run on the same host as the container. It does not work
@@ -275,6 +265,29 @@ dr-xr-xr-x  306 nobody nogroup     0 Mar 13 09:38 proc
 drwx------   22 nobody nogroup    43 Mar 13 15:09 root
 ...
 ```
+
+# How it works
+
+Cntr is container-agnostic: Instead of interfacing with container engines, it
+implements the underlying operating system API. It treats every container as a
+group of processes, that it can inherit properties from.
+
+Cntr inherits the following container properties:
+  * Namespaces (mount, uts, pid, net, cgroup, ipc)
+  * Cgroups
+  * Apparamor/selinux
+  * Capabilities
+  * User/group ids
+  * Environment variables
+  * The following files: /etc/passwd, /etc/hostname, /etc/hosts, /etc/resolv.conf
+
+Under the hood it spawns a shell or user defined program that inherits the full
+context of the container and mount itself as a fuse filesystem.
+
+We extensively evaluated the correctness and performance of cntr's filesystem
+using [xfstests](https://github.com/Mic92/xfstests-cntr) and a wide range of
+filesystem performance benchmarks (iozone, pgbench, dbench, fio, fs-mark,
+postmark, ...)
 
 # Related projects
 - [nsenter](https://manpages.debian.org/testing/manpages-de/nsenter.1.de.html)
