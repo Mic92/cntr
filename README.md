@@ -64,13 +64,13 @@ For offline builds we also provided a tarball with all dependencies bundled
 At a high-level cntr provides two subcommands: `attach` and `exec`:
 
 - `attach`: Allows you to attach to a container with your own native shell/commands.
-  Cntr will mount the container itself at `/var/lib/cntr`.
-  The container itself will run unaffected as the mount event is not visible to container processes.
+  Cntr will mount the container at `/var/lib/cntr`.
+  The container itself will run unaffected as the mount changes are not visible to container processes.
   - Example: `cntr attach <container_id>` where `container_id` can be a
     container identifier or process id (see examples below).
 - `exec`: Once you are in the container, you can also run commands from the
   container filesystem itself. Since those might need there native mount layout
-  `/` instead of `/var/lib/cntr`, cntr provides `exec` to chroot to container
+  at `/` instead of `/var/lib/cntr`, cntr provides `exec` subcommand to chroot to container
   again and also resets the environment variables that might have been changed
   by our shell.
   - Example: `cntr exec <command>` where `command` is an executable in the container
