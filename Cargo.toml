@@ -1,7 +1,10 @@
 [package]
 name = "cntr"
-version = "0.1.0"
-authors = ["Jörg Thalheim <joerg@higgsboson.tk>"]
+description = "A container debugging tool based on FUSE"
+version = "1.1.0"
+authors = ["Jörg Thalheim <joerg@thalheim.io>"]
+categories = ["tools::Debugging", "systems::Unix APIs"]
+repository = "https://github.com/Mic92/cntr"
 
 [dependencies]
 cpuprofiler = {version = "*", optional = true}
@@ -24,10 +27,6 @@ default-features = false
 [[bin]]
 name = "cntr"
 path = "src/bin/main.rs"
-
-[lib]
-name = "cntr"
-path = "src/lib.rs"
 
 [profile.release]
 lto = true
