@@ -8,7 +8,7 @@ repository = "https://github.com/Mic92/cntr"
 license = "MIT"
 
 [dependencies]
-cpuprofiler = {version = "*", optional = true}
+cpuprofiler = {version = "0.0.3", optional = true}
 argparse = "0.2.*"
 log = "0.3.*"
 time = "0.1"
