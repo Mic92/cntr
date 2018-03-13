@@ -37,7 +37,7 @@ container and mount itself as a fuse filesystem.
 ```console
 $ cntr --help
 Usage:
-    ./target/debug/cntr COMMAND [ARGUMENTS ...]
+    cntr COMMAND [ARGUMENTS ...]
 Enter or executed in container
 positional arguments:
   command               Command to run (either "attach" or "exec")
@@ -47,7 +47,7 @@ optional arguments:
 ```
 
 ```console
-$ ./target/debug/cntr attach --help
+$ cntr attach --help
 Usage:
     subcommand attach [OPTIONS] ID [COMMAND] [ARGUMENTS ...]
 Enter container
