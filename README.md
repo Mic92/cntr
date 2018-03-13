@@ -79,7 +79,7 @@ At a high-level cntr provides two subcommands: `attach` and `exec`:
 
 **Note**: Cntr needs to run on the same host as the container. It does not work
 if the container is running in a virtual machine while cntr is running on the
-supervisor
+hypervisor.
 
 ```console
 $ cntr --help
