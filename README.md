@@ -12,7 +12,9 @@ context of the container and mount itself as a fuse filesystem.
 
 ## Demo
 
-- TODO: ascii cinema
+In this two minute recording you learn all the basics of cntr:
+
+[![asciicast](https://asciinema.org/a/PQB5RnRGLIPn88a1R2MtPccdy.png)](https://asciinema.org/a/PQB5RnRGLIPn88a1R2MtPccdy)
 
 ## Features
 
