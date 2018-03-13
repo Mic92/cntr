@@ -35,7 +35,7 @@ container and mount itself as a fuse filesystem.
 ## Usage
 
 ```console
-$ ./target/debug/cntr --help
+$ cntr --help
 Usage:
     ./target/debug/cntr COMMAND [ARGUMENTS ...]
 Enter or executed in container
@@ -65,7 +65,7 @@ optional arguments:
 ```
 
 ```console
-$ ./target/debug/cntr exec --help
+$ cntr exec --help
 Usage:
     subcommand exec [COMMAND] [ARGUMENTS ...]
 Execute command in container filesystem

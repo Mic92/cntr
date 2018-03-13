@@ -41,7 +41,6 @@ doc = false
 
 [profile.release]
 lto = true
-debug = true
 
 [features]
 default = ["splice_read"]
