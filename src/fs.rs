@@ -1129,15 +1129,42 @@ impl Filesystem for CntrFs {
         let inode = tryfuse!(self.inode(&ino), reply);
         let fd = inode.fd.read();
 
+        // as unify multiple filesystems with one mountpoint, some filesystems might not
+        // support extended attributes. To still support them we lie about supporting acls
         if size == 0 {
-            let size = tryfuse!(xattr::getxattr(&fd, inode.kind, name, &mut []), reply);
+            let res = xattr::getxattr(&fd, inode.kind, name, &mut []);
+            let size = match res {
+                Ok(val) => val,
+                Err(nix::Error::Sys(Errno::EOPNOTSUPP)) => 0,
+                Err(err) => {
+                    debug!("return error {} on {}:{}", err, file!(), line!());
+                    let rc = match err {
+                        nix::Error::Sys(errno) => errno as i32,
+                        // InvalidPath, InvalidUtf8, UnsupportedOperation
+                        _ => libc::EINVAL
+                    };
+                    return reply.error(rc);
+                }
+            };
+
             reply.size(size as u32);
         } else {
             let mut buf = vec![0; size as usize];
-            let size = tryfuse!(
-                xattr::getxattr(&fd, inode.kind, name, buf.as_mut_slice()),
-                reply
-            );
+            let res = xattr::getxattr(&fd, inode.kind, name, buf.as_mut_slice());
+            let size = match res {
+                Ok(val) => val,
+                Err(nix::Error::Sys(Errno::EOPNOTSUPP)) => 0,
+                Err(err) => {
+                    debug!("return error {} on {}:{}", err, file!(), line!());
+                    let rc = match err {
+                        nix::Error::Sys(errno) => errno as i32,
+                        // InvalidPath, InvalidUtf8, UnsupportedOperation
+                        _ => libc::EINVAL
+                    };
+                    return reply.error(rc);
+                }
+            };
+
             reply.data(&buf[..size]);
         }
     }
