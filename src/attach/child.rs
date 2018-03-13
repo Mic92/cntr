@@ -20,6 +20,8 @@ use types::{Error, Result};
 use void::Void;
 
 pub struct ChildOptions<'a> {
+    pub command: Option<String>,
+    pub arguments: Vec<String>,
     pub container_pid: Pid,
     pub mount_ready_sock: &'a ipc::Socket,
     pub fs: fs::CntrFs,
@@ -55,7 +57,15 @@ pub fn run(options: &ChildOptions) -> Result<Void> {
         "failed to change cgroup"
     );
 
-    let cmd = tryfmt!(Cmd::new(options.container_pid, options.home), "");
+    let cmd = tryfmt!(
+        Cmd::new(
+            options.command.clone(),
+            options.arguments.clone(),
+            options.container_pid,
+            options.home,
+        ),
+        ""
+    );
 
     let supported_namespaces = tryfmt!(
         namespace::supported_namespaces(),

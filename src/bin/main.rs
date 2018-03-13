@@ -2,7 +2,7 @@ extern crate argparse;
 extern crate cntr;
 extern crate nix;
 
-use argparse::{ArgumentParser, Store, List};
+use argparse::{ArgumentParser, Store, List, Collect};
 use cntr::pwd::pwnam;
 use std::io::{stdout, stderr};
 use std::process;
@@ -28,6 +28,8 @@ impl FromStr for Command {
 
 fn parse_attach_args(args: Vec<String>) -> cntr::AttachOptions {
     let mut options = cntr::AttachOptions {
+        command: None,
+        arguments: vec![],
         container_name: String::from(""),
         container_types: vec![],
         effective_user: None,
@@ -35,6 +37,7 @@ fn parse_attach_args(args: Vec<String>) -> cntr::AttachOptions {
     let mut container_type = String::from("");
     let mut container_name = String::from("");
     let mut effective_username = String::from("");
+    let mut command = String::from("");
     {
         let mut ap = ArgumentParser::new();
         ap.set_description("Enter container");
@@ -46,12 +49,22 @@ fn parse_attach_args(args: Vec<String>) -> cntr::AttachOptions {
         ap.refer(&mut container_type).add_option(
             &["--type"],
             Store,
-            "Container type (docker|lxc|rkt|process_id|nspawn)",
+            "Container type (docker|lxc|rkt|process_id|nspawn, default: all)",
         );
-        ap.refer(&mut container_name).add_argument(
+        ap.refer(&mut container_name).required().add_argument(
             "id",
             Store,
             "container id, container name or process id",
+        );
+        ap.refer(&mut command).add_argument(
+            "command",
+            Store,
+            "command to execute after attach (default: $SHELL)",
+        );
+        ap.refer(&mut options.arguments).add_argument(
+            "arguments",
+            Collect,
+            "arguments passed to command",
         );
         match ap.parse(args, &mut stdout(), &mut stderr()) {
             Ok(()) =>  {}
@@ -95,6 +108,10 @@ fn parse_attach_args(args: Vec<String>) -> cntr::AttachOptions {
         };
     }
 
+    if command != "" {
+        options.command = Some(command);
+    }
+
     options
 }
 
@@ -106,8 +123,36 @@ fn attach_command(args: Vec<String>) {
     };
 }
 
-fn exec_command(args: &[String]) {
-    if let Err(err) = cntr::exec(&args[1], &args[2..]) {
+fn exec_command(args: Vec<String>) {
+    let mut command = String::from("");
+    let mut arguments = vec![];
+    {
+        let mut ap = ArgumentParser::new();
+        ap.set_description("Execute command in container filesystem");
+        ap.refer(&mut command).add_argument(
+            &"command",
+            Store,
+            "command to execute (default: $SHELL)",
+        );
+        ap.refer(&mut arguments).add_argument(
+            &"arguments",
+            List,
+            "Arguments to pass to command",
+        );
+        match ap.parse(args, &mut stdout(), &mut stderr()) {
+            Ok(()) =>  {}
+            Err(x) => {
+                std::process::exit(x);
+            }
+        }
+    }
+    let command = if command.is_empty() {
+        None
+    } else {
+        Some(command)
+    };
+
+    if let Err(err) = cntr::exec(command, arguments) {
         eprintln!("{}", err);
         process::exit(1);
     }
@@ -119,7 +164,7 @@ fn main() {
     {
         let mut ap = ArgumentParser::new();
         ap.set_description("Enter or executed in container");
-        ap.refer(&mut subcommand).add_argument(
+        ap.refer(&mut subcommand).required().add_argument(
             "command",
             Store,
             r#"Command to run (either "attach" or "exec")"#,
@@ -138,6 +183,6 @@ fn main() {
 
     match subcommand {
         Command::attach => attach_command(args),
-        Command::exec => exec_command(&args),
+        Command::exec => exec_command(args),
     }
 }

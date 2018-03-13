@@ -13,6 +13,8 @@ mod child;
 mod parent;
 
 pub struct AttachOptions {
+    pub command: Option<String>,
+    pub arguments: Vec<String>,
     pub container_name: String,
     pub container_types: Vec<Box<container::Container>>,
     pub effective_user: Option<pwd::Passwd>,
@@ -66,7 +68,9 @@ pub fn attach(opts: &AttachOptions) -> Result<Void> {
     match tryfmt!(unistd::fork(), "failed to fork") {
         ForkResult::Parent { child } => parent::run(child, &parent_sock, cntrfs),
         ForkResult::Child => {
-            let opts = child::ChildOptions {
+            let child_opts = child::ChildOptions {
+                command: opts.command.clone(),
+                arguments: opts.arguments.clone(),
                 container_pid,
                 mount_ready_sock: &child_sock,
                 uid: container_uid,
@@ -74,7 +78,7 @@ pub fn attach(opts: &AttachOptions) -> Result<Void> {
                 fs: cntrfs,
                 home,
             };
-            child::run(&opts)
+            child::run(&child_opts)
         }
     }
 }

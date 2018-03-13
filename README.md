@@ -29,6 +29,8 @@ container and mount itself as a fuse filesystem.
   * apparamor/selinux
   * capabilities
   * user/group ids
+  * environment variables
+  * the following files: /etc/passwd, /etc/hostname, /etc/hosts, /etc/resolv.conf
 
 ## Usage
 
