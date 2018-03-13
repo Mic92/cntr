@@ -223,16 +223,29 @@ cntr attach ubuntu
 The minimal information needed by cntr is the process id of a container process you want to attach to.
 
 ```console
-# let's open a process we can find easily
-random-container> cat
-$ ps aux | grep cat
-100000    1707  0.0  0.0   1228     4 pts/0    S+   15:11   0:00 cat
+# Did you now chromium uses namespaces too?
+$ ps aux | grep 'chromium --type=renderer'
+joerg    17498 11.7  1.0 1394504 174256 ?      Sl   15:16   0:08 /usr/bin/chromium
 ```
 
-In this case 1707 is the pid we are looking for.
+In this case 17498 is the pid we are looking for.
 
-```
-$ cntr attach 1707
+```console
+$ cntr attach 17498
+# looks quite similar to our system, but with less users
+[joerg@turingmachine cntr]$ ls -la /
+total 240
+drwxr-xr-x   23 nobody nogroup    23 Mar 13 15:05 .
+drwxr-xr-x   23 nobody nogroup    23 Mar 13 15:05 ..
+drwxr-xr-x    2 nobody nogroup     3 Mar 13 15:14 bin
+drwxr-xr-x    4 nobody nogroup 16384 Jan  1  1970 boot
+drwxr-xr-x   24 nobody nogroup  4120 Mar 13 14:56 dev
+drwxr-xr-x   52 nobody nogroup   125 Mar 13 15:14 etc
+drwxr-xr-x    3 nobody nogroup     3 Jan  8 16:17 home
+drwxr-xr-x    8 nobody nogroup     8 Feb  9 22:10 mnt
+dr-xr-xr-x  306 nobody nogroup     0 Mar 13 09:38 proc
+drwx------   22 nobody nogroup    43 Mar 13 15:09 root
+...
 ```
 
 ## Installing
