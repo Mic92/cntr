@@ -5,9 +5,9 @@
 Say no to `$ apt install vim` in containers!
 
 Cntr is a tool that allows to attach you to container from your host. It allows
-to all users to use their favorite debugging tools (tcpdump, curl, htop, strace,
-rg/ag, shell + dotfiles, $EDITOR) in the container they have installed on
-the host. Therefore it spawns a shell that inherits the full context of the
+to users to use their favorite debugging tools (tcpdump, curl, htop, strace,
+rg/ag, shell + dotfiles, $EDITOR), installed on the host within the container.
+Therefore it spawns a shell that inherits the full context of the
 container and mount itself as a fuse filesystem.
 
 ## Demo
@@ -99,6 +99,7 @@ $ cntr attach 55a93d71b53b
     link/ether 02:42:ac:11:00:02 brd ff:ff:ff:ff:ff:ff link-netnsid 0
     inet 172.17.0.2/16 brd 172.17.255.255 scope global eth0
        valid_lft forever preferred_lft forever
+[root@55a93d71b53b:/var/lib/cntr]# vim etc/resolv.conf
 ```
 
 ...or the container name.
