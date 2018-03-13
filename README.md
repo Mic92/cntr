@@ -34,6 +34,48 @@ container and mount itself as a fuse filesystem.
 
 ## Usage
 
+```console
+$ ./target/debug/cntr --help
+Usage:
+    ./target/debug/cntr COMMAND [ARGUMENTS ...]
+Enter or executed in container
+positional arguments:
+  command               Command to run (either "attach" or "exec")
+  arguments             Arguments for command
+optional arguments:
+  -h,--help             show this help message and exit
+```
+
+```console
+$ ./target/debug/cntr attach --help
+Usage:
+    subcommand attach [OPTIONS] ID [COMMAND] [ARGUMENTS ...]
+Enter container
+positional arguments:
+  id                    container id, container name or process id
+  command               command to execute after attach (default: $SHELL)
+  arguments             arguments passed to command
+optional arguments:
+  -h,--help             show this help message and exit
+  --effective-user EFFECTIVE_USER
+                        effective username that should be owner of new created
+                        files on the host
+  --type TYPE           Container type (docker|lxc|rkt|process_id|nspawn,
+                        default: all)
+```
+
+```console
+$ ./target/debug/cntr exec --help
+Usage:
+    subcommand exec [COMMAND] [ARGUMENTS ...]
+Execute command in container filesystem
+positional arguments:
+  command               command to execute (default: $SHELL)
+  arguments             Arguments to pass to command
+optional arguments:
+  -h,--help             show this help message and exit
+```
+
 ### Docker
 
 ```
@@ -43,18 +85,28 @@ CONTAINER ID        IMAGE               COMMAND             CREATED             
 55a93d71b53b        busybox             "sh"                22 seconds ago      Up 20 seconds                           boxbusy
 ```
 
-Either provide a container id:
+Either provide a container id...
 
 ```console
 $ cntr attach 55a93d71b53b
-[root@55a93d71b53b:/var/lib/cntr]#
+[root@55a93d71b53b:/var/lib/cntr]# echo "I am in a container!"
+[root@55a93d71b53b:/var/lib/cntr]# ip addr
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+40: eth0@if41: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default
+    link/ether 02:42:ac:11:00:02 brd ff:ff:ff:ff:ff:ff link-netnsid 0
+    inet 172.17.0.2/16 brd 172.17.255.255 scope global eth0
+       valid_lft forever preferred_lft forever
 ```
 
-or the container name:
+...or the container name.
+Use `cntr exec` to execute container native commands (while running in the cntr shell).
 
 ```console
 $ cntr attach boxbusy
-[root@55a93d71b53b:/var/lib/cntr]#
+[root@55a93d71b53b:/var/lib/cntr]# cntr exec sh -c 'busybox | head -1'
 ```
 
 ### LXC
