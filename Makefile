@@ -1,14 +1,18 @@
 PREFIX = $(DESTDIR)/usr/local
 BINDIR = $(PREFIX)/bin
 INSTALL_PROGRAM ?= install
+CARGO ?= cargo
 
-all: target/release/cntr
+TARGET = target/release/cntr
 
-target/release/cntr:
-	cargo build --release --bin cntr
+all: $(TARGET)
+
+$(TARGET):
+	$(CARGO) build --release --bin cntr
 
 install: all
-	$(INSTALL_PROGRAM) -D target/release/cntr $(BINDIR)/cntr
+	$(INSTALL_PROGRAM) -D $(TARGET) $(BINDIR)/cntr
 
-test:
-	cargo test
+.PHONY: clean
+clean:
+	rm -rf $(TARGET)
