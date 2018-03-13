@@ -58,13 +58,15 @@ impl Cmd {
         pid: unistd::Pid,
         home: Option<&CStr>,
     ) -> Result<Cmd> {
-        let command =
-            command.unwrap_or_else(|| env::var("SHELL").unwrap_or_else(|_| String::from("sh")));
-        let arguments = if args.is_empty() {
+
+        let arguments = if command.is_none() {
             vec![String::from("-l")]
         } else {
             args
         };
+
+        let command =
+            command.unwrap_or_else(|| env::var("SHELL").unwrap_or_else(|_| String::from("sh")));
 
         let variables = tryfmt!(
             read_environment(pid),
