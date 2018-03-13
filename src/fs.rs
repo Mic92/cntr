@@ -299,8 +299,8 @@ impl CntrFs {
         Ok(sessions)
     }
 
-    pub fn mount(&self, mountpoint: &Path, selinux_context: Option<&str>) -> Result<()> {
-        let context = if let Some(context) = selinux_context {
+    pub fn mount(&self, mountpoint: &Path, selinux_context: &Option<String>) -> Result<()> {
+        let context = if let &Some(ref context) = selinux_context {
             format!("context=\"{}\"", context)
         } else {
             "".to_owned()
@@ -1116,14 +1116,7 @@ impl Filesystem for CntrFs {
         );
     }
 
-    fn getxattr(
-        &mut self,
-        _req: &Request,
-        ino: u64,
-        name: &OsStr,
-        size: u32,
-        reply: ReplyXattr,
-    ) {
+    fn getxattr(&mut self, _req: &Request, ino: u64, name: &OsStr, size: u32, reply: ReplyXattr) {
         fsuid::set_root();
 
         let inode = tryfuse!(self.inode(&ino), reply);
@@ -1141,7 +1134,7 @@ impl Filesystem for CntrFs {
                     let rc = match err {
                         nix::Error::Sys(errno) => errno as i32,
                         // InvalidPath, InvalidUtf8, UnsupportedOperation
-                        _ => libc::EINVAL
+                        _ => libc::EINVAL,
                     };
                     return reply.error(rc);
                 }
@@ -1159,7 +1152,7 @@ impl Filesystem for CntrFs {
                     let rc = match err {
                         nix::Error::Sys(errno) => errno as i32,
                         // InvalidPath, InvalidUtf8, UnsupportedOperation
-                        _ => libc::EINVAL
+                        _ => libc::EINVAL,
                     };
                     return reply.error(rc);
                 }

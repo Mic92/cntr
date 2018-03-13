@@ -1,8 +1,8 @@
+use nix::unistd::Pid;
 use std::fs::File;
 use std::io::BufReader;
 use std::io::prelude::*;
 use types::{Error, Result};
-use nix::unistd::Pid;
 
 
 //$ cat /proc/self/mounts
@@ -14,7 +14,8 @@ fn find_mount_options(p: Pid) -> Result<String> {
     for line in reader.lines() {
         let line = tryfmt!(line, "failed to read {}", path);
         let line = line.trim();
-        let mut tokens = line.split_terminator(|s: char| { s == ' ' || s == '\t' }).filter(|s| { s != &"" } );
+        let mut tokens = line.split_terminator(|s: char| s == ' ' || s == '\t')
+            .filter(|s| s != &"");
 
         if let Some(mountpoint) = tokens.nth(1) {
             if let Some(options) = tokens.nth(1) {
@@ -34,8 +35,11 @@ pub fn parse_selinux_context(p: Pid) -> Result<String> {
         if let Some(context) = options[(index + needle.len())..].splitn(2, '"').next() {
             return Ok(String::from(context));
         } else {
-            return errfmt!(format!("missing quotes selinux context: {}", options))
+            return errfmt!(format!("missing quotes selinux context: {}", options));
         };
     }
-    errfmt!(format!("no selinux mount option found for / entry: {}", options))
+    errfmt!(format!(
+        "no selinux mount option found for / entry: {}",
+        options
+    ))
 }

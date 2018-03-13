@@ -42,9 +42,12 @@ pub fn run(options: &ChildOptions) -> Result<Void> {
     );
 
     let mount_label = if let &Some(ref p) = &lsm_profile {
-        tryfmt!(p.mount_label(options.container_pid), "failed to read mount options")
-    } else { 
-        String::from("")
+        tryfmt!(
+            p.mount_label(options.container_pid),
+            "failed to read mount options"
+        )
+    } else {
+        None
     };
 
     tryfmt!(
@@ -97,7 +100,12 @@ pub fn run(options: &ChildOptions) -> Result<Void> {
     tryfmt!(mount_namespace.apply(), "failed to apply mount namespace");
 
     tryfmt!(
-        mountns::setup(&options.fs, options.mount_ready_sock, mount_namespace, &mount_label),
+        mountns::setup(
+            &options.fs,
+            options.mount_ready_sock,
+            mount_namespace,
+            &mount_label,
+        ),
         ""
     );
     let dropped_groups = if supported_namespaces.contains(namespace::USER.name) {

@@ -40,10 +40,7 @@ impl Kind {
         let buf = self.path(pid);
         let path = buf.to_str().unwrap();
         let file = tryfmt!(File::open(path), "failed to open namespace file '{}'", path);
-        Ok(Namespace {
-            kind: self,
-            file,
-        })
+        Ok(Namespace { kind: self, file })
     }
 
     pub fn namespace_from_file(&'static self, file: File) -> Namespace {

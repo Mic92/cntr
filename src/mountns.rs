@@ -194,7 +194,7 @@ pub fn setup(
     fs: &CntrFs,
     socket: &ipc::Socket,
     container_namespace: namespace::Namespace,
-    mount_label: &str,
+    mount_label: &Option<String>,
 ) -> Result<()> {
     let ns = tryfmt!(MountNamespace::new(container_namespace), "");
 
@@ -220,7 +220,7 @@ pub fn setup(
         ),
         "unable to move container mounts to new mountpoint"
     );
-    tryfmt!(fs.mount(ns.mountpoint.as_path(), Some(mount_label)), "mount()");
+    tryfmt!(fs.mount(ns.mountpoint.as_path(), mount_label), "mount()");
 
     let ns = tryfmt!(ns.send(socket), "parent failed");
 

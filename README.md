@@ -2,11 +2,13 @@
 
 [![Build Status](https://travis-ci.org/Mic92/cntr.svg?branch=master)](https://travis-ci.org/Mic92/cntr)
 
-Cntr is a tool that allows to attach you to container from your host.
-It allows to all users to use their favorite debugging tools in the container
-they have have installed on the host.
-It therefore spawns a shell that inherits the full context of the container and
-mount itself as a fuse filesystem.
+Say no to `$ apt install vim` in containers!
+
+Cntr is a tool that allows to attach you to container from your host. It allows
+to all users to use their favorite debugging tools (tcpdump, curl, htop, strace,
+rg/ag, shell + dotfiles, $EDITOR) in the container they have installed on
+the host. Therefore it spawns a shell that inherits the full context of the
+container and mount itself as a fuse filesystem.
 
 ## Demo
 

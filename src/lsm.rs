@@ -1,10 +1,10 @@
+use mount_context;
 use nix::unistd::Pid;
 use std::fs::{File, OpenOptions};
 use std::io::BufReader;
 use std::io::ErrorKind;
 use std::io::prelude::*;
 use types::{Error, Result};
-use mount_context;
 
 #[derive(PartialEq, Eq)]
 enum LSMKind {
@@ -130,12 +130,15 @@ impl LSMProfile {
         Ok(())
     }
 
-    pub fn mount_label(&self, pid: Pid) -> Result<String> {
+    pub fn mount_label(&self, pid: Pid) -> Result<Option<String>> {
         match self.kind {
-            LSMKind::AppArmor => Ok(String::from("")),
+            LSMKind::AppArmor => Ok(None),
             LSMKind::SELinux => {
-                let context = tryfmt!(mount_context::parse_selinux_context(pid), "failed to parse selinux mount options");
-                Ok(String::from(context))
+                let context = tryfmt!(
+                    mount_context::parse_selinux_context(pid),
+                    "failed to parse selinux mount options"
+                );
+                Ok(Some(String::from(context)))
             }
         }
     }
