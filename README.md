@@ -23,9 +23,6 @@ In this two minute recording you learn all the basics of cntr:
 
 ## Installation
 
-At the moment cntr need at least linux 4.8 or higher. That requirement might be
-lowered in the [future](https://github.com/Mic92/cntr/issues/2).
-
 ### Pre-build static-linked binary
 
 For linux x86_64 we build static binaries for every release. More platforms can added on request.

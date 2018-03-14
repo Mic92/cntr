@@ -18,7 +18,7 @@ libc = "0.2.*"
 parking_lot = "0.5"
 void = "1"
 cntr-nix = "0.10.0-pre1"
-cntr-fuse = "0.3.5"
+cntr-fuse = "0.3.6"
 thread-scoped = "1"
 
 [dependencies.concurrent-hashmap]

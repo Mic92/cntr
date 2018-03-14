@@ -1,4 +1,5 @@
 use libc::{self, c_int};
+use nix;
 use nix::errno::Errno;
 use nix::sys::prctl;
 use nix::unistd::Pid;
@@ -44,6 +45,23 @@ fn last_capability() -> Result<u64> {
     ))
 }
 
+fn ambient_capabilities_supported() -> bool {
+    /* If PR_CAP_AMBIENT returns something valid, or an unexpected error code we assume that ambient caps are available. */
+    let res = prctl::prctl(
+        prctl::PrctlOption::PR_CAP_AMBIENT,
+        libc::PR_CAP_AMBIENT_IS_SET as u64,
+        5, // CAP_KILL
+        0,
+        0,
+    );
+    match res {
+        Err(nix::Error::Sys(Errno::EINVAL)) |
+        Err(nix::Error::Sys(Errno::EOPNOTSUPP)) |
+        Err(nix::Error::Sys(Errno::ENOSYS)) => false,
+        _ => true,
+    }
+}
+
 pub fn inherit_capabilities() -> Result<()> {
     unsafe {
         let header = cap_user_header_t {
@@ -59,16 +77,18 @@ pub fn inherit_capabilities() -> Result<()> {
         let res = libc::syscall(libc::SYS_capset, &header, &mut data);
         tryfmt!(Errno::result(res), "");
 
-        tryfmt!(
-            prctl::prctl(
-                prctl::PrctlOption::PR_CAP_AMBIENT,
-                libc::PR_CAP_AMBIENT_RAISE as u64,
-                CAP_SYS_CHROOT,
-                0,
-                0,
-            ),
-            "failed to keep SYS_CHROOT capability"
-        );
+        if ambient_capabilities_supported() {
+            tryfmt!(
+                prctl::prctl(
+                    prctl::PrctlOption::PR_CAP_AMBIENT,
+                    libc::PR_CAP_AMBIENT_RAISE as u64,
+                    CAP_SYS_CHROOT,
+                    0,
+                    0,
+                ),
+                "failed to keep SYS_CHROOT capability"
+            );
+        }
     }
     Ok(())
 }

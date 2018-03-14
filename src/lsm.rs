@@ -16,11 +16,11 @@ impl LSMKind {
     pub fn profile_path(&self, pid: Option<Pid>) -> String {
         match *self {
             LSMKind::AppArmor => {
-                let process = pid.map_or(String::from("thread-self"), |p| p.to_string());
+                let process = pid.map_or(String::from("self"), |p| p.to_string());
                 format!("/proc/{}/attr/current", process)
             },
             LSMKind::SELinux => {
-                let process = pid.map_or(String::from("self"), |p| p.to_string());
+                let process = pid.map_or(String::from("thread-self"), |p| p.to_string());
                 format!("/proc/{}/attr/exec", process)
             }
         }
