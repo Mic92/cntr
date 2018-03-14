@@ -12,6 +12,21 @@ enum LSMKind {
     SELinux,
 }
 
+impl LSMKind {
+    pub fn profile_path(&self, pid: Option<Pid>) -> String {
+        match *self {
+            LSMKind::AppArmor => {
+                let process = pid.map_or(String::from("thread-self"), |p| p.to_string());
+                format!("/proc/{}/attr/current", process)
+            },
+            LSMKind::SELinux => {
+                let process = pid.map_or(String::from("self"), |p| p.to_string());
+                format!("/proc/{}/attr/current", process)
+            }
+        }
+    }
+}
+
 pub struct LSMProfile {
     label: String,
     kind: LSMKind,
@@ -90,15 +105,15 @@ pub fn read_profile(pid: Pid) -> Result<Option<LSMProfile>> {
     let kind = tryfmt!(check_type(), "");
 
     if let Some(kind) = kind {
-        let target_path = format!("/proc/{}/attr/current", pid);
+        let target_path = kind.profile_path(Some(pid));
         let target_label = tryfmt!(
             read_proclabel(&target_path, &kind),
             "failed to get security label of target process"
         );
 
-        let own_path = "/proc/thread-self/attr/exec";
+        let own_path = kind.profile_path(None);
         let own_label = tryfmt!(
-            read_proclabel(own_path, &kind),
+            read_proclabel(&own_path, &kind),
             "failed to get own security label"
         );
 
@@ -107,12 +122,12 @@ pub fn read_profile(pid: Pid) -> Result<Option<LSMProfile>> {
             return Ok(None);
         }
 
-        let res = OpenOptions::new().write(true).open(own_path);
+        let res = OpenOptions::new().write(true).open(&own_path);
 
         return Ok(Some(LSMProfile {
             kind,
             label: target_label,
-            label_file: tryfmt!(res, "failed to open {}", own_path),
+            label_file: tryfmt!(res, "failed to open {}", &own_path),
         }));
     }
     Ok(None)
