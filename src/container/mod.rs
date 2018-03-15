@@ -7,13 +7,14 @@ mod docker;
 mod nspawn;
 mod rkt;
 mod lxc;
+mod lxd;
 
 pub trait Container: Debug {
     fn lookup(&self, id: &str) -> Result<Pid>;
     fn check_required_tools(&self) -> Result<()>;
 }
 
-pub const AVAILABLE_CONTAINER_TYPES: &[&str] = &["process_id", "rkt", "docker", "nspawn", "lxc"];
+pub const AVAILABLE_CONTAINER_TYPES: &[&str] = &["process_id", "rkt", "docker", "nspawn", "lxc", "lxd"];
 
 fn default_order() -> Vec<Box<Container>> {
     let containers: Vec<Box<Container>> = vec![
@@ -22,6 +23,7 @@ fn default_order() -> Vec<Box<Container>> {
         Box::new(docker::Docker {}),
         Box::new(nspawn::Nspawn {}),
         Box::new(lxc::Lxc {}),
+        Box::new(lxd::Lxd {}),
     ];
     containers
         .into_iter()
@@ -36,6 +38,7 @@ pub fn lookup_container_type(name: &str) -> Option<Box<Container>> {
         "docker" => Box::new(docker::Docker {}),
         "nspawn" => Box::new(nspawn::Nspawn {}),
         "lxc" => Box::new(lxc::Lxc {}),
+        "lxd" => Box::new(lxd::Lxd {}),
         _ => return None,
     })
 }

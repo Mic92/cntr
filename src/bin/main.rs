@@ -49,7 +49,7 @@ fn parse_attach_args(args: Vec<String>) -> cntr::AttachOptions {
         ap.refer(&mut container_type).add_option(
             &["--type"],
             Store,
-            "Container type (docker|lxc|rkt|process_id|nspawn, default: all)",
+            "Container type (process_id|rkt|docker|nspawn|lxc|lxd), default: all)",
         );
         ap.refer(&mut container_name).required().add_argument(
             "id",

@@ -17,6 +17,7 @@ In this two minute recording you learn all the basics of cntr:
 - For convenience cntr supports container names/identifier for the following container engines natively:
   * docker
   * LXC
+  * LXD
   * rkt
   * systemd-nspawn
 - For other container engines cntr also takes process ids (PIDs) instead of container names.
@@ -146,6 +147,29 @@ Use `cntr exec` to execute container native commands (while running in the cntr 
 ```console
 $ cntr attach boxbusy
 [root@55a93d71b53b:/var/lib/cntr]# cntr exec sh -c 'busybox | head -1'
+```
+
+### LXD
+
+1: Create a container and start it
+
+```console
+$ lxc image import images:/alpine/edge
+$ lxc launch images:alpine/edge
+$ lxc list
++-----------------+---------+------+------+------------+-----------+
+|      NAME       |  STATE  | IPV4 | IPV6 |    TYPE    | SNAPSHOTS |
++-----------------+---------+------+------+------------+-----------+
+| amazed-sailfish | RUNNING |      |      | PERSISTENT | 0         |
++-----------------+---------+------+------+------------+-----------+
+```
+
+2: Attach to the container with cntr
+
+```console
+$ cntr attach amazed-sailfish
+$ cat etc/hostname
+amazed-sailfish
 ```
 
 ### LXC
