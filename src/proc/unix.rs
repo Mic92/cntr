@@ -4,7 +4,7 @@ use std::io::prelude::*;
 use std::path::PathBuf;
 use types::{Error, Result};
 
-pub fn read_open_unix_sockets() -> Result<Vec<PathBuf>> {
+pub fn read_open_sockets() -> Result<Vec<PathBuf>> {
     let file = tryfmt!(File::open("/proc/net/unix"), "cannot open /proc/net/unix");
 
     let mut paths = vec![];

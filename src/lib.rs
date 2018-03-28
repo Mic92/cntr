@@ -42,5 +42,6 @@ pub mod fs;
 mod attach;
 mod exec;
 mod mount_context;
+mod dotcntr;
 pub use attach::{attach, AttachOptions};
-pub use exec::exec;
+pub use exec::{exec, SETCAP_EXE};

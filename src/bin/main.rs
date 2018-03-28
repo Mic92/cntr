@@ -4,8 +4,9 @@ extern crate nix;
 
 use argparse::{ArgumentParser, Store, List, Collect};
 use cntr::pwd::pwnam;
+use std::{process, env};
 use std::io::{stdout, stderr};
-use std::process;
+use std::path::Path;
 use std::str::FromStr;
 
 #[allow(non_camel_case_types)]
@@ -123,7 +124,7 @@ fn attach_command(args: Vec<String>) {
     };
 }
 
-fn exec_command(args: Vec<String>) {
+fn exec_command(args: Vec<String>, setcap: bool) {
     let mut command = String::from("");
     let mut arguments = vec![];
     {
@@ -152,13 +153,25 @@ fn exec_command(args: Vec<String>) {
         Some(command)
     };
 
-    if let Err(err) = cntr::exec(command, arguments) {
+    if let Err(err) = cntr::exec(command, arguments, setcap) {
         eprintln!("{}", err);
         process::exit(1);
     }
 }
 
 fn main() {
+    match std::env::current_exe() {
+        Ok(exe) => {
+            if exe == Path::new(cntr::SETCAP_EXE) {
+                exec_command(env::args().collect::<Vec<String>>(), true)
+            }
+        }
+        Err(e) => {
+            eprintln!("failed to resolve executable: {}", e);
+            process::exit(1);
+        }
+    }
+
     let mut subcommand = Command::attach;
     let mut args = vec![];
     {
@@ -183,6 +196,6 @@ fn main() {
 
     match subcommand {
         Command::attach => attach_command(args),
-        Command::exec => exec_command(args),
+        Command::exec => exec_command(args, false),
     }
 }

@@ -1,4 +1,5 @@
 use concurrent_hashmap::ConcHashMap;
+use dotcntr::DotcntrDir;
 use files::{Fd, FdState, fd_path};
 use fsuid;
 use fuse::{self, FileAttr, FileType, Filesystem, ReplyAttr, ReplyXattr, ReplyData, ReplyEmpty,
@@ -76,6 +77,7 @@ struct InodeCounter {
 pub struct CntrFs {
     prefix: String,
     root_inode: Arc<Inode>,
+    dotcntr: Arc<DotcntrDir>,
     inode_mapping: Arc<Mutex<HashMap<InodeKey, u64>>>,
     inodes: Arc<ConcHashMap<u64, Arc<Inode>>>,
     inode_counter: Arc<RwLock<InodeCounter>>,
@@ -165,8 +167,26 @@ impl<'a> LookupFile<'a> {
     }
 }
 
+fn open_static_dnode(static_ino: u64, path: &Path) -> Result<Arc<Inode>> {
+    let fd = tryfmt!(
+        fcntl::open(path, OFlag::O_RDONLY | OFlag::O_CLOEXEC, stat::Mode::all()),
+        "failed to open backing filesystem '{}'",
+        path.display()
+    );
+
+    Ok(Arc::new(Inode {
+        fd: RwLock::new(Fd::new(fd, FdState::Readable)),
+        kind: FileType::Directory,
+        ino: static_ino,
+        dev: static_ino,
+        nlookup: RwLock::new(2),
+        has_default_acl: RwLock::new(None),
+    }))
+}
+
+
 impl CntrFs {
-    pub fn new(options: &CntrMountOptions) -> Result<CntrFs> {
+    pub fn new(dotcntr: DotcntrDir, options: &CntrMountOptions) -> Result<CntrFs> {
         let fuse_fd = tryfmt!(fusefd::open(), "failed to initialize fuse");
 
         let limit = resource::Rlimit {
@@ -178,25 +198,13 @@ impl CntrFs {
             "Cannot raise file descriptor limit"
         );
 
-        let fd = tryfmt!(
-            fcntl::open(
-                options.prefix,
-                OFlag::O_RDONLY | OFlag::O_CLOEXEC,
-                stat::Mode::all(),
-            ),
-            "failed to open backing filesystem '{}'",
-            options.prefix
-        );
         Ok(CntrFs {
             prefix: String::from(options.prefix),
-            root_inode: Arc::new(Inode {
-                fd: RwLock::new(Fd::new(fd, FdState::Readable)),
-                kind: FileType::Directory,
-                ino: fuse::FUSE_ROOT_ID,
-                dev: fuse::FUSE_ROOT_ID,
-                nlookup: RwLock::new(2),
-                has_default_acl: RwLock::new(None),
-            }),
+            root_inode: try!(open_static_dnode(
+                fuse::FUSE_ROOT_ID,
+                Path::new(options.prefix),
+            )),
+            dotcntr: Arc::new(dotcntr),
             inode_mapping: Arc::new(Mutex::new(HashMap::<InodeKey, u64>::new())),
             inodes: Arc::new(ConcHashMap::<u64, Arc<Inode>>::new()),
             inode_counter: Arc::new(RwLock::new(InodeCounter {
@@ -263,6 +271,7 @@ impl CntrFs {
             let cntrfs = CntrFs {
                 prefix: self.prefix.clone(),
                 root_inode: Arc::clone(&self.root_inode),
+                dotcntr: Arc::clone(&self.dotcntr),
                 fuse_fd: self.fuse_fd,
                 inode_mapping: Arc::clone(&self.inode_mapping),
                 inodes: Arc::clone(&self.inodes),
@@ -535,20 +544,23 @@ impl CntrFs {
 
     pub fn lookup_inode(&mut self, parent: u64, name: &OsStr) -> nix::Result<(FileAttr, u64)> {
         fsuid::set_root();
-        let res = {
+
+        if parent == fuse::FUSE_ROOT_ID && name == ".cntr" {
+            let d = Arc::clone(&self.dotcntr);
+            self.lookup_from_fd(LookupFile::Borrow(&d.file))
+        } else {
             let parent_inode = try!(self.inode(&parent));
             let parent_fd = parent_inode.fd.read();
-            try!(fcntl::openat(
+            let fd = try!(fcntl::openat(
                 parent_fd.raw(),
                 name,
                 OFlag::O_PATH | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
                 stat::Mode::empty(),
-            ))
-        };
+            ));
+            let file = unsafe { File::from_raw_fd(fd) };
 
-        let file = unsafe { File::from_raw_fd(res) };
-
-        self.lookup_from_fd(LookupFile::Donate(file))
+            self.lookup_from_fd(LookupFile::Donate(file))
+        }
     }
 }
 

@@ -1,4 +1,5 @@
 use container;
+use dotcntr;
 use fs;
 use ipc;
 use nix::unistd::{self, ForkResult};
@@ -50,16 +51,21 @@ pub fn attach(opts: &AttachOptions) -> Result<Void> {
         home = Some(passwd.pw_dir.as_ref());
     }
 
+    let dotcntr = tryfmt!(dotcntr::create(container_pid), "failed to setup /.cntr");
+
     let cntrfs = tryfmt!(
-        fs::CntrFs::new(&fs::CntrMountOptions {
-            prefix: "/",
-            splice_read: cfg!(feature = "splice_read"),
-            splice_write: false,
-            uid_map,
-            gid_map,
-            effective_uid,
-            effective_gid,
-        }),
+        fs::CntrFs::new(
+            dotcntr,
+            &fs::CntrMountOptions {
+                prefix: "/",
+                splice_read: cfg!(feature = "splice_read"),
+                splice_write: false,
+                uid_map,
+                gid_map,
+                effective_uid,
+                effective_gid,
+            },
+        ),
         "cannot mount filesystem"
     );
 

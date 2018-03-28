@@ -11,9 +11,7 @@ impl Container for Lxd {
     fn lookup(&self, container_id: &str) -> Result<Pid> {
         let command = format!("lxc info {}", container_id);
         let output = tryfmt!(
-            Command::new("lxc")
-                .args(&["info", container_id])
-                .output(),
+            Command::new("lxc").args(&["info", container_id]).output(),
             "Running '{}' failed",
             command
         );
@@ -27,7 +25,6 @@ impl Container for Lxd {
                 stderr.trim_right()
             ));
         }
-
 
         let lines = output.stdout.split(|&c| c == b'\n');
         let mut rows = lines.map(|line| {

@@ -18,7 +18,7 @@ impl LSMKind {
             LSMKind::AppArmor => {
                 let process = pid.map_or(String::from("self"), |p| p.to_string());
                 format!("/proc/{}/attr/current", process)
-            },
+            }
             LSMKind::SELinux => {
                 let process = pid.map_or(String::from("thread-self"), |p| p.to_string());
                 format!("/proc/{}/attr/exec", process)

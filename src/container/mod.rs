@@ -14,7 +14,8 @@ pub trait Container: Debug {
     fn check_required_tools(&self) -> Result<()>;
 }
 
-pub const AVAILABLE_CONTAINER_TYPES: &[&str] = &["process_id", "rkt", "docker", "nspawn", "lxc", "lxd"];
+pub const AVAILABLE_CONTAINER_TYPES: &[&str] =
+    &["process_id", "rkt", "docker", "nspawn", "lxc", "lxd"];
 
 fn default_order() -> Vec<Box<Container>> {
     let containers: Vec<Box<Container>> = vec![
