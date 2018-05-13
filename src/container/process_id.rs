@@ -1,5 +1,3 @@
-
-
 use container::Container;
 use libc::pid_t;
 use nix::unistd::Pid;

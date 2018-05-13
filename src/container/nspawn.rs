@@ -1,5 +1,4 @@
-
-
+use cmd;
 use container::Container;
 use libc::pid_t;
 use nix::unistd::Pid;
@@ -43,10 +42,10 @@ impl Container for Nspawn {
         )))
     }
     fn check_required_tools(&self) -> Result<()> {
-        tryfmt!(
-            Command::new("machinectl").arg("--version").output(),
-            "cannot execute `machinectl`"
-        );
-        Ok(())
+        if cmd::which("machinectl").is_some() {
+            Ok(())
+        } else {
+            errfmt!("machinectl not found")
+        }
     }
 }

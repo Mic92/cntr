@@ -1,5 +1,4 @@
-
-
+use cmd;
 use container::Container;
 use libc::pid_t;
 use nix::unistd::Pid;
@@ -40,10 +39,10 @@ impl Container for Lxc {
         )))
     }
     fn check_required_tools(&self) -> Result<()> {
-        tryfmt!(
-            Command::new("lxc-info").arg("--version").output(),
-            "cannot execute `lxc-info`"
-        );
-        Ok(())
+        if cmd::which("lxc-info").is_some() {
+            Ok(())
+        } else {
+            errfmt!("lxc-info not found")
+        }
     }
 }

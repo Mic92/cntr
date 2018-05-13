@@ -1,11 +1,9 @@
-
-
+use cmd;
 use container::Container;
 use libc::pid_t;
 use nix::unistd::Pid;
 use std::process::Command;
 use types::{Error, Result};
-use cmd;
 
 #[derive(Clone, Debug)]
 pub struct Docker {}
@@ -15,13 +13,17 @@ impl Container for Docker {
         let command = if cmd::which("docker-pid").is_some() {
             vec!["docker-pid", container_id]
         } else {
-            vec!["docker", "inspect", "--format", "{{.State.Running}};{{.State.Pid}}", container_id]
+            vec![
+                "docker",
+                "inspect",
+                "--format",
+                "{{.State.Running}};{{.State.Pid}}",
+                container_id,
+            ]
         };
 
         let output = tryfmt!(
-            Command::new(&command[0])
-                .args(&command[1..])
-                .output(),
+            Command::new(&command[0]).args(&command[1..]).output(),
             "Running '{}' failed",
             command.join(" ")
         );
@@ -57,7 +59,7 @@ impl Container for Docker {
     }
     fn check_required_tools(&self) -> Result<()> {
         if cmd::which("docker-pid").is_some() || cmd::which("docker").is_some() {
-            return Ok(())
+            return Ok(());
         }
 
         errfmt!("Neither docker or docker-pid was found")
