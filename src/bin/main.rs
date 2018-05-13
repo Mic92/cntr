@@ -140,6 +140,7 @@ fn exec_command(args: Vec<String>, setcap: bool) {
             List,
             "Arguments to pass to command",
         );
+        ap.stop_on_first_argument(true);
         match ap.parse(args, &mut stdout(), &mut stderr()) {
             Ok(()) =>  {}
             Err(x) => {
