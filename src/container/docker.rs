@@ -5,36 +5,32 @@ use libc::pid_t;
 use nix::unistd::Pid;
 use std::process::Command;
 use types::{Error, Result};
+use cmd;
 
 #[derive(Clone, Debug)]
 pub struct Docker {}
 
 impl Container for Docker {
     fn lookup(&self, container_id: &str) -> Result<Pid> {
-        let command = format!(
-            "docker inspect --format '{{.State.Running}};{{.State.Pid}}' {}",
-            container_id
-        );
+        let command = if cmd::which("docker-pid").is_some() {
+            vec!["docker-pid", container_id]
+        } else {
+            vec!["docker", "inspect", "--format", "{{.State.Running}};{{.State.Pid}}", container_id]
+        };
+
         let output = tryfmt!(
-            Command::new("docker")
-                .args(
-                    &[
-                        "inspect",
-                        "--format",
-                        "{{.State.Running}};{{.State.Pid}}",
-                        container_id,
-                    ],
-                )
+            Command::new(&command[0])
+                .args(&command[1..])
                 .output(),
             "Running '{}' failed",
-            command
+            command.join(" ")
         );
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return errfmt!(format!(
                 "Failed to list containers. '{}' exited with {}: {}",
-                command,
+                command.join(" "),
                 output.status,
                 stderr.trim_right()
             ));
@@ -55,15 +51,15 @@ impl Container for Docker {
         Ok(Pid::from_raw(tryfmt!(
             pid.trim_right().parse::<pid_t>(),
             "expected valid process id from '{}', got: {}",
-            command,
+            command.join(" "),
             pid
         )))
     }
     fn check_required_tools(&self) -> Result<()> {
-        tryfmt!(
-            Command::new("docker").arg("--version").output(),
-            "cannot execute `docker`"
-        );
-        Ok(())
+        if cmd::which("docker-pid").is_some() || cmd::which("docker").is_some() {
+            return Ok(())
+        }
+
+        errfmt!("Neither docker or docker-pid was found")
     }
 }
