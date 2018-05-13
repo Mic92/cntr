@@ -1,5 +1,6 @@
 use libc;
 use nix::{self, unistd};
+use procfs;
 use std::collections::HashMap;
 use std::env;
 use std::ffi::{CStr, CString, OsStr, OsString};
@@ -8,7 +9,6 @@ use std::io;
 use std::io::{BufRead, BufReader};
 use std::os::unix::ffi::{OsStringExt, OsStrExt};
 use std::os::unix::process::CommandExt;
-use std::path::PathBuf;
 use std::process::{Command, ExitStatus};
 use types::{Error, Result};
 
@@ -20,15 +20,8 @@ pub struct Cmd {
 }
 
 fn read_environment(pid: unistd::Pid) -> Result<HashMap<OsString, OsString>> {
-    let mut buf = PathBuf::from("/proc/");
-    buf.push(pid.to_string());
-    buf.push("environ");
-    let path = buf.as_path();
-    let f = tryfmt!(
-        File::open(path),
-        "failed to open {}",
-        path.to_str().unwrap()
-    );
+    let path = procfs::get_path().join(pid.to_string()).join("environ");
+    let f = tryfmt!(File::open(&path), "failed to open {}", path.display());
     let reader = BufReader::new(f);
     let res: HashMap<OsString, OsString> = reader
         .split(b'\0')

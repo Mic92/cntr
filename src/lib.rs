@@ -20,6 +20,7 @@ pub use user_namespace::DEFAULT_ID_MAP;
 pub mod types;
 pub mod namespace;
 mod cgroup;
+mod procfs;
 mod user_namespace;
 mod ioctl;
 mod pty;

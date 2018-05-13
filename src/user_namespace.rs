@@ -1,8 +1,8 @@
 use nix::unistd::Pid;
+use procfs;
 use std::fs::File;
 use std::io::BufReader;
 use std::io::prelude::*;
-use std::path::PathBuf;
 use types::{Result, Error};
 
 #[derive(Clone, Copy, Debug)]
@@ -57,7 +57,7 @@ pub const DEFAULT_ID_MAP: IdMap = IdMap {
 impl IdMap {
     fn _new_from_pid(pid: Pid, kind: Kind) -> Result<IdMap> {
         let what: &str = kind.into();
-        let path = PathBuf::from("/proc").join(pid.to_string()).join(what);
+        let path = procfs::get_path().join(pid.to_string()).join(what);
         let f = tryfmt!(File::open(&path), "failed to open {}", path.display());
         let buf_reader = BufReader::new(f);
         let mut id_map = IdMap {

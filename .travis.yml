@@ -2,15 +2,24 @@ language: rust
 sudo: false
 rust: stable
 cache: cargo
-matrix:
-  include:
-    - env: TARGET=x86_64-unknown-linux-musl DEPLOY=1 CARGO_VENDOR_VERSION=0.1.13
-      before_script:
-        - rustup target add $TARGET
-        - curl -sSfL https://github.com/alexcrichton/cargo-vendor/releases/download/${CARGO_VENDOR_VERSION}/cargo-vendor-${CARGO_VENDOR_VERSION}-x86_64-unknown-linux-musl.tar.gz | tar xzf - -C $HOME/bin --strip-components=1
-        - cargo vendor --version
+env:
+  global:
+    - CARGO_VENDOR_VERSION=0.1.14
+  matrix:
+    - TARGET=x86_64-unknown-linux-musl
+    # TODO: fix other architectures support
+    #- TARGET=i686-unknown-linux-musl
+    #- TARGET=armv7-unknown-linux-musleabihf
+    #- TARGET=aarch64-unknown-linux-musl
+
+install:
+  - curl -sSfL https://github.com/alexcrichton/cargo-vendor/releases/download/${CARGO_VENDOR_VERSION}/cargo-vendor-${CARGO_VENDOR_VERSION}-x86_64-unknown-linux-musl.tar.gz | tar xzf - -C $HOME/bin --strip-components=1
+  - cargo vendor --version
+  - rustup target add $TARGET
+
 script:
   - cargo build --release --target $TARGET --locked
+  - strip target/$TARGET/release/cntr
 
 notifications:
   email:
@@ -20,7 +29,7 @@ before_deploy:
   - name="cntr-$TRAVIS_TAG-$TARGET"
   - depsname="cntr-src-$TRAVIS_TAG"
   - install -D target/$TARGET/release/cntr $name/cntr
-  - tar czvf $name.tar.gz $name
+  - install -D target/$TARGET/release/cntr cntr-bin-$TRAVIS_TAG-$TARGET
   - mkdir $depsname
   - git archive HEAD | tar -x -C $depsname
   - cargo vendor
@@ -32,10 +41,11 @@ deploy:
   provider: releases
   api_key:
     secure: Mou0OpnvwURSd5EJVCG0XCn5HQfp2OfxQk/8v8bxLkEG2oqMQGMo+P2X/eJSTPIZ6cXTayorNJuAMcgAzBsgHbLX6QR43uYBIaglJuzJEp6NuwyjLNwk6MK4tNufxI2+btpnD8jwfFhz8MP8CLy85kTYMoN5gq5I2yEcEPUvXR5/RGLg/sgOqBdn/RPY0Syp9CPoQj3KjWD2HaqX7KBjccgn26tfuGQfntjVNlMnM6ivxc1u9cPx2KUXkgyEJJRjcBVmdWjRcHfCW9xfHMdA+rsHQ3kaXtWouWz0BDvk/I6JWjTE66oNRsw8d+EueGU9HaTIy/gKoYp5F8ByYqG72KaznwoAH6VVyOHT/RPY23V7xClu/0a/XdI5HToFm+fI3CCV+6ZFfbq6bW8ujh4uDrkvDnrOnfCQ/AIMhdqEEd2Dv7GIvrOncU7tMCtvMk4a4L8dOvBh12HmeRsOa9uj1BXAqk9EgJBzCSLn0laeJae9yMuxoglHznX0m2G4cmUBh1axl2KTCqCd86jxfUw7anq7PH21sSTPNxdUdcPhu7nPk6q7MMDzVxveV6KweOiduySZLWuS3OPienD1y22ZkyyM5WgWCOYEhjLGOcFE7uF9HvrZZoU4V+Co8CNrvBYFFY2WuEvItnczrqlrMkYG+QSm8dJtFpGkv1uuE6vDoio=
+  file_glob: true
   file:
     - cntr-$TRAVIS_TAG-$TARGET.tar.gz
     - cntr-src-$TRAVIS_TAG.tar.gz
+    - cntr-bin-$TRAVIS_TAG-$TARGET
   on:
-    condition: $DEPLOY = 1
     repo: Mic92/cntr
     tags: true

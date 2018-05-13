@@ -1,4 +1,5 @@
 use nix::unistd;
+use procfs;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -55,12 +56,12 @@ fn get_mounts() -> Result<HashMap<String, String>> {
 }
 
 fn get_cgroups(pid: unistd::Pid) -> Result<Vec<String>> {
-    let path = format!("/proc/{}/cgroup", pid);
-    let f = tryfmt!(File::open(&path), "failed to read {}", path);
+    let path = procfs::get_path().join(format!("{}/cgroup", pid));
+    let f = tryfmt!(File::open(&path), "failed to read {}", path.display());
     let reader = BufReader::new(f);
     let mut cgroups: Vec<String> = Vec::new();
     for l in reader.lines() {
-        let line = tryfmt!(l, "failed to read '{}'", path);
+        let line = tryfmt!(l, "failed to read '{}'", path.display());
         let fields: Vec<&str> = line.split(":/").collect();
         if fields.len() >= 2 {
             cgroups.push(fields[1].to_string());

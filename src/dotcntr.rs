@@ -3,8 +3,8 @@ use libc::pid_t;
 use nix::fcntl::{self, OFlag};
 use nix::sys::stat;
 use nix::unistd::Pid;
+use procfs::ProcStatus;
 use std::fs::{self, File};
-use std::io::BufReader;
 use std::io::prelude::*;
 use std::os::unix::prelude::*;
 use tempdir::TempDir;
@@ -47,31 +47,7 @@ impl DotcntrDir {
     }
 }
 
-pub fn resolve_namespace_pid(target_pid: Pid) -> Result<Pid> {
-    let path = format!("/proc/{}/status", target_pid);
-    let file = tryfmt!(File::open(&path), "failed to open {}", &path);
-
-    let reader = BufReader::new(file);
-    for line in reader.lines() {
-        let line = tryfmt!(line, "could not read {}", &path);
-        let columns: Vec<&str> = line.split('\t').collect();
-        assert!(columns.len() >= 2);
-        if columns[0] == "NSpid:" {
-            if let Some(pid_string) = columns.last() {
-                let pid = tryfmt!(
-                    pid_string.parse::<pid_t>(),
-                    "read invalid pid from proc: '{}'",
-                    columns[1]
-                );
-                return Ok(Pid::from_raw(pid));
-            }
-        }
-    }
-
-    errfmt!(format!("Could not find namespace pid in {}", path))
-}
-
-pub fn create(target_pid: Pid) -> Result<DotcntrDir> {
+pub fn create(process_status: &ProcStatus) -> Result<DotcntrDir> {
     let dotcntr_dir = tryfmt!(
         TempDir::new("dotcntr"),
         "failed to create temporary directory"
@@ -92,12 +68,10 @@ pub fn create(target_pid: Pid) -> Result<DotcntrDir> {
     };
     tryfmt!(d.write_setcap_exe(), "failed to create setcap executable");
 
-    let internal_pid = tryfmt!(
-        resolve_namespace_pid(target_pid),
-        "failed get namespace pid"
+    tryfmt!(
+        d.write_pid_file(process_status.local_pid),
+        "failed to create pid file"
     );
-
-    tryfmt!(d.write_pid_file(internal_pid), "failed to create pid file");
 
     Ok(d)
 }

@@ -3,6 +3,7 @@ use dotcntr;
 use fs;
 use ipc;
 use nix::unistd::{self, ForkResult};
+use procfs;
 use pwd;
 use std::fs::metadata;
 use std::os::unix::prelude::*;
@@ -21,6 +22,7 @@ pub struct AttachOptions {
     pub effective_user: Option<pwd::Passwd>,
 }
 
+
 pub fn attach(opts: &AttachOptions) -> Result<Void> {
     let container_pid =
         tryfmt!(
@@ -35,7 +37,7 @@ pub fn attach(opts: &AttachOptions) -> Result<Void> {
     );
 
     let metadata = tryfmt!(
-        metadata(format!("/proc/{}", container_pid)),
+        metadata(procfs::get_path().join(container_pid.to_string())),
         "failed to container uid/gid"
     );
 
@@ -51,7 +53,12 @@ pub fn attach(opts: &AttachOptions) -> Result<Void> {
         home = Some(passwd.pw_dir.as_ref());
     }
 
-    let dotcntr = tryfmt!(dotcntr::create(container_pid), "failed to setup /.cntr");
+    let process_status = tryfmt!(
+        procfs::status(container_pid),
+        "failed to get status of target process"
+    );
+
+    let dotcntr = tryfmt!(dotcntr::create(&process_status), "failed to setup /.cntr");
 
     let cntrfs = tryfmt!(
         fs::CntrFs::new(
@@ -77,11 +84,11 @@ pub fn attach(opts: &AttachOptions) -> Result<Void> {
             let child_opts = child::ChildOptions {
                 command: opts.command.clone(),
                 arguments: opts.arguments.clone(),
-                container_pid,
                 mount_ready_sock: &child_sock,
                 uid: container_uid,
                 gid: container_gid,
                 fs: cntrfs,
+                process_status,
                 home,
             };
             child::run(&child_opts)

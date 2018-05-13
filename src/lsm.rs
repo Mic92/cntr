@@ -1,9 +1,11 @@
 use mount_context;
 use nix::unistd::Pid;
+use procfs;
 use std::fs::{File, OpenOptions};
 use std::io::BufReader;
 use std::io::ErrorKind;
 use std::io::prelude::*;
+use std::path::{PathBuf, Path};
 use types::{Error, Result};
 
 #[derive(PartialEq, Eq)]
@@ -13,15 +15,15 @@ enum LSMKind {
 }
 
 impl LSMKind {
-    pub fn profile_path(&self, pid: Option<Pid>) -> String {
+    pub fn profile_path(&self, pid: Option<Pid>) -> PathBuf {
         match *self {
             LSMKind::AppArmor => {
                 let process = pid.map_or(String::from("self"), |p| p.to_string());
-                format!("/proc/{}/attr/current", process)
+                procfs::get_path().join(process).join("attr/current")
             }
             LSMKind::SELinux => {
                 let process = pid.map_or(String::from("thread-self"), |p| p.to_string());
-                format!("/proc/{}/attr/exec", process)
+                procfs::get_path().join(process).join("attr/exec")
             }
         }
     }
@@ -88,10 +90,14 @@ fn check_type() -> Result<Option<LSMKind>> {
     }
 }
 
-fn read_proclabel(path: &str, kind: &LSMKind) -> Result<String> {
+fn read_proclabel(path: &Path, kind: &LSMKind) -> Result<String> {
     let mut attr = String::new();
-    let mut file = tryfmt!(File::open(&path), "failed to open {}", path);
-    tryfmt!(file.read_to_string(&mut attr), "failed to read {}", path);
+    let mut file = tryfmt!(File::open(&path), "failed to open {}", path.display());
+    tryfmt!(
+        file.read_to_string(&mut attr),
+        "failed to read {}",
+        path.display()
+    );
 
     if *kind == LSMKind::AppArmor {
         let fields: Vec<&str> = attr.trim_right().splitn(2, ' ').collect();
@@ -127,7 +133,7 @@ pub fn read_profile(pid: Pid) -> Result<Option<LSMProfile>> {
         return Ok(Some(LSMProfile {
             kind,
             label: target_label,
-            label_file: tryfmt!(res, "failed to open {}", &own_path),
+            label_file: tryfmt!(res, "failed to open {}", own_path.display()),
         }));
     }
     Ok(None)

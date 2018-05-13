@@ -3,9 +3,9 @@
 use container::Container;
 use libc::pid_t;
 use nix::unistd::Pid;
+use procfs;
 use std::fs;
 use std::io::ErrorKind;
-use std::path::PathBuf;
 use types::{Result, Error};
 
 #[derive(Clone, Debug)]
@@ -17,9 +17,8 @@ impl Container for ProcessId {
             Err(e) => tryfmt!(Err(e), "not a valid pid: `{}`", container_id),
             Ok(v) => v,
         };
-        let mut path = PathBuf::from("/proc");
-        path.push(pid.to_string());
-        match fs::metadata(path) {
+
+        match fs::metadata(procfs::get_path().join(pid.to_string())) {
             Err(e) => {
                 if e.kind() == ErrorKind::NotFound {
                     errfmt!(format!("no process with pid {} found", pid))
