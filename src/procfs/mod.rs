@@ -11,7 +11,7 @@ use types::{Error, Result};
 mod unix;
 
 pub fn get_path() -> PathBuf {
-    PathBuf::from(&env::var_os("CNTR_PROC").unwrap_or(OsString::from("/proc")))
+    PathBuf::from(&env::var_os("CNTR_PROC").unwrap_or_else(|| OsString::from("/proc")))
 }
 
 pub struct ProcStatus {

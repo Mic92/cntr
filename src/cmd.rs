@@ -67,7 +67,7 @@ impl Cmd {
         );
         Ok(Cmd {
             command,
-            arguments: arguments,
+            arguments,
             environment: variables,
             home: home.map(|h| h.to_owned()),
         })

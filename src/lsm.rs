@@ -159,7 +159,7 @@ impl LSMProfile {
                     mount_context::parse_selinux_context(pid),
                     "failed to parse selinux mount options"
                 );
-                Ok(Some(String::from(context)))
+                Ok(Some(context))
             }
         }
     }

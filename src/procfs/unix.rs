@@ -4,6 +4,7 @@ use std::io::prelude::*;
 use std::path::PathBuf;
 use types::{Error, Result};
 
+#[allow(dead_code)]
 pub fn read_open_sockets() -> Result<Vec<PathBuf>> {
     let file = tryfmt!(File::open("/proc/net/unix"), "cannot open /proc/net/unix");
 

@@ -37,7 +37,7 @@ pub fn run(options: &ChildOptions) -> Result<Void> {
         "failed to get lsm profile"
     );
 
-    let mount_label = if let &Some(ref p) = &lsm_profile {
+    let mount_label = if let Some(ref p) = lsm_profile {
         tryfmt!(
             p.mount_label(options.process_status.global_pid),
             "failed to read mount options"

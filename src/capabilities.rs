@@ -16,10 +16,10 @@ pub const _LINUX_CAPABILITY_VERSION_1: u32 = 0x1998_0330;
 pub const _LINUX_CAPABILITY_VERSION_2: u32 = 0x2007_1026;
 pub const _LINUX_CAPABILITY_VERSION_3: u32 = 0x2008_0522;
 
-pub const VFS_CAP_REVISION_1: u32 = 0x01000000;
-pub const VFS_CAP_REVISION_2: u32 = 0x02000000;
-pub const VFS_CAP_REVISION_MASK: u32 = 0xFF000000;
-pub const VFS_CAP_FLAGS_EFFECTIVE: u32 = 0x000001;
+pub const VFS_CAP_REVISION_1: u32 = 0x0100_0000;
+pub const VFS_CAP_REVISION_2: u32 = 0x0200_0000;
+pub const VFS_CAP_REVISION_MASK: u32 = 0xFF00_0000;
+pub const VFS_CAP_FLAGS_EFFECTIVE: u32 = 0x00_0001;
 
 pub const CAP_SYS_CHROOT: u32 = 18;
 pub const CAP_SYS_PTRACE: u32 = 19;
@@ -71,7 +71,7 @@ pub fn set_chroot_capability(path: &Path) -> Result<()> {
     tryfmt!(Errno::result(res), "Failed to get capability version");
 
     let (magic, size) = match u32::from_le(header.version) | VFS_CAP_REVISION_MASK {
-        _LINUX_CAPABILITY_VERSION_1 => (VFS_CAP_REVISION_1, 4 * (1 + 2 * 1)),
+        _LINUX_CAPABILITY_VERSION_1 => (VFS_CAP_REVISION_1, 4 * (1 + 2)),
         // at the moment _LINUX_CAPABILITY_VERSION_2|_LINUX_CAPABILITY_VERSION_3
         _ => (VFS_CAP_REVISION_2, 4 * (1 + 2 * 2)),
     };
