@@ -77,7 +77,7 @@ struct InodeCounter {
 pub struct CntrFs {
     prefix: String,
     root_inode: Arc<Inode>,
-    dotcntr: Arc<DotcntrDir>,
+    dotcntr: Arc<Option<DotcntrDir>>,
     inode_mapping: Arc<Mutex<HashMap<InodeKey, u64>>>,
     inodes: Arc<ConcHashMap<u64, Arc<Inode>>>,
     inode_counter: Arc<RwLock<InodeCounter>>,
@@ -186,7 +186,7 @@ fn open_static_dnode(static_ino: u64, path: &Path) -> Result<Arc<Inode>> {
 
 
 impl CntrFs {
-    pub fn new(dotcntr: DotcntrDir, options: &CntrMountOptions) -> Result<CntrFs> {
+    pub fn new(options: &CntrMountOptions, dotcntr: Option<DotcntrDir>) -> Result<CntrFs> {
         let fuse_fd = tryfmt!(fusefd::open(), "failed to initialize fuse");
 
         let limit = resource::Rlimit {
@@ -542,25 +542,28 @@ impl CntrFs {
         Ok((attr, generation))
     }
 
+
     pub fn lookup_inode(&mut self, parent: u64, name: &OsStr) -> nix::Result<(FileAttr, u64)> {
         fsuid::set_root();
 
         if parent == fuse::FUSE_ROOT_ID && name == ".cntr" {
-            let d = Arc::clone(&self.dotcntr);
-            self.lookup_from_fd(LookupFile::Borrow(&d.file))
-        } else {
-            let parent_inode = try!(self.inode(&parent));
-            let parent_fd = parent_inode.fd.read();
-            let fd = try!(fcntl::openat(
-                parent_fd.raw(),
-                name,
-                OFlag::O_PATH | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
-                stat::Mode::empty(),
-            ));
-            let file = unsafe { File::from_raw_fd(fd) };
-
-            self.lookup_from_fd(LookupFile::Donate(file))
+            let dotcntr = Arc::clone(&self.dotcntr);
+            if let Some(ref dotcntr) = *dotcntr {
+                return self.lookup_from_fd(LookupFile::Borrow(&dotcntr.file));
+            }
         }
+
+        let parent_inode = try!(self.inode(&parent));
+        let parent_fd = parent_inode.fd.read();
+        let fd = try!(fcntl::openat(
+            parent_fd.raw(),
+            name,
+            OFlag::O_PATH | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+            stat::Mode::empty(),
+        ));
+        let file = unsafe { File::from_raw_fd(fd) };
+
+        self.lookup_from_fd(LookupFile::Donate(file))
     }
 }
 

@@ -51,15 +51,18 @@ fn main() {
     }
     #[cfg(feature = "profiling")] PROFILER.lock().unwrap().start("./cntrfs.profile").unwrap();
 
-    let cntr = CntrFs::new(&CntrMountOptions {
-        prefix: &args[1],
-        splice_read: cfg!(feature = "splice_read"),
-        splice_write: cfg!(feature = "splice_write"),
-        uid_map: cntr::DEFAULT_ID_MAP,
-        gid_map: cntr::DEFAULT_ID_MAP,
-        effective_uid: None,
-        effective_gid: None,
-    }).unwrap();
+    let cntr = CntrFs::new(
+        &CntrMountOptions {
+            prefix: &args[1],
+            splice_read: cfg!(feature = "splice_read"),
+            splice_write: cfg!(feature = "splice_write"),
+            uid_map: cntr::DEFAULT_ID_MAP,
+            gid_map: cntr::DEFAULT_ID_MAP,
+            effective_uid: None,
+            effective_gid: None,
+        },
+        None,
+    ).unwrap();
 
     cntr.mount(Path::new(&args[2]), &None).unwrap();
     let guard = MountGuard { mount_point: args[2].clone() };

@@ -62,7 +62,6 @@ pub fn attach(opts: &AttachOptions) -> Result<Void> {
 
     let cntrfs = tryfmt!(
         fs::CntrFs::new(
-            dotcntr,
             &fs::CntrMountOptions {
                 prefix: "/",
                 splice_read: cfg!(feature = "splice_read"),
@@ -72,6 +71,7 @@ pub fn attach(opts: &AttachOptions) -> Result<Void> {
                 effective_uid,
                 effective_gid,
             },
+            Some(dotcntr),
         ),
         "cannot mount filesystem"
     );
