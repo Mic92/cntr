@@ -8,14 +8,22 @@ mod nspawn;
 mod rkt;
 mod lxc;
 mod lxd;
+mod command;
 
 pub trait Container: Debug {
     fn lookup(&self, id: &str) -> Result<Pid>;
     fn check_required_tools(&self) -> Result<()>;
 }
 
-pub const AVAILABLE_CONTAINER_TYPES: &[&str] =
-    &["process_id", "rkt", "docker", "nspawn", "lxc", "lxd"];
+pub const AVAILABLE_CONTAINER_TYPES: &[&str] = &[
+    "process_id",
+    "rkt",
+    "docker",
+    "nspawn",
+    "lxc",
+    "lxd",
+    "command",
+];
 
 fn default_order() -> Vec<Box<Container>> {
     let containers: Vec<Box<Container>> = vec![
@@ -40,6 +48,7 @@ pub fn lookup_container_type(name: &str) -> Option<Box<Container>> {
         "nspawn" => Box::new(nspawn::Nspawn {}),
         "lxc" => Box::new(lxc::Lxc {}),
         "lxd" => Box::new(lxd::Lxd {}),
+        "command" => Box::new(command::Command {}),
         _ => return None,
     })
 }
