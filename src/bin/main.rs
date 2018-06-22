@@ -48,7 +48,7 @@ fn parse_attach_args(args: Vec<String>) -> cntr::AttachOptions {
             "effective username that should be owner of new created files on the host",
         );
         ap.refer(&mut container_type).add_option(
-            &["--type"],
+            &["-t", "--type"],
             Store,
             "Container type (process_id|rkt|docker|nspawn|lxc|lxd|command), default: all except command)",
         );
