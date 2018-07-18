@@ -6,6 +6,9 @@ Say no to `$ apt install vim` in containers!
 `cntr` is a replacement for `docker exec` that brings all your developers tools with you.
 This allows to ship minimal runtime image in production and limit the surface for exploits.
 
+Cntr was also published in [Usenix ATC 2018](https://www.usenix.org/conference/atc18/presentation/thalheim).
+See [bibtex](#bibtex) for citation.
+
 ## Demo
 
 In this two minute recording you learn all the basics of cntr:
@@ -323,3 +326,17 @@ postmark, ...)
 - [toolbox](https://github.com/coreos/toolbox)
   - Does attach from a container to the host, this is the opposite of what Cntr
     is doing
+
+# Bibtex
+
+We published a paper with all technical details about Cntr in
+[Usenix ATC 2018](https://www.usenix.org/conference/atc18/presentation/thalheim).
+
+```bibtex
+@inproceedings{cntr-atc18,
+  author = {J{\"o}rg Thalheim and Pramod Bhatotia and Pedro Fonseca and Baris Kasikci},
+  title = {Cntr: Lightweight {OS} Containers},
+  booktitle = {2018 {USENIX} Annual Technical Conference ({USENIX} {ATC} 18)},
+  year = {2018},
+}
+```
