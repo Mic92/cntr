@@ -481,14 +481,18 @@ pub fn bind_paths(paths: &[PathBuf]) -> Result<(TempDir, Vec<Listener>)> {
 
         let res = mount_utils::bind_mount(&source_path, target_path);
 
-        if let Err(e) = res {
-            eprintln!("could not bind mount {}: {}", target_path.display(), e);
-        } else {
-            listeners.push(Listener {
-                address: target_path.to_owned(),
-                socket: listener_file,
-            });
-        }
+        match res {
+            Err(nix::Error::Sys(Errno::ENOENT)) => {},
+            Err(e) => {
+                eprintln!("could not bind mount {}: {}", target_path.display(), e);
+            },
+            Ok(_) => {
+                listeners.push(Listener {
+                    address: target_path.to_owned(),
+                    socket: listener_file,
+                });
+            }
+        };
     }
 
 
