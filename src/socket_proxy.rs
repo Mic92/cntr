@@ -243,8 +243,17 @@ impl Context {
 
     pub fn select<'b>(&self, events: &'b mut [EpollEvent]) -> Result<&'b [EpollEvent]> {
         let res = epoll_wait(self.epoll_file.as_raw_fd(), events, -1);
-        let count = tryfmt!(res, "failed to wait for epoll events");
-        Ok(&events[..count])
+        match res {
+            Ok(count) => {
+                Ok(&events[..count])
+            },
+            Err(nix::Error::Sys(Errno::EINTR)) => {
+                Ok(&events[..0])
+            },
+            Err(e) => {
+                tryfmt!(Err(e), "failed to wait for epoll events")
+            },
+        }
     }
 }
 
