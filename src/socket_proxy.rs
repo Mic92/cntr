@@ -7,6 +7,7 @@ use nix::sys::epoll::{epoll_create1, epoll_ctl, epoll_wait, EpollCreateFlags, Ep
                       EpollFlags};
 use nix::sys::socket::{accept4, SockFlag, socket, bind, listen, AddressFamily, SockType, connect,
                        SockAddr, getsockopt, sockopt};
+use nix::sys::stat;
 use nix::unistd::pipe2;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -234,11 +235,14 @@ impl Context {
 
     pub fn remove_file(&mut self, id: i32) -> Result<()> {
         self.callbacks.remove(&id);
-        tryfmt!(
-            epoll_ctl(self.epoll_file.as_raw_fd(), EpollOp::EpollCtlDel, id, None),
-            "failed to remove file"
-        );
-        Ok(())
+        match epoll_ctl(self.epoll_file.as_raw_fd(), EpollOp::EpollCtlDel, id, None) {
+            Err(nix::Error::Sys(Errno::ENOENT)) | Ok(_) => {
+                Ok(())
+            },
+            Err(e) => {
+                tryfmt!(Err(e), "failed to remove file")
+            }
+        }
     }
 
     pub fn select<'b>(&self, events: &'b mut [EpollEvent]) -> Result<&'b [EpollEvent]> {
