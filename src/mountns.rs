@@ -196,6 +196,13 @@ pub fn setup(
     container_namespace: namespace::Namespace,
     mount_label: &Option<String>,
 ) -> Result<()> {
+
+    tryfmt!(
+        mkdir_p(&CNTR_MOUNT_POINT),
+        "cannot create container mountpoint /{}",
+        CNTR_MOUNT_POINT
+    );
+
     let ns = tryfmt!(MountNamespace::new(container_namespace), "");
 
     tryfmt!(
@@ -223,12 +230,6 @@ pub fn setup(
     tryfmt!(fs.mount(ns.mountpoint.as_path(), mount_label), "mount()");
 
     let ns = tryfmt!(ns.send(socket), "parent failed");
-
-    tryfmt!(
-        mkdir_p(&ns.mountpoint.join(CNTR_MOUNT_POINT)),
-        "cannot create container mountpoint /{}",
-        CNTR_MOUNT_POINT
-    );
 
     tryfmt!(
         mount::mount(
