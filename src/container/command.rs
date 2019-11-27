@@ -36,8 +36,7 @@ impl Container for Command {
                 }
                 if arguments
                     .windows(needle.len())
-                    .position(|window| window == needle)
-                    .is_some()
+                    .any(|window| window == needle)
                 {
                     return Ok(pid);
                 }
