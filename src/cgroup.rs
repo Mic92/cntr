@@ -73,8 +73,8 @@ fn get_cgroups(pid: unistd::Pid) -> Result<Vec<String>> {
 fn cgroup_path(cgroup: &str, mountpoints: &HashMap<String, String>) -> Option<PathBuf> {
     for c in cgroup.split(',') {
         let m = mountpoints.get(c);
-        if m.is_some() {
-            let mut tasks_path = PathBuf::from(m.unwrap());
+        if let Some(path) = m {
+            let mut tasks_path = PathBuf::from(path);
             tasks_path.push(cgroup);
             tasks_path.push("tasks");
             return Some(tasks_path);
