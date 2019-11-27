@@ -47,6 +47,6 @@ impl Container for Command {
         errfmt!(format!("No command found that matches {}", container_id))
     }
     fn check_required_tools(&self) -> Result<()> {
-        return Ok(());
+        Ok(())
     }
 }
