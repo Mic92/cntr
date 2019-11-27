@@ -15,7 +15,7 @@ pub const NET: Kind = Kind { name: "net" };
 pub const CGROUP: Kind = Kind { name: "cgroup" };
 pub const IPC: Kind = Kind { name: "ipc" };
 
-pub static ALL: &'static [Kind] = &[UTS, CGROUP, PID, NET, IPC, MOUNT, USER];
+pub static ALL: &[Kind] = &[UTS, CGROUP, PID, NET, IPC, MOUNT, USER];
 
 pub struct Kind {
     pub name: &'static str,
