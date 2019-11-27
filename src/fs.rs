@@ -203,10 +203,7 @@ impl CntrFs {
 
         Ok(CntrFs {
             prefix: String::from(options.prefix),
-            root_inode: open_static_dnode(
-                fuse::FUSE_ROOT_ID,
-                Path::new(options.prefix),
-            )?,
+            root_inode: open_static_dnode(fuse::FUSE_ROOT_ID, Path::new(options.prefix))?,
             dotcntr: Arc::new(dotcntr),
             inode_mapping: Arc::new(Mutex::new(HashMap::<InodeKey, u64>::new())),
             inodes: Arc::new(ConcHashMap::<u64, Arc<Inode>>::new()),
@@ -355,13 +352,7 @@ impl CntrFs {
             let _uid = uid.map(|u| Uid::from_raw(self.uid_map.map_id_up(u)));
             let _gid = gid.map(|g| Gid::from_raw(self.gid_map.map_id_up(g)));
 
-            unistd::fchownat(
-                fd.raw(),
-                "",
-                _uid,
-                _gid,
-                AtFlags::AT_EMPTY_PATH,
-            )?;
+            unistd::fchownat(fd.raw(), "", _uid, _gid, AtFlags::AT_EMPTY_PATH)?;
         }
 
         if let Some(s) = size {
@@ -593,11 +584,7 @@ fn set_time(
             fcntl::AtFlags::empty(),
         )?;
     } else {
-        stat::futimens(
-            fd.raw(),
-            &to_utimespec(mtime),
-            &to_utimespec(atime),
-        )?;
+        stat::futimens(fd.raw(), &to_utimespec(mtime), &to_utimespec(atime))?;
     }
 
     Ok(())

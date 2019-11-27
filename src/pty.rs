@@ -271,11 +271,7 @@ pub fn attach_pts(pty_master: &PtyMaster) -> nix::Result<()> {
 
     unistd::setsid()?;
 
-    let pty_slave = fcntl::open(
-        pts_name.as_str(),
-        OFlag::O_RDWR,
-        stat::Mode::empty(),
-    )?;
+    let pty_slave = fcntl::open(pts_name.as_str(), OFlag::O_RDWR, stat::Mode::empty())?;
 
     unistd::dup2(pty_slave, libc::STDIN_FILENO)?;
     unistd::dup2(pty_slave, libc::STDOUT_FILENO)?;
