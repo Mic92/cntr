@@ -5,7 +5,7 @@ use ipc;
 use nix::unistd::{self, ForkResult};
 use procfs;
 use pwd;
-use std::fs::metadata;
+use std::fs::{create_dir_all, metadata};
 use std::os::unix::prelude::*;
 use types::{Error, Result};
 use user_namespace::IdMap;
@@ -74,6 +74,11 @@ pub fn attach(opts: &AttachOptions) -> Result<Void> {
             Some(dotcntr),
         ),
         "cannot mount filesystem"
+    );
+
+    tryfmt!(
+        create_dir_all("/var/lib/cntr"),
+        "failed to create /var/lib/cntr"
     );
 
     let (parent_sock, child_sock) = tryfmt!(ipc::socket_pair(), "failed to set up ipc");
