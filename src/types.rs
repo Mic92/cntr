@@ -6,7 +6,7 @@ use std::boxed::Box;
 
 pub struct Error {
     pub desc: String,
-    pub cause: Option<Box<error::Error>>,
+    pub cause: Option<Box<dyn error::Error>>,
 }
 
 pub type Result<T> = result::Result<T, Error>;
@@ -31,7 +31,7 @@ impl error::Error for Error {
         &*self.desc
     }
 
-    fn cause(&self) -> Option<&error::Error> {
+    fn cause(&self) -> Option<&dyn error::Error> {
         self.cause.as_ref().map(|e| &**e)
     }
 }
@@ -77,7 +77,7 @@ impl From<String> for Error {
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        (self as &error::Error).description().fmt(f)
+        (self as &dyn error::Error).description().fmt(f)
     }
 }
 

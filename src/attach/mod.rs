@@ -18,7 +18,7 @@ pub struct AttachOptions {
     pub command: Option<String>,
     pub arguments: Vec<String>,
     pub container_name: String,
-    pub container_types: Vec<Box<container::Container>>,
+    pub container_types: Vec<Box<dyn container::Container>>,
     pub effective_user: Option<pwd::Passwd>,
 }
 
