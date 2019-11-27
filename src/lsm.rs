@@ -100,7 +100,7 @@ fn read_proclabel(path: &Path, kind: &LSMKind) -> Result<String> {
     );
 
     if *kind == LSMKind::AppArmor {
-        let fields: Vec<&str> = attr.trim_right().splitn(2, ' ').collect();
+        let fields: Vec<&str> = attr.trim_end().splitn(2, ' ').collect();
         Ok(fields[0].to_owned())
     } else {
         Ok(attr)

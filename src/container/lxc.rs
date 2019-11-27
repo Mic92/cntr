@@ -25,14 +25,14 @@ impl Container for Lxc {
                 "Failed to list containers. '{}' exited with {}: {}",
                 command,
                 output.status,
-                stderr.trim_right()
+                stderr.trim_start()
             ));
         }
 
         let pid = String::from_utf8_lossy(&output.stdout);
 
         Ok(Pid::from_raw(tryfmt!(
-            pid.trim_right().parse::<pid_t>(),
+            pid.trim_start().parse::<pid_t>(),
             "expected valid process id from {}, got: {}",
             command,
             pid

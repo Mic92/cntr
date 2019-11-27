@@ -25,7 +25,7 @@ impl Container for Nspawn {
                 "Failed to list containers. '{}' exited with {}: {}",
                 command,
                 output.status,
-                stderr.trim_right()
+                stderr.trim_end()
             ));
         }
 
@@ -35,7 +35,7 @@ impl Container for Nspawn {
         let pid = String::from_utf8_lossy(fields[1]);
 
         Ok(Pid::from_raw(tryfmt!(
-            pid.trim_right().parse::<pid_t>(),
+            pid.trim_end().parse::<pid_t>(),
             "expected valid process id from {}, got: {}",
             command,
             pid

@@ -54,7 +54,7 @@ impl Container for Rkt {
                 "Failed to list containers. '{}' exited with {}: {}",
                 command,
                 output.status,
-                stderr.trim_right()
+                stderr.trim_end()
             ));
         }
 

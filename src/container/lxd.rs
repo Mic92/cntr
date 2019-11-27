@@ -23,7 +23,7 @@ impl Container for Lxd {
                 "Failed to list containers. '{}' exited with {}: {}",
                 command,
                 output.status,
-                stderr.trim_right()
+                stderr.trim_end()
             ));
         }
 
@@ -38,7 +38,7 @@ impl Container for Lxd {
             let pid = String::from_utf8_lossy(pid_row[1]);
 
             Ok(Pid::from_raw(tryfmt!(
-                pid.trim_left().parse::<pid_t>(),
+                pid.trim_start().parse::<pid_t>(),
                 "expected valid process id from {}, got: {}",
                 command,
                 pid
