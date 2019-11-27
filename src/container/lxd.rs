@@ -47,8 +47,7 @@ impl Container for Lxd {
             let stdout = String::from_utf8_lossy(&output.stdout);
             errfmt!(format!(
                 "expected to find `pid=` field in output of '{}', got: {}",
-                command,
-                stdout
+                command, stdout
             ))
         }
     }

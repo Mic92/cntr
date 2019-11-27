@@ -1,6 +1,6 @@
 use libc::{self, c_ulong};
-use nix::Result;
 use nix::errno::Errno;
+use nix::Result;
 use std::os::unix::io::RawFd;
 
 #[cfg(not(any(target_env = "musl")))]

@@ -11,9 +11,7 @@ use types::{Error, Result};
 mod unix;
 
 pub fn get_path() -> PathBuf {
-    PathBuf::from(&env::var_os("CNTR_PROC").unwrap_or_else(
-        || OsString::from("/proc"),
-    ))
+    PathBuf::from(&env::var_os("CNTR_PROC").unwrap_or_else(|| OsString::from("/proc")))
 }
 
 pub struct ProcStatus {
@@ -22,7 +20,6 @@ pub struct ProcStatus {
     pub inherited_capabilities: u64,
     pub effective_capabilities: u64,
 }
-
 
 pub fn status(target_pid: Pid) -> Result<ProcStatus> {
     let path = get_path().join(target_pid.to_string()).join("status");

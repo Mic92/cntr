@@ -2,10 +2,10 @@ use mount_context;
 use nix::unistd::Pid;
 use procfs;
 use std::fs::{File, OpenOptions};
+use std::io::prelude::*;
 use std::io::BufReader;
 use std::io::ErrorKind;
-use std::io::prelude::*;
-use std::path::{PathBuf, Path};
+use std::path::{Path, PathBuf};
 use types::{Error, Result};
 
 #[derive(PartialEq, Eq)]
@@ -34,7 +34,6 @@ pub struct LSMProfile {
     kind: LSMKind,
     label_file: File,
 }
-
 
 fn is_apparmor_enabled() -> Result<bool> {
     let aa_path = "/sys/module/apparmor/parameters/enabled";
@@ -76,14 +75,12 @@ fn check_type() -> Result<Option<LSMKind>> {
     if tryfmt!(
         is_apparmor_enabled(),
         "failed to check availability of apparmor"
-    )
-    {
+    ) {
         Ok(Some(LSMKind::AppArmor))
     } else if tryfmt!(
         is_selinux_enabled(),
         "failed to check availability of selinux"
-    )
-    {
+    ) {
         Ok(Some(LSMKind::SELinux))
     } else {
         Ok(None)

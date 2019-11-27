@@ -37,14 +37,16 @@ impl error::Error for Error {
 }
 
 macro_rules! from {
-    ($error:ty) =>(impl From<($error, String)> for Error {
-        fn from((error, desc): ($error, String)) -> Error {
-            Error {
-                desc: format!("{}: {}", desc, error),
-                cause: Some(Box::new(error)),
+    ($error:ty) => {
+        impl From<($error, String)> for Error {
+            fn from((error, desc): ($error, String)) -> Error {
+                Error {
+                    desc: format!("{}: {}", desc, error),
+                    cause: Some(Box::new(error)),
+                }
             }
         }
-    })
+    };
 }
 
 from!(io::Error);

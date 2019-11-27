@@ -100,7 +100,6 @@ pub fn run(options: &ChildOptions) -> Result<Void> {
         ));
     }
 
-
     tryfmt!(mount_namespace.apply(), "failed to apply mount namespace");
 
     tryfmt!(
@@ -172,7 +171,7 @@ pub fn run(options: &ChildOptions) -> Result<Void> {
     }
     eprintln!(
         "BUG! command exited successfully, \
-        but was neither terminated by a signal nor has an exit code"
+         but was neither terminated by a signal nor has an exit code"
     );
     process::exit(1);
 }

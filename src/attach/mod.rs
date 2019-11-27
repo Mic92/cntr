@@ -22,13 +22,11 @@ pub struct AttachOptions {
     pub effective_user: Option<pwd::Passwd>,
 }
 
-
 pub fn attach(opts: &AttachOptions) -> Result<Void> {
-    let container_pid =
-        tryfmt!(
-            container::lookup_container_pid(opts.container_name.as_str(), &opts.container_types),
-            ""
-        );
+    let container_pid = tryfmt!(
+        container::lookup_container_pid(opts.container_name.as_str(), &opts.container_types),
+        ""
+    );
 
     let (uid_map, gid_map) = tryfmt!(
         IdMap::new_from_pid(container_pid),

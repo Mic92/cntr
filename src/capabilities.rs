@@ -80,13 +80,13 @@ pub fn set_chroot_capability(path: &Path) -> Result<()> {
         magic_etc: u32::to_le(magic | VFS_CAP_FLAGS_EFFECTIVE),
         data: [
             (_vfs_cap_data {
-                 permitted: 1 << CAP_SYS_CHROOT,
-                 inheritable: 0,
-             }),
+                permitted: 1 << CAP_SYS_CHROOT,
+                inheritable: 0,
+            }),
             (_vfs_cap_data {
-                 permitted: 0,
-                 inheritable: 0,
-             }),
+                permitted: 0,
+                inheritable: 0,
+            }),
         ],
         effective: [1 << CAP_SYS_CHROOT, 0],
         version: 0,

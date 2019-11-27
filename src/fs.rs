@@ -116,18 +116,20 @@ impl ReplyDirectory {
 const TTL: Timespec = Timespec { sec: 1, nsec: 0 };
 
 macro_rules! tryfuse {
-    ($result:expr, $reply:expr)  => (match $result {
-        Ok(val) => val,
-        Err(err) => {
-            debug!("return error {} on {}:{}", err, file!(), line!());
-            let rc = match err {
-                nix::Error::Sys(errno) => errno as i32,
-                // InvalidPath, InvalidUtf8, UnsupportedOperation
-                _ => libc::EINVAL
-            };
-            return $reply.error(rc);
+    ($result:expr, $reply:expr) => {
+        match $result {
+            Ok(val) => val,
+            Err(err) => {
+                debug!("return error {} on {}:{}", err, file!(), line!());
+                let rc = match err {
+                    nix::Error::Sys(errno) => errno as i32,
+                    // InvalidPath, InvalidUtf8, UnsupportedOperation
+                    _ => libc::EINVAL,
+                };
+                return $reply.error(rc);
+            }
         }
-    })
+    };
 }
 
 // TODO: evaluate if this option increases performance
@@ -185,7 +187,6 @@ fn open_static_dnode(static_ino: u64, path: &Path) -> Result<Arc<Inode>> {
         has_default_acl: RwLock::new(None),
     }))
 }
-
 
 impl CntrFs {
     pub fn new(options: &CntrMountOptions, dotcntr: Option<DotcntrDir>) -> Result<CntrFs> {
@@ -318,8 +319,7 @@ impl CntrFs {
         };
         let mount_flags = format!(
             "fd={},rootmode=40000,user_id=0,group_id=0,allow_other,default_permissions,{}",
-            self.fuse_fd,
-            context
+            self.fuse_fd, context
         );
 
         tryfmt!(
@@ -346,7 +346,6 @@ impl CntrFs {
         atime: fuse::UtimeSpec,
         mtime: fuse::UtimeSpec,
     ) -> nix::Result<()> {
-
         if let Some(bits) = mode {
             let mode = stat::Mode::from_bits_truncate(bits);
             try!(stat::fchmod(fd.raw(), mode));
@@ -375,7 +374,6 @@ impl CntrFs {
         Ok(())
     }
 
-
     fn generic_readdir(&mut self, ino: u64, fh: u64, offset: i64, mut reply: ReplyDirectory) {
         fsuid::set_root();
 
@@ -399,34 +397,29 @@ impl CntrFs {
                     let name = unsafe { CStr::from_ptr(entry.d_name.as_ptr()) };
                     dirp.entry = None;
                     match reply {
-                        ReplyDirectory::Directory(ref mut r) => {
-                            r.add(
-                                entry.d_ino,
-                                dirp.offset,
-                                dtype_kind(entry.d_type),
-                                OsStr::from_bytes(name.to_bytes()),
-                            )
-                        }
+                        ReplyDirectory::Directory(ref mut r) => r.add(
+                            entry.d_ino,
+                            dirp.offset,
+                            dtype_kind(entry.d_type),
+                            OsStr::from_bytes(name.to_bytes()),
+                        ),
                         ReplyDirectory::DirectoryPlus(ref mut r) => {
                             match self.lookup_inode(ino, OsStr::from_bytes(name.to_bytes())) {
-                                Ok((attr, generation)) => {
-                                    r.add(
-                                        entry.d_ino,
-                                        dirp.offset,
-                                        OsStr::from_bytes(name.to_bytes()),
-                                        &TTL,
-                                        &attr,
-                                        generation,
-                                    )
-                                }
+                                Ok((attr, generation)) => r.add(
+                                    entry.d_ino,
+                                    dirp.offset,
+                                    OsStr::from_bytes(name.to_bytes()),
+                                    &TTL,
+                                    &attr,
+                                    generation,
+                                ),
                                 _ => true,
                             }
                         }
                     }
                 }
             }
-        }
-        {}
+        } {}
         reply.ok()
     }
 
@@ -474,7 +467,6 @@ impl CntrFs {
     }
 
     fn mutable_inode(&mut self, ino: &mut u64) -> nix::Result<Arc<Inode>> {
-
         let inode = try!(self.inode(ino));
         try!(inode.upgrade_fd(&FdState::Readable));
         Ok(inode)
@@ -518,9 +510,7 @@ impl CntrFs {
         let (next_number, generation) = self.next_inode_number();
         let fd = RwLock::new(Fd::new(
             try!(new_file.into_raw_fd()),
-            if attr.kind == FileType::Symlink ||
-                attr.kind == FileType::BlockDevice
-            {
+            if attr.kind == FileType::Symlink || attr.kind == FileType::BlockDevice {
                 // we cannot open a symlink read/writable
                 FdState::Readable
             } else {
@@ -543,7 +533,6 @@ impl CntrFs {
 
         Ok((attr, generation))
     }
-
 
     pub fn lookup_inode(&mut self, parent: u64, name: &OsStr) -> nix::Result<(FileAttr, u64)> {
         fsuid::set_root();
@@ -703,10 +692,10 @@ impl Filesystem for CntrFs {
         atime: fuse::UtimeSpec,
         mtime: fuse::UtimeSpec,
         fh: Option<u64>,
-        _crtime: Option<Timespec>, // only mac os x
-        _chgtime: Option<Timespec>, // only mac os x
+        _crtime: Option<Timespec>,   // only mac os x
+        _chgtime: Option<Timespec>,  // only mac os x
         _bkuptime: Option<Timespec>, // only mac os x
-        _flags: Option<u32>, // only mac os x
+        _flags: Option<u32>,         // only mac os x
         reply: ReplyAttr,
     ) {
         fsuid::set_root();

@@ -42,10 +42,7 @@ impl Container for Docker {
         assert!(fields.len() == 2);
 
         if fields[0] != b"true" {
-            return errfmt!(format!(
-                "container '{}' is not running",
-                container_id,
-            ));
+            return errfmt!(format!("container '{}' is not running", container_id,));
         }
 
         let pid = String::from_utf8_lossy(fields[1]);

@@ -3,8 +3,8 @@ use container::Container;
 use libc::pid_t;
 use nix::unistd::Pid;
 use std::fs::{self, File};
-use std::io::BufReader;
 use std::io::prelude::*;
+use std::io::BufReader;
 use std::process::Command;
 use types::{Error, Result};
 
@@ -75,8 +75,7 @@ impl Container for Rkt {
             let stdout = String::from_utf8_lossy(&output.stdout);
             errfmt!(format!(
                 "expected to find `pid=` field in output of '{}', got: {}",
-                command,
-                stdout
+                command, stdout
             ))
         }
     }
