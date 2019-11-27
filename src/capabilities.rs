@@ -60,7 +60,7 @@ pub fn has_chroot() -> Result<bool> {
 }
 
 pub fn set_chroot_capability(path: &Path) -> Result<()> {
-    let header: cap_user_header_t = unsafe { mem::uninitialized() };
+    let header: cap_user_header_t = unsafe { mem::MaybeUninit::uninit().assume_init() };
     let res = unsafe {
         libc::syscall(
             libc::SYS_capget,
