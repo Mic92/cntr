@@ -2,8 +2,8 @@ use nix::unistd;
 use procfs;
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufRead, BufReader};
 use std::io::Write;
+use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use types::{Error, Result};
 

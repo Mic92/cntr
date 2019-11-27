@@ -1,6 +1,6 @@
 use container::Container;
 use libc::pid_t;
-use nix::unistd::{Pid, getpid};
+use nix::unistd::{getpid, Pid};
 use std::fs;
 use types::{Error, Result};
 

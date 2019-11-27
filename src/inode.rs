@@ -1,4 +1,4 @@
-use files::{Fd, FdState, fd_path};
+use files::{fd_path, Fd, FdState};
 use fs::POSIX_ACL_DEFAULT_XATTR;
 use fsuid;
 use fuse::FileType;

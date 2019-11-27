@@ -3,8 +3,8 @@ use nix::unistd::Pid;
 use std::env;
 use std::ffi::OsString;
 use std::fs::File;
-use std::io::BufReader;
 use std::io::prelude::*;
+use std::io::BufReader;
 use std::path::PathBuf;
 use types::{Error, Result};
 

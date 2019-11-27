@@ -1,8 +1,8 @@
 use nix::unistd::Pid;
 use procfs;
 use std::fs::File;
-use std::io::BufReader;
 use std::io::prelude::*;
+use std::io::BufReader;
 use types::{Error, Result};
 
 

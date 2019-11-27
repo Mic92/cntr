@@ -8,7 +8,7 @@ use mountns;
 use namespace;
 use nix::sys::signal::{self, Signal};
 use nix::unistd;
-use nix::unistd::{Uid, Gid};
+use nix::unistd::{Gid, Uid};
 use procfs::ProcStatus;
 use pty;
 use std::env;

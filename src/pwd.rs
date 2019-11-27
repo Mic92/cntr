@@ -1,7 +1,7 @@
 use libc;
-use nix::{Error, Result, NixPath};
 use nix::errno::Errno;
-use nix::unistd::{Uid, Gid};
+use nix::unistd::{Gid, Uid};
+use nix::{Error, NixPath, Result};
 use std::ffi::CString;
 
 pub struct Passwd {

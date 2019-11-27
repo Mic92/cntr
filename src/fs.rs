@@ -1,27 +1,28 @@
 use concurrent_hashmap::ConcHashMap;
 use dotcntr::DotcntrDir;
-use files::{Fd, FdState, fd_path};
+use files::{fd_path, Fd, FdState};
 use fsuid;
-use fuse::{self, FileAttr, FileType, Filesystem, ReplyAttr, ReplyXattr, ReplyData, ReplyEmpty,
-           ReplyEntry, ReplyOpen, ReplyWrite, ReplyStatfs, ReplyCreate, ReplyIoctl, Request,
-           ReplyLseek, ReplyRead};
+use fuse::{
+    self, FileAttr, FileType, Filesystem, ReplyAttr, ReplyCreate, ReplyData, ReplyEmpty,
+    ReplyEntry, ReplyIoctl, ReplyLseek, ReplyOpen, ReplyRead, ReplyStatfs, ReplyWrite, ReplyXattr,
+    Request,
+};
 use fusefd;
 use inode::Inode;
 use ioctl;
-use libc::{self, dev_t, c_long};
-use nix::{self, unistd, dirent};
+use libc::{self, c_long, dev_t};
 use nix::errno::Errno;
-use nix::fcntl::{self, SpliceFFlags, OFlag, AtFlags};
-use nix::sys::{stat, resource};
+use nix::fcntl::{self, AtFlags, OFlag, SpliceFFlags};
 use nix::sys::stat::SFlag;
 use nix::sys::time::{TimeSpec as NixTimeSpec, TimeValLike};
 use nix::sys::uio::{pread, pwrite};
+use nix::sys::{resource, stat};
 use nix::unistd::{Gid, Uid};
+use nix::{self, dirent, unistd};
 use num_cpus;
-use parking_lot::{RwLock, Mutex};
+use parking_lot::{Mutex, RwLock};
 use readlink::readlinkat;
 use statvfs::fstatvfs;
-use std::{u32, u64};
 use std::cmp;
 use std::collections::HashMap;
 use std::ffi::{CStr, OsStr};
@@ -32,6 +33,7 @@ use std::os::unix::prelude::*;
 use std::path::Path;
 use std::sync::Arc;
 use std::vec::Vec;
+use std::{u32, u64};
 use thread_scoped::{scoped, JoinGuard};
 use time::Timespec;
 use types::{Error, Result};

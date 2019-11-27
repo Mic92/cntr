@@ -1,6 +1,6 @@
+extern crate cntr;
 extern crate fuse;
 extern crate libc;
-extern crate cntr;
 extern crate nix;
 extern crate thread_scoped;
 
@@ -13,7 +13,7 @@ use cntr::fs::{CntrFs, CntrMountOptions};
 
 #[cfg(feature = "profiling")]
 use cpuprofiler::PROFILER;
-use nix::{unistd, mount};
+use nix::{mount, unistd};
 use std::env;
 use std::path::Path;
 use std::process;

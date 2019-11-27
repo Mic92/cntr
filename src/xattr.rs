@@ -1,7 +1,7 @@
 use files::Fd;
 use fuse::FileType;
-use nix::Result;
 use nix::sys::xattr as _xattr;
+use nix::Result;
 use readlink::readlinkat;
 use std::ffi::OsStr;
 

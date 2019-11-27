@@ -1,14 +1,15 @@
 use libc::{self, winsize};
-use nix::{self, unistd, fcntl};
 use nix::errno::Errno;
 use nix::fcntl::OFlag;
 use nix::pty::*;
 use nix::sys::select;
-use nix::sys::signal::{SIGWINCH, sigaction, SigAction, SigSet, SaFlags, SigHandler};
+use nix::sys::signal::{sigaction, SaFlags, SigAction, SigHandler, SigSet, SIGWINCH};
 use nix::sys::stat;
-use nix::sys::termios::{InputFlags, SetArg, OutputFlags, LocalFlags, ControlFlags, tcsetattr,
-                        tcgetattr, Termios};
 use nix::sys::termios::SpecialCharacterIndices::*;
+use nix::sys::termios::{
+    tcgetattr, tcsetattr, ControlFlags, InputFlags, LocalFlags, OutputFlags, SetArg, Termios,
+};
+use nix::{self, fcntl, unistd};
 use std::fs::File;
 use std::io::{Read, Write};
 use std::os::unix::prelude::*;
