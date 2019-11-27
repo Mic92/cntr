@@ -21,6 +21,6 @@ git add Cargo.toml
 cargo build --release
 git add Cargo.lock
 git commit -m "bump version to ${version}"
-git tag "${version}"
+git tag --annotate "${version}"
 
 echo 'now run `git push --tags origin master`'
