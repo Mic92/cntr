@@ -4,7 +4,7 @@ use nix::unistd::Pid;
 use procfs;
 use std::fs;
 use std::io::ErrorKind;
-use types::{Result, Error};
+use types::{Error, Result};
 
 #[derive(Clone, Debug)]
 pub struct ProcessId {}

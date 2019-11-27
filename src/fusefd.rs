@@ -1,6 +1,6 @@
-use nix::{self, fcntl, errno};
 use nix::fcntl::OFlag;
-use nix::sys::stat::{self, SFlag, Mode};
+use nix::sys::stat::{self, Mode, SFlag};
+use nix::{self, errno, fcntl};
 use std::fs::File;
 use std::os::unix::prelude::*;
 use types::{Error, Result};

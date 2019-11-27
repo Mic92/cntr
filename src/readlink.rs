@@ -1,6 +1,6 @@
 use libc;
-use nix::{self, fcntl};
 use nix::errno::Errno;
+use nix::{self, fcntl};
 use std::ffi::OsString;
 use std::os::unix::prelude::*;
 
@@ -19,5 +19,4 @@ pub fn readlinkat(fd: RawFd) -> nix::Result<OsString> {
         // the same as the capacity due to the if statement above.
         buf.reserve(1)
     }
-
 }

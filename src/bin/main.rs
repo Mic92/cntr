@@ -2,12 +2,12 @@ extern crate argparse;
 extern crate cntr;
 extern crate nix;
 
-use argparse::{ArgumentParser, Store, List, Collect};
+use argparse::{ArgumentParser, Collect, List, Store};
 use cntr::pwd::pwnam;
-use std::{process, env};
-use std::io::{stdout, stderr};
+use std::io::{stderr, stdout};
 use std::path::Path;
 use std::str::FromStr;
+use std::{env, process};
 
 #[allow(non_camel_case_types)]
 #[derive(Debug)]
@@ -68,7 +68,7 @@ fn parse_attach_args(args: Vec<String>) -> cntr::AttachOptions {
             "arguments passed to command",
         );
         match ap.parse(args, &mut stdout(), &mut stderr()) {
-            Ok(()) =>  {}
+            Ok(()) => {}
             Err(x) => {
                 std::process::exit(x);
             }
@@ -101,8 +101,7 @@ fn parse_attach_args(args: Vec<String>) -> cntr::AttachOptions {
             Err(e) => {
                 eprintln!(
                     "failed to to lookup user '{}' found: {}",
-                    effective_username,
-                    e
+                    effective_username, e
                 );
                 process::exit(1);
             }
@@ -135,14 +134,11 @@ fn exec_command(args: Vec<String>, setcap: bool) {
             Store,
             "command to execute (default: $SHELL)",
         );
-        ap.refer(&mut arguments).add_argument(
-            &"arguments",
-            List,
-            "Arguments to pass to command",
-        );
+        ap.refer(&mut arguments)
+            .add_argument(&"arguments", List, "Arguments to pass to command");
         ap.stop_on_first_argument(true);
         match ap.parse(args, &mut stdout(), &mut stderr()) {
-            Ok(()) =>  {}
+            Ok(()) => {}
             Err(x) => {
                 std::process::exit(x);
             }
@@ -183,11 +179,8 @@ fn main() {
             Store,
             r#"Command to run (either "attach" or "exec")"#,
         );
-        ap.refer(&mut args).add_argument(
-            "arguments",
-            List,
-            r#"Arguments for command"#,
-        );
+        ap.refer(&mut args)
+            .add_argument("arguments", List, r#"Arguments for command"#);
 
         ap.stop_on_first_argument(true);
         ap.parse_args_or_exit();

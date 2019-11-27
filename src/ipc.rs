@@ -44,8 +44,7 @@ impl Socket {
                     Some(&mut *cmsgspace),
                     MsgFlags::empty(),
                 ) {
-                    Err(nix::Error::Sys(Errno::EAGAIN)) |
-                    Err(nix::Error::Sys(Errno::EINTR)) => continue,
+                    Err(nix::Error::Sys(Errno::EAGAIN)) | Err(nix::Error::Sys(Errno::EINTR)) => continue,
                     Err(e) => return tryfmt!(Err(e), "recvmsg failed"),
                     Ok(msg) => {
                         for cmsg in msg.cmsgs() {
@@ -76,7 +75,11 @@ pub fn socket_pair() -> Result<(Socket, Socket)> {
 
     let (parent_fd, child_fd) = tryfmt!(res, "failed to create socketpair");
     Ok((
-        Socket { fd: unsafe { File::from_raw_fd(parent_fd) } },
-        Socket { fd: unsafe { File::from_raw_fd(child_fd) } },
+        Socket {
+            fd: unsafe { File::from_raw_fd(parent_fd) },
+        },
+        Socket {
+            fd: unsafe { File::from_raw_fd(child_fd) },
+        },
     ))
 }

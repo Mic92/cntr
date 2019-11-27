@@ -60,7 +60,7 @@ pub fn has_chroot() -> Result<bool> {
 }
 
 pub fn set_chroot_capability(path: &Path) -> Result<()> {
-    let header: cap_user_header_t = unsafe { mem::uninitialized() };
+    let header: cap_user_header_t = unsafe { mem::MaybeUninit::uninit().assume_init() };
     let res = unsafe {
         libc::syscall(
             libc::SYS_capget,
@@ -80,13 +80,13 @@ pub fn set_chroot_capability(path: &Path) -> Result<()> {
         magic_etc: u32::to_le(magic | VFS_CAP_FLAGS_EFFECTIVE),
         data: [
             (_vfs_cap_data {
-                 permitted: 1 << CAP_SYS_CHROOT,
-                 inheritable: 0,
-             }),
+                permitted: 1 << CAP_SYS_CHROOT,
+                inheritable: 0,
+            }),
             (_vfs_cap_data {
-                 permitted: 0,
-                 inheritable: 0,
-             }),
+                permitted: 0,
+                inheritable: 0,
+            }),
         ],
         effective: [1 << CAP_SYS_CHROOT, 0],
         version: 0,

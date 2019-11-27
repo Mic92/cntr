@@ -1,7 +1,7 @@
 use libc;
-use nix::{Error, Result, NixPath};
 use nix::errno::Errno;
-use nix::unistd::{Uid, Gid};
+use nix::unistd::{Gid, Uid};
+use nix::{Error, NixPath, Result};
 use std::ffi::CString;
 
 pub struct Passwd {
@@ -15,10 +15,10 @@ pub struct Passwd {
 }
 
 pub fn pwnam<P: ?Sized + NixPath>(name: &P) -> Result<Option<Passwd>> {
-    let res = try!(name.with_nix_path(|cstr| unsafe {
+    let res = name.with_nix_path(|cstr| unsafe {
         Errno::clear();
         libc::getpwnam(cstr.as_ptr())
-    }));
+    })?;
     if res.is_null() {
         if let Errno::UnknownErrno = Errno::last() {
             Ok(None)

@@ -1,6 +1,6 @@
 use container::Container;
 use libc::pid_t;
-use nix::unistd::{Pid, getpid};
+use nix::unistd::{getpid, Pid};
 use std::fs;
 use types::{Error, Result};
 
@@ -36,8 +36,7 @@ impl Container for Command {
                 }
                 if arguments
                     .windows(needle.len())
-                    .position(|window| window == needle)
-                    .is_some()
+                    .any(|window| window == needle)
                 {
                     return Ok(pid);
                 }
@@ -47,6 +46,6 @@ impl Container for Command {
         errfmt!(format!("No command found that matches {}", container_id))
     }
     fn check_required_tools(&self) -> Result<()> {
-        return Ok(());
+        Ok(())
     }
 }

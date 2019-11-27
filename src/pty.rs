@@ -1,14 +1,15 @@
 use libc::{self, winsize};
-use nix::{self, unistd, fcntl};
 use nix::errno::Errno;
 use nix::fcntl::OFlag;
 use nix::pty::*;
 use nix::sys::select;
-use nix::sys::signal::{SIGWINCH, sigaction, SigAction, SigSet, SaFlags, SigHandler};
+use nix::sys::signal::{sigaction, SaFlags, SigAction, SigHandler, SigSet, SIGWINCH};
 use nix::sys::stat;
-use nix::sys::termios::{InputFlags, SetArg, OutputFlags, LocalFlags, ControlFlags, tcsetattr,
-                        tcgetattr, Termios};
 use nix::sys::termios::SpecialCharacterIndices::*;
+use nix::sys::termios::{
+    tcgetattr, tcsetattr, ControlFlags, InputFlags, LocalFlags, OutputFlags, SetArg, Termios,
+};
+use nix::{self, fcntl, unistd};
 use std::fs::File;
 use std::io::{Read, Write};
 use std::os::unix::prelude::*;
@@ -49,9 +50,10 @@ impl<'a> FilePair<'a> {
         }
     }
     fn write(&mut self) -> bool {
-        match self.to.write(
-            &self.buf[self.write_offset..self.read_offset],
-        ) {
+        match self
+            .to
+            .write(&self.buf[self.write_offset..self.read_offset])
+        {
             Ok(written) => {
                 self.write_offset += written;
                 if self.write_offset >= self.read_offset {
@@ -79,18 +81,25 @@ impl RawTty {
 
         let mut attr = orig_attr.clone();
         attr.input_flags.remove(
-            InputFlags::IGNBRK | InputFlags::BRKINT | InputFlags::PARMRK | InputFlags::ISTRIP |
-                InputFlags::INLCR |
-                InputFlags::IGNCR | InputFlags::ICRNL | InputFlags::IXON,
+            InputFlags::IGNBRK
+                | InputFlags::BRKINT
+                | InputFlags::PARMRK
+                | InputFlags::ISTRIP
+                | InputFlags::INLCR
+                | InputFlags::IGNCR
+                | InputFlags::ICRNL
+                | InputFlags::IXON,
         );
         attr.output_flags.remove(OutputFlags::OPOST);
         attr.local_flags.remove(
-            LocalFlags::ECHO | LocalFlags::ECHONL | LocalFlags::ICANON |
-                LocalFlags::ISIG | LocalFlags::IEXTEN,
+            LocalFlags::ECHO
+                | LocalFlags::ECHONL
+                | LocalFlags::ICANON
+                | LocalFlags::ISIG
+                | LocalFlags::IEXTEN,
         );
-        attr.control_flags.remove(
-            ControlFlags::CSIZE | ControlFlags::PARENB,
-        );
+        attr.control_flags
+            .remove(ControlFlags::CSIZE | ControlFlags::PARENB);
         attr.control_flags.insert(ControlFlags::CS8);
         attr.control_chars[VMIN as usize] = 1; // One character-at-a-time input
         attr.control_chars[VTIME as usize] = 0; // with blocking read
@@ -207,12 +216,10 @@ pub fn forward(pty: &PtyMaster) -> Result<()> {
     let stdin: File = unsafe { File::from_raw_fd(libc::STDIN_FILENO) };
     let stdout: File = unsafe { File::from_raw_fd(libc::STDOUT_FILENO) };
     let pty_file: File = unsafe { File::from_raw_fd(pty.as_raw_fd()) };
-    shovel(
-        &mut [
-            FilePair::new(&stdin, &pty_file),
-            FilePair::new(&pty_file, &stdout),
-        ],
-    );
+    shovel(&mut [
+        FilePair::new(&stdin, &pty_file),
+        FilePair::new(&pty_file, &stdout),
+    ]);
     stdin.into_raw_fd();
     stdout.into_raw_fd();
     pty_file.into_raw_fd();
@@ -230,14 +237,12 @@ fn get_winsize(term_fd: RawFd) -> winsize {
         let mut ws: winsize = zeroed();
         match libc::ioctl(term_fd, libc::TIOCGWINSZ, &mut ws) {
             0 => ws,
-            _ => {
-                winsize {
-                    ws_row: 80,
-                    ws_col: 25,
-                    ws_xpixel: 0,
-                    ws_ypixel: 0,
-                }
-            }
+            _ => winsize {
+                ws_row: 80,
+                ws_col: 25,
+                ws_xpixel: 0,
+                ws_ypixel: 0,
+            },
         }
     }
 }
@@ -266,11 +271,7 @@ pub fn attach_pts(pty_master: &PtyMaster) -> nix::Result<()> {
 
     unistd::setsid()?;
 
-    let pty_slave = try!(fcntl::open(
-        pts_name.as_str(),
-        OFlag::O_RDWR,
-        stat::Mode::empty(),
-    ));
+    let pty_slave = fcntl::open(pts_name.as_str(), OFlag::O_RDWR, stat::Mode::empty())?;
 
     unistd::dup2(pty_slave, libc::STDIN_FILENO)?;
     unistd::dup2(pty_slave, libc::STDOUT_FILENO)?;

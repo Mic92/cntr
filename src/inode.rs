@@ -1,4 +1,4 @@
-use files::{Fd, FdState, fd_path};
+use files::{fd_path, Fd, FdState};
 use fs::POSIX_ACL_DEFAULT_XATTR;
 use fsuid;
 use fuse::FileType;
@@ -38,7 +38,7 @@ impl Inode {
 
         let path = fd_path(&fd);
         let new_fd = Fd::new(
-            try!(fcntl::open(Path::new(&path), flags, stat::Mode::empty())),
+            fcntl::open(Path::new(&path), flags, stat::Mode::empty())?,
             FdState::from(flags),
         );
         *fd = new_fd;
@@ -55,7 +55,7 @@ impl Inode {
         }
         let mut state = state.upgrade();
 
-        try!(self.upgrade_fd(&FdState::Readable));
+        self.upgrade_fd(&FdState::Readable)?;
         let fd = self.fd.read();
 
         let res = xattr::getxattr(&fd, self.kind, OsStr::new(POSIX_ACL_DEFAULT_XATTR), &mut []);

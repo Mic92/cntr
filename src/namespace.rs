@@ -15,7 +15,7 @@ pub const NET: Kind = Kind { name: "net" };
 pub const CGROUP: Kind = Kind { name: "cgroup" };
 pub const IPC: Kind = Kind { name: "ipc" };
 
-pub static ALL: &'static [Kind] = &[UTS, CGROUP, PID, NET, IPC, MOUNT, USER];
+pub static ALL: &[Kind] = &[UTS, CGROUP, PID, NET, IPC, MOUNT, USER];
 
 pub struct Kind {
     pub name: &'static str,
@@ -51,26 +51,24 @@ impl Kind {
     pub fn is_same(&self, pid: unistd::Pid) -> bool {
         let path = self.path(pid);
         match fs::read_link(path) {
-            Ok(dest) => {
-                match fs::read_link(self.own_path()) {
-                    Ok(dest2) => dest == dest2,
-                    _ => false,
-                }
-            }
+            Ok(dest) => match fs::read_link(self.own_path()) {
+                Ok(dest2) => dest == dest2,
+                _ => false,
+            },
             _ => false,
         }
     }
     fn path(&self, pid: unistd::Pid) -> PathBuf {
-        procfs::get_path().join(pid.to_string()).join("ns").join(
-            self.name,
-        )
+        procfs::get_path()
+            .join(pid.to_string())
+            .join("ns")
+            .join(self.name)
     }
 
     fn own_path(&self) -> PathBuf {
         PathBuf::from("/proc/self/ns").join(self.name)
     }
 }
-
 
 pub struct Namespace {
     pub kind: &'static Kind,

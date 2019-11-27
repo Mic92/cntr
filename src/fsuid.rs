@@ -1,4 +1,4 @@
-use libc::{setfsuid, setfsgid, uid_t};
+use libc::{setfsgid, setfsuid, uid_t};
 use std::cell::Cell;
 
 const CURRENT_FSUID: uid_t = (-1 as i32) as uid_t;

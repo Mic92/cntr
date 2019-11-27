@@ -5,7 +5,7 @@ use ipc;
 use nix::unistd::{self, ForkResult};
 use procfs;
 use pwd;
-use std::fs::metadata;
+use std::fs::{create_dir_all, metadata};
 use std::os::unix::prelude::*;
 use types::{Error, Result};
 use user_namespace::IdMap;
@@ -18,17 +18,15 @@ pub struct AttachOptions {
     pub command: Option<String>,
     pub arguments: Vec<String>,
     pub container_name: String,
-    pub container_types: Vec<Box<container::Container>>,
+    pub container_types: Vec<Box<dyn container::Container>>,
     pub effective_user: Option<pwd::Passwd>,
 }
 
-
 pub fn attach(opts: &AttachOptions) -> Result<Void> {
-    let container_pid =
-        tryfmt!(
-            container::lookup_container_pid(opts.container_name.as_str(), &opts.container_types),
-            ""
-        );
+    let container_pid = tryfmt!(
+        container::lookup_container_pid(opts.container_name.as_str(), &opts.container_types),
+        ""
+    );
 
     let (uid_map, gid_map) = tryfmt!(
         IdMap::new_from_pid(container_pid),
@@ -74,6 +72,11 @@ pub fn attach(opts: &AttachOptions) -> Result<Void> {
             Some(dotcntr),
         ),
         "cannot mount filesystem"
+    );
+
+    tryfmt!(
+        create_dir_all("/var/lib/cntr"),
+        "failed to create /var/lib/cntr"
     );
 
     let (parent_sock, child_sock) = tryfmt!(ipc::socket_pair(), "failed to set up ipc");

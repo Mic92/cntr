@@ -3,17 +3,15 @@ use nix::unistd::Pid;
 use std::env;
 use std::ffi::OsString;
 use std::fs::File;
-use std::io::BufReader;
 use std::io::prelude::*;
+use std::io::BufReader;
 use std::path::PathBuf;
 use types::{Error, Result};
 
 mod unix;
 
 pub fn get_path() -> PathBuf {
-    PathBuf::from(&env::var_os("CNTR_PROC").unwrap_or_else(
-        || OsString::from("/proc"),
-    ))
+    PathBuf::from(&env::var_os("CNTR_PROC").unwrap_or_else(|| OsString::from("/proc")))
 }
 
 pub struct ProcStatus {
@@ -22,7 +20,6 @@ pub struct ProcStatus {
     pub inherited_capabilities: u64,
     pub effective_capabilities: u64,
 }
-
 
 pub fn status(target_pid: Pid) -> Result<ProcStatus> {
     let path = get_path().join(target_pid.to_string()).join("status");
@@ -78,8 +75,8 @@ pub fn status(target_pid: Pid) -> Result<ProcStatus> {
 
     Ok(ProcStatus {
         global_pid: target_pid,
-        local_pid: try!(ns_pid),
-        inherited_capabilities: try!(inherited_caps),
-        effective_capabilities: try!(effective_caps),
+        local_pid: ns_pid?,
+        inherited_capabilities: inherited_caps?,
+        effective_capabilities: effective_caps?,
     })
 }

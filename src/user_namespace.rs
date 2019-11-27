@@ -1,9 +1,9 @@
 use nix::unistd::Pid;
 use procfs;
 use std::fs::File;
-use std::io::BufReader;
 use std::io::prelude::*;
-use types::{Result, Error};
+use std::io::BufReader;
+use types::{Error, Result};
 
 #[derive(Clone, Copy, Debug)]
 struct Extent {

@@ -34,7 +34,7 @@ impl Container for Docker {
                 "Failed to list containers. '{}' exited with {}: {}",
                 command.join(" "),
                 output.status,
-                stderr.trim_right()
+                stderr.trim_end()
             ));
         }
 
@@ -42,16 +42,13 @@ impl Container for Docker {
         assert!(fields.len() == 2);
 
         if fields[0] != b"true" {
-            return errfmt!(format!(
-                "container '{}' is not running",
-                container_id,
-            ));
+            return errfmt!(format!("container '{}' is not running", container_id,));
         }
 
         let pid = String::from_utf8_lossy(fields[1]);
 
         Ok(Pid::from_raw(tryfmt!(
-            pid.trim_right().parse::<pid_t>(),
+            pid.trim_end().parse::<pid_t>(),
             "expected valid process id from '{}', got: {}",
             command.join(" "),
             pid

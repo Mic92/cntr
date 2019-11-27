@@ -7,7 +7,7 @@ use std::ffi::{CStr, CString, OsStr, OsString};
 use std::fs::File;
 use std::io;
 use std::io::{BufRead, BufReader};
-use std::os::unix::ffi::{OsStringExt, OsStrExt};
+use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus};
@@ -54,7 +54,11 @@ where
             .filter_map(|dir| {
                 let full_path = dir.join(&exe_name);
                 let res = unistd::access(&full_path, unistd::AccessMode::X_OK);
-                if res.is_ok() { Some(full_path) } else { None }
+                if res.is_ok() {
+                    Some(full_path)
+                } else {
+                    None
+                }
             })
             .next()
     })
@@ -67,7 +71,6 @@ impl Cmd {
         pid: unistd::Pid,
         home: Option<&CStr>,
     ) -> Result<Cmd> {
-
         let arguments = if command.is_none() {
             vec![String::from("-l")]
         } else {
@@ -89,9 +92,8 @@ impl Cmd {
         })
     }
     pub fn run(mut self) -> Result<ExitStatus> {
-        let default_path = OsString::from(
-            "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-        );
+        let default_path =
+            OsString::from("/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin");
         self.environment.insert(
             OsString::from("PATH"),
             env::var_os("PATH").unwrap_or(default_path),
@@ -112,33 +114,35 @@ impl Cmd {
     }
 
     pub fn exec_chroot(self) -> Result<()> {
-        let err = Command::new(&self.command)
-            .args(self.arguments)
-            .envs(self.environment)
-            .before_exec(|| {
-                match unistd::chroot("/var/lib/cntr") {
-                    Err(nix::Error::Sys(errno)) => {
-                        warn!(
-                            "failed to chroot to /var/lib/cntr: {}",
-                            nix::Error::Sys(errno)
-                        );
-                        return Err(io::Error::from(errno));
+        let err = unsafe {
+            Command::new(&self.command)
+                .args(self.arguments)
+                .envs(self.environment)
+                .pre_exec(|| {
+                    match unistd::chroot("/var/lib/cntr") {
+                        Err(nix::Error::Sys(errno)) => {
+                            warn!(
+                                "failed to chroot to /var/lib/cntr: {}",
+                                nix::Error::Sys(errno)
+                            );
+                            return Err(io::Error::from(errno));
+                        }
+                        Err(e) => {
+                            warn!("failed to chroot to /var/lib/cntr: {}", e);
+                            return Err(io::Error::from_raw_os_error(libc::EINVAL));
+                        }
+                        _ => {}
                     }
-                    Err(e) => {
-                        warn!("failed to chroot to /var/lib/cntr: {}", e);
-                        return Err(io::Error::from_raw_os_error(libc::EINVAL));
+
+                    if let Err(e) = env::set_current_dir("/") {
+                        warn!("failed to change directory to /");
+                        return Err(e);
                     }
-                    _ => {}
-                }
 
-                if let Err(e) = env::set_current_dir("/") {
-                    warn!("failed to change directory to /");
-                    return Err(e);
-                }
-
-                Ok(())
-            })
-            .exec();
+                    Ok(())
+                })
+                .exec()
+        };
         tryfmt!(Err(err), "failed to execute `{}`", self.command);
         Ok(())
     }

@@ -2,12 +2,12 @@ use fs::CntrFs;
 use ipc;
 use libc;
 use namespace;
-use nix::{mount, sched, unistd};
 use nix::mount::MsFlags;
 use nix::sched::CloneFlags;
 use nix::sys::socket::CmsgSpace;
+use nix::{mount, sched, unistd};
 use std::ffi::OsStr;
-use std::fs::{metadata, remove_dir, create_dir_all};
+use std::fs::{create_dir_all, metadata, remove_dir};
 use std::io;
 use std::os::unix::prelude::*;
 use std::path::{Path, PathBuf};
@@ -107,21 +107,18 @@ impl MountNamespace {
         if let Err(err) = remove_dir(&self.mountpoint) {
             warn!(
                 "failed to cleanup mountpoint {:?}: {}",
-                self.mountpoint,
-                err
+                self.mountpoint, err
             );
         }
 
         if let Err(err) = remove_dir(&self.temp_mountpoint) {
             warn!(
                 "failed to cleanup temporary mountpoint {:?}: {}",
-                self.mountpoint,
-                err
+                self.mountpoint, err
             );
         }
     }
 }
-
 
 const NONE: Option<&'static [u8]> = None;
 
@@ -169,8 +166,8 @@ pub fn setup_bindmounts(mounts: &[&str]) -> Result<()> {
             Ok(data) => data,
         };
 
-        if !((source_stat.is_file() && !mountpoint_stat.is_dir()) ||
-                 (source_stat.is_dir() && mountpoint_stat.is_dir()))
+        if !((source_stat.is_file() && !mountpoint_stat.is_dir())
+            || (source_stat.is_dir() && mountpoint_stat.is_dir()))
         {
             continue;
         }
@@ -196,7 +193,6 @@ pub fn setup(
     container_namespace: namespace::Namespace,
     mount_label: &Option<String>,
 ) -> Result<()> {
-
     tryfmt!(
         mkdir_p(&CNTR_MOUNT_POINT),
         "cannot create container mountpoint /{}",
@@ -253,7 +249,6 @@ pub fn setup(
     );
 
     tryfmt!(setup_bindmounts(MOUNTS), "failed to setup bind mounts");
-
 
     Ok(())
 }

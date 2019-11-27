@@ -8,7 +8,7 @@ use mountns;
 use namespace;
 use nix::sys::signal::{self, Signal};
 use nix::unistd;
-use nix::unistd::{Uid, Gid};
+use nix::unistd::{Gid, Uid};
 use procfs::ProcStatus;
 use pty;
 use std::env;
@@ -100,7 +100,6 @@ pub fn run(options: &ChildOptions) -> Result<Void> {
         ));
     }
 
-
     tryfmt!(mount_namespace.apply(), "failed to apply mount namespace");
 
     tryfmt!(
@@ -172,7 +171,7 @@ pub fn run(options: &ChildOptions) -> Result<Void> {
     }
     eprintln!(
         "BUG! command exited successfully, \
-        but was neither terminated by a signal nor has an exit code"
+         but was neither terminated by a signal nor has an exit code"
     );
     process::exit(1);
 }

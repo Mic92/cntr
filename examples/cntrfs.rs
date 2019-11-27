@@ -1,6 +1,6 @@
+extern crate cntr;
 extern crate fuse;
 extern crate libc;
-extern crate cntr;
 extern crate nix;
 extern crate thread_scoped;
 
@@ -13,7 +13,7 @@ use cntr::fs::{CntrFs, CntrMountOptions};
 
 #[cfg(feature = "profiling")]
 use cpuprofiler::PROFILER;
-use nix::{unistd, mount};
+use nix::{mount, unistd};
 use std::env;
 use std::path::Path;
 use std::process;
@@ -49,7 +49,8 @@ fn main() {
     if cfg!(feature = "splice_write") {
         println!("enable splice write");
     }
-    #[cfg(feature = "profiling")] PROFILER.lock().unwrap().start("./cntrfs.profile").unwrap();
+    #[cfg(feature = "profiling")]
+    PROFILER.lock().unwrap().start("./cntrfs.profile").unwrap();
 
     let cntr = CntrFs::new(
         &CntrMountOptions {
@@ -62,12 +63,16 @@ fn main() {
             effective_gid: None,
         },
         None,
-    ).unwrap();
+    )
+    .unwrap();
 
     cntr.mount(Path::new(&args[2]), &None).unwrap();
-    let guard = MountGuard { mount_point: args[2].clone() };
+    let guard = MountGuard {
+        mount_point: args[2].clone(),
+    };
     cntr.spawn_sessions().unwrap();
     drop(guard);
 
-    #[cfg(feature = "profiling")] PROFILER.lock().unwrap().stop().unwrap();
+    #[cfg(feature = "profiling")]
+    PROFILER.lock().unwrap().stop().unwrap();
 }
