@@ -203,10 +203,10 @@ impl CntrFs {
 
         Ok(CntrFs {
             prefix: String::from(options.prefix),
-            root_inode: try!(open_static_dnode(
+            root_inode: open_static_dnode(
                 fuse::FUSE_ROOT_ID,
                 Path::new(options.prefix),
-            )),
+            )?,
             dotcntr: Arc::new(dotcntr),
             inode_mapping: Arc::new(Mutex::new(HashMap::<InodeKey, u64>::new())),
             inodes: Arc::new(ConcHashMap::<u64, Arc<Inode>>::new()),
@@ -241,8 +241,8 @@ impl CntrFs {
         umask: u32,
         flags: u32,
     ) -> nix::Result<RawFd> {
-        let parent_inode = try!(self.inode(&parent));
-        let has_default_acl = try!(parent_inode.check_default_acl());
+        let parent_inode = self.inode(&parent)?;
+        let has_default_acl = parent_inode.check_default_acl()?;
         let parent_fd = parent_inode.fd.read();
 
         self.set_user_group(req);
@@ -254,12 +254,12 @@ impl CntrFs {
         }
 
         let create_mode = stat::Mode::from_bits_truncate(mode);
-        let fd = try!(fcntl::openat(
+        let fd = fcntl::openat(
             parent_fd.raw(),
             name,
             oflag | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
             create_mode,
-        ));
+        )?;
         Ok(fd)
     }
 
@@ -348,28 +348,28 @@ impl CntrFs {
     ) -> nix::Result<()> {
         if let Some(bits) = mode {
             let mode = stat::Mode::from_bits_truncate(bits);
-            try!(stat::fchmod(fd.raw(), mode));
+            stat::fchmod(fd.raw(), mode)?;
         }
 
         if uid.is_some() || gid.is_some() {
             let _uid = uid.map(|u| Uid::from_raw(self.uid_map.map_id_up(u)));
             let _gid = gid.map(|g| Gid::from_raw(self.gid_map.map_id_up(g)));
 
-            try!(unistd::fchownat(
+            unistd::fchownat(
                 fd.raw(),
                 "",
                 _uid,
                 _gid,
                 AtFlags::AT_EMPTY_PATH,
-            ));
+            )?;
         }
 
         if let Some(s) = size {
-            try!(unistd::ftruncate(fd.raw(), s));
+            unistd::ftruncate(fd.raw(), s)?;
         }
         if mtime != fuse::UtimeSpec::Omit || atime != fuse::UtimeSpec::Omit {
-            let inode = try!(self.inode(&ino));
-            try!(set_time(&inode, fd, &mtime, &atime));
+            let inode = self.inode(&ino)?;
+            set_time(&inode, fd, &mtime, &atime)?;
         }
         Ok(())
     }
@@ -467,8 +467,8 @@ impl CntrFs {
     }
 
     fn mutable_inode(&mut self, ino: &mut u64) -> nix::Result<Arc<Inode>> {
-        let inode = try!(self.inode(ino));
-        try!(inode.upgrade_fd(&FdState::Readable));
+        let inode = self.inode(ino)?;
+        inode.upgrade_fd(&FdState::Readable)?;
         Ok(inode)
     }
 
@@ -486,7 +486,7 @@ impl CntrFs {
     }
 
     fn lookup_from_fd<'a>(&mut self, new_file: LookupFile<'a>) -> nix::Result<(FileAttr, u64)> {
-        let _stat = try!(stat::fstat(new_file.as_raw_fd()));
+        let _stat = stat::fstat(new_file.as_raw_fd())?;
         let mut attr = self.attr_from_stat(_stat);
 
         let key = InodeKey {
@@ -509,7 +509,7 @@ impl CntrFs {
 
         let (next_number, generation) = self.next_inode_number();
         let fd = RwLock::new(Fd::new(
-            try!(new_file.into_raw_fd()),
+            new_file.into_raw_fd()?,
             if attr.kind == FileType::Symlink || attr.kind == FileType::BlockDevice {
                 // we cannot open a symlink read/writable
                 FdState::Readable
@@ -544,14 +544,14 @@ impl CntrFs {
             }
         }
 
-        let parent_inode = try!(self.inode(&parent));
+        let parent_inode = self.inode(&parent)?;
         let parent_fd = parent_inode.fd.read();
-        let fd = try!(fcntl::openat(
+        let fd = fcntl::openat(
             parent_fd.raw(),
             name,
             OFlag::O_PATH | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
             stat::Mode::empty(),
-        ));
+        )?;
         let file = unsafe { File::from_raw_fd(fd) };
 
         self.lookup_from_fd(LookupFile::Donate(file))
@@ -585,19 +585,19 @@ fn set_time(
         // FIXME: fs_perms 660 99 99 100 99 t 1 return NOPERM for
         // utime(file) as user 100:99 when file is owned by 99:99
         let path = fd_path(fd);
-        try!(stat::utimensat(
+        stat::utimensat(
             libc::AT_FDCWD,
             Path::new(&path),
             &to_utimespec(mtime),
             &to_utimespec(atime),
             fcntl::AtFlags::empty(),
-        ));
+        )?;
     } else {
-        try!(stat::futimens(
+        stat::futimens(
             fd.raw(),
             &to_utimespec(mtime),
             &to_utimespec(atime),
-        ));
+        )?;
     }
 
     Ok(())

@@ -75,8 +75,8 @@ pub fn status(target_pid: Pid) -> Result<ProcStatus> {
 
     Ok(ProcStatus {
         global_pid: target_pid,
-        local_pid: try!(ns_pid),
-        inherited_capabilities: try!(inherited_caps),
-        effective_capabilities: try!(effective_caps),
+        local_pid: ns_pid?,
+        inherited_capabilities: inherited_caps?,
+        effective_capabilities: effective_caps?,
     })
 }

@@ -58,7 +58,7 @@ pub fn lookup_container_pid(
     container_types: &[Box<dyn Container>],
 ) -> Result<Pid> {
     for c in container_types {
-        try!(c.check_required_tools());
+        c.check_required_tools()?;
     }
     let fallback: Vec<Box<dyn Container>> = default_order();
     let types = if container_types.is_empty() {
