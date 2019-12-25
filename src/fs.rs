@@ -599,7 +599,7 @@ fn dtype_kind(dtype: u8) -> FileType {
         libc::DT_LNK => FileType::Symlink,
         libc::DT_SOCK => FileType::Socket,
         libc::DT_REG => FileType::RegularFile,
-        _ => panic!("BUG! got unknown d_entry type received from d_type"),
+        _ => panic!("BUG! got unknown d_entry type received from d_type: {}", dtype),
     }
 }
 
