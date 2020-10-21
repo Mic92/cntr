@@ -60,7 +60,7 @@ impl<'a> AsRef<dirent64> for DirectoryEntry<'a> {
 pub fn opendir<P: ?Sized + nix::NixPath>(name: &P) -> nix::Result<DirectoryStream> {
     let dirp = name.with_nix_path(|cstr| unsafe { libc::opendir(cstr.as_ptr()) })?;
     if dirp.is_null() {
-        Err(nix::Error::last().into())
+        Err(nix::Error::last())
     } else {
         Ok(DirectoryStream(dirp))
     }
@@ -69,7 +69,7 @@ pub fn opendir<P: ?Sized + nix::NixPath>(name: &P) -> nix::Result<DirectoryStrea
 /// Returns the next directory entry in the directory stream.
 ///
 /// It returns `Some(None)` on reaching the end of the directory stream.
-pub fn readdir<'a>(dir: &'a mut DirectoryStream) -> nix::Result<Option<DirectoryEntry>> {
+pub fn readdir(dir: &mut DirectoryStream) -> nix::Result<Option<DirectoryEntry>> {
     let dirent = unsafe {
         Errno::clear();
         readdir64(dir.0)
@@ -77,7 +77,7 @@ pub fn readdir<'a>(dir: &'a mut DirectoryStream) -> nix::Result<Option<Directory
     if dirent.is_null() {
         match Errno::last() {
             Errno::UnknownErrno => Ok(None),
-            _ => Err(nix::Error::last().into()),
+            _ => Err(nix::Error::last()),
         }
     } else {
         Ok(Some(DirectoryEntry(unsafe { &*dirent })))
@@ -88,17 +88,17 @@ pub fn readdir<'a>(dir: &'a mut DirectoryStream) -> nix::Result<Option<Directory
 ///
 /// The `loc` argument should be a value returned by a previous call to `telldir`
 #[cfg(not(any(target_os = "android")))]
-pub fn seekdir<'a>(dir: &'a mut DirectoryStream, loc: c_long) {
+pub fn seekdir(dir: &mut DirectoryStream, loc: c_long) {
     unsafe { libc::seekdir(dir.0, loc) };
 }
 
 /// Returns the current location associated with the directory stream.
 #[cfg(not(any(target_os = "android")))]
-pub fn telldir<'a>(dir: &'a mut DirectoryStream) -> c_long {
+pub fn telldir(dir: &mut DirectoryStream) -> c_long {
     unsafe { libc::telldir(dir.0) }
 }
 
-pub fn dirfd<'a>(dir: &'a mut DirectoryStream) -> nix::Result<RawFd> {
+pub fn dirfd(dir: &mut DirectoryStream) -> nix::Result<RawFd> {
     let res = unsafe { libc::dirfd(dir.0) };
     Errno::result(res)
 }

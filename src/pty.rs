@@ -226,7 +226,9 @@ pub fn forward(pty: &File) -> Result<()> {
 
     unsafe { PTY_MASTER_FD = -1 };
 
-    raw_tty.map(drop);
+    if let Some(_raw_tty) = raw_tty {
+        drop(_raw_tty)
+    }
 
     Ok(())
 }

@@ -32,7 +32,7 @@ impl error::Error for Error {
     }
 
     fn cause(&self) -> Option<&dyn error::Error> {
-        self.cause.as_ref().map(|e| &**e)
+        self.cause.as_deref()
     }
 }
 

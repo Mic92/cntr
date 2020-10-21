@@ -334,6 +334,7 @@ impl CntrFs {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn setattr_inner(
         &mut self,
         ino: u64,
@@ -446,7 +447,7 @@ impl CntrFs {
         }
     }
 
-    fn inode<'a>(&'a self, ino: u64) -> nix::Result<Arc<Inode>> {
+    fn inode(&self, ino: u64) -> nix::Result<Arc<Inode>> {
         assert!(ino > 0);
 
         if ino == fuse::FUSE_ROOT_ID {
@@ -478,7 +479,7 @@ impl CntrFs {
         (next_number, counter.generation)
     }
 
-    fn lookup_from_fd<'a>(&mut self, new_file: LookupFile<'a>) -> nix::Result<(FileAttr, u64)> {
+    fn lookup_from_fd(&mut self, new_file: LookupFile) -> nix::Result<(FileAttr, u64)> {
         let _stat = stat::fstat(new_file.as_raw_fd())?;
         let mut attr = self.attr_from_stat(_stat);
 

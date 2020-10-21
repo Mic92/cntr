@@ -19,15 +19,15 @@ pub enum UtimeSpec {
 impl<'a> From<&'a UtimeSpec> for libc::timespec {
     fn from(time: &'a UtimeSpec) -> libc::timespec {
         match time {
-            &UtimeSpec::Now => libc::timespec {
+            UtimeSpec::Now => libc::timespec {
                 tv_sec: 0,
                 tv_nsec: libc::UTIME_NOW,
             },
-            &UtimeSpec::Omit => libc::timespec {
+            UtimeSpec::Omit => libc::timespec {
                 tv_sec: 0,
                 tv_nsec: libc::UTIME_OMIT,
             },
-            &UtimeSpec::Time(spec) => *spec.as_ref(),
+            UtimeSpec::Time(spec) => *spec.as_ref(),
         }
     }
 }
