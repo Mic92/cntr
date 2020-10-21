@@ -58,7 +58,8 @@ impl Inode {
         self.upgrade_fd(&FdState::Readable)?;
         let fd = self.fd.read();
 
-        let res = xattr::getxattr(&fd, self.kind, OsStr::new(POSIX_ACL_DEFAULT_XATTR), &mut []);
+        let res =
+            xattr::fuse_getxattr(&fd, self.kind, OsStr::new(POSIX_ACL_DEFAULT_XATTR), &mut []);
         *state = Some(res.is_ok());
         Ok(res.is_ok())
     }

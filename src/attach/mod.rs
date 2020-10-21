@@ -81,7 +81,8 @@ pub fn attach(opts: &AttachOptions) -> Result<Void> {
 
     let (parent_sock, child_sock) = tryfmt!(ipc::socket_pair(), "failed to set up ipc");
 
-    match tryfmt!(unistd::fork(), "failed to fork") {
+    let res = unsafe { unistd::fork() };
+    match tryfmt!(res, "failed to fork") {
         ForkResult::Parent { child } => parent::run(child, &parent_sock, cntrfs),
         ForkResult::Child => {
             let child_opts = child::ChildOptions {

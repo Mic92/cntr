@@ -1,8 +1,7 @@
 use libc::{self, c_int};
 use nix;
 use nix::errno::Errno;
-use nix::sys::prctl;
-use nix::sys::xattr;
+use prctl;
 use procfs;
 use std::fs::File;
 use std::io::Read;
@@ -11,6 +10,7 @@ use std::path::Path;
 use std::ptr;
 use std::slice;
 use types::{Error, Result};
+use xattr;
 
 pub const _LINUX_CAPABILITY_VERSION_1: u32 = 0x1998_0330;
 pub const _LINUX_CAPABILITY_VERSION_2: u32 = 0x2007_1026;
@@ -126,7 +126,7 @@ pub fn drop(inheritable_capabilities: u64) -> Result<()> {
     for cap in 0..last_capability {
         if (inheritable & (1 << cap)) == 0 {
             // TODO: do not ignore result
-            let _ = prctl::prctl(prctl::PrctlOption::PR_CAPBSET_DROP, cap, 0, 0, 0);
+            let _ = prctl::prctl(libc::PR_CAPBSET_DROP, cap, 0, 0, 0);
         }
     }
     Ok(())

@@ -19,6 +19,7 @@ use std::os::unix::prelude::*;
 use std::process;
 use types::{Error, Result};
 use void::Void;
+use std::convert::TryFrom;
 
 pub struct ChildOptions<'a> {
     pub command: Option<String>,
@@ -156,7 +157,7 @@ pub fn run(options: &ChildOptions) -> Result<Void> {
     let status = tryfmt!(cmd.run(), "");
     if let Some(signum) = status.signal() {
         let signal = tryfmt!(
-            Signal::from_c_int(signum),
+            Signal::try_from(signum),
             "invalid signal received: {}",
             signum
         );

@@ -190,7 +190,7 @@ extern "C" fn handle_sigwinch(_: i32) {
 
 static mut PTY_MASTER_FD: i32 = -1;
 
-pub fn forward(pty: &PtyMaster) -> Result<()> {
+pub fn forward(pty: &File) -> Result<()> {
     let mut raw_tty = None;
 
     if unsafe { libc::isatty(libc::STDIN_FILENO as i32) } != 0 {

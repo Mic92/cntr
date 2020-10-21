@@ -1,18 +1,15 @@
 use fs;
 use ipc;
 use mountns;
-use nix::pty::PtyMaster;
 use nix::sys::signal::{self, Signal};
-use nix::sys::socket::CmsgSpace;
 use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
 use nix::unistd;
 use nix::unistd::Pid;
 use pty;
-use std::os::unix::io::IntoRawFd;
-use std::os::unix::prelude::*;
 use std::process;
 use types::{Error, Result};
 use void::Void;
+use std::os::unix::prelude::RawFd;
 
 pub fn run(pid: Pid, mount_ready_sock: &ipc::Socket, fs: fs::CntrFs) -> Result<Void> {
     let ns = tryfmt!(
@@ -22,7 +19,7 @@ pub fn run(pid: Pid, mount_ready_sock: &ipc::Socket, fs: fs::CntrFs) -> Result<V
 
     let sessions = fs.spawn_sessions();
 
-    let mut cmsgspace: CmsgSpace<[RawFd; 1]> = CmsgSpace::new();
+    let mut cmsgspace = cmsg_space!([RawFd; 1]);
     let (_, mut fds) = tryfmt!(
         mount_ready_sock.receive(1, &mut cmsgspace),
         "failed to receive pty file descriptor"
@@ -30,13 +27,11 @@ pub fn run(pid: Pid, mount_ready_sock: &ipc::Socket, fs: fs::CntrFs) -> Result<V
     assert!(fds.len() == 1);
     let fd = fds.pop().unwrap();
 
-    let master = unsafe { PtyMaster::from_raw_fd(fd.into_raw_fd()) };
-
     ns.cleanup();
 
     loop {
         tryfmt!(
-            pty::forward(&master),
+            pty::forward(&fd),
             "failed to forward terminal output of command"
         );
         match waitpid(pid, Some(WaitPidFlag::WUNTRACED)) {

@@ -53,7 +53,7 @@ where
         env::split_paths(&paths)
             .filter_map(|dir| {
                 let full_path = dir.join(&exe_name);
-                let res = unistd::access(&full_path, unistd::AccessMode::X_OK);
+                let res = unistd::access(&full_path, unistd::AccessFlags::X_OK);
                 if res.is_ok() {
                     Some(full_path)
                 } else {
