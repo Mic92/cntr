@@ -4,9 +4,9 @@ use fs;
 use ipc;
 use nix::unistd::{self, ForkResult};
 use procfs;
-use pwd;
 use std::fs::{create_dir_all, metadata};
 use std::os::unix::prelude::*;
+use sys_ext::Passwd;
 use types::{Error, Result};
 use user_namespace::IdMap;
 use void::Void;
@@ -19,7 +19,7 @@ pub struct AttachOptions {
     pub arguments: Vec<String>,
     pub container_name: String,
     pub container_types: Vec<Box<dyn container::Container>>,
-    pub effective_user: Option<pwd::Passwd>,
+    pub effective_user: Option<Passwd>,
 }
 
 pub fn attach(opts: &AttachOptions) -> Result<Void> {

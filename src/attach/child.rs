@@ -11,6 +11,7 @@ use nix::unistd;
 use nix::unistd::{Gid, Uid};
 use procfs::ProcStatus;
 use pty;
+use std::convert::TryFrom;
 use std::env;
 use std::ffi::CStr;
 use std::fs::File;
@@ -19,7 +20,6 @@ use std::os::unix::prelude::*;
 use std::process;
 use types::{Error, Result};
 use void::Void;
-use std::convert::TryFrom;
 
 pub struct ChildOptions<'a> {
     pub command: Option<String>,

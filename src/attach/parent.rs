@@ -6,10 +6,10 @@ use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
 use nix::unistd;
 use nix::unistd::Pid;
 use pty;
+use std::os::unix::prelude::RawFd;
 use std::process;
 use types::{Error, Result};
 use void::Void;
-use std::os::unix::prelude::RawFd;
 
 pub fn run(pid: Pid, mount_ready_sock: &ipc::Socket, fs: fs::CntrFs) -> Result<Void> {
     let ns = tryfmt!(

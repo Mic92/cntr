@@ -1,7 +1,6 @@
 use libc::{self, c_int};
 use nix;
 use nix::errno::Errno;
-use prctl;
 use procfs;
 use std::fs::File;
 use std::io::Read;
@@ -9,8 +8,8 @@ use std::mem;
 use std::path::Path;
 use std::ptr;
 use std::slice;
+use sys_ext::{prctl, setxattr};
 use types::{Error, Result};
-use xattr;
 
 pub const _LINUX_CAPABILITY_VERSION_1: u32 = 0x1998_0330;
 pub const _LINUX_CAPABILITY_VERSION_2: u32 = 0x2007_1026;
@@ -97,7 +96,7 @@ pub fn set_chroot_capability(path: &Path) -> Result<()> {
     let bytes: &[u8] = unsafe { slice::from_raw_parts(bytep, size) };
 
     tryfmt!(
-        xattr::setxattr(path, "security.capability", bytes, 0),
+        setxattr(path, "security.capability", bytes, 0),
         "setxattr failed"
     );
 
@@ -126,7 +125,7 @@ pub fn drop(inheritable_capabilities: u64) -> Result<()> {
     for cap in 0..last_capability {
         if (inheritable & (1 << cap)) == 0 {
             // TODO: do not ignore result
-            let _ = prctl::prctl(libc::PR_CAPBSET_DROP, cap, 0, 0, 0);
+            let _ = prctl(libc::PR_CAPBSET_DROP, cap, 0, 0, 0);
         }
     }
     Ok(())

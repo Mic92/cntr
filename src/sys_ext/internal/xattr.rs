@@ -1,10 +1,10 @@
+use super::readlinkat::fuse_readlinkat;
 use files::Fd;
 use fuse::FileType;
 use libc::c_int;
 use nix::errno::Errno;
 use nix::NixPath;
 use nix::Result;
-use readlink::fuse_readlinkat;
 use std::ffi::OsStr;
 
 fn getxattr<P1: ?Sized + NixPath, P2: ?Sized + NixPath>(
