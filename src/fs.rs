@@ -34,8 +34,8 @@ use std::vec::Vec;
 use std::{u32, u64};
 use sys_ext::{
     fchownat, fstatvfs, fuse_getxattr, fuse_listxattr, fuse_readlinkat, fuse_removexattr,
-    fuse_setxattr, futimens, ioctl, ioctl_read, ioctl_write, linkat, mknodat, renameat2,
-    setrlimit, utimensat, Rlimit, UtimeSpec,
+    fuse_setxattr, futimens, ioctl, ioctl_read, ioctl_write, linkat, mknodat, renameat2, setrlimit,
+    utimensat, Rlimit, UtimeSpec,
 };
 use thread_scoped::{scoped, JoinGuard};
 use time::Timespec;
