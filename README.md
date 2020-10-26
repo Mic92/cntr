@@ -120,7 +120,7 @@ optional arguments:
 ### Docker
 
 1: Find out the container name/container id:
-```
+```console
 $ docker run --name boxbusy -ti busybox
 $ docker ps
 CONTAINER ID        IMAGE               COMMAND             CREATED             STATUS              PORTS               NAMES
