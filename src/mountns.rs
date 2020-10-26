@@ -4,7 +4,6 @@ use libc;
 use namespace;
 use nix::mount::MsFlags;
 use nix::sched::CloneFlags;
-use nix::sys::socket::CmsgSpace;
 use nix::{mount, sched, unistd};
 use std::ffi::OsStr;
 use std::fs::{create_dir_all, metadata, remove_dir};
@@ -81,7 +80,7 @@ impl MountNamespace {
     }
 
     pub fn receive(sock: &ipc::Socket) -> Result<MountNamespace> {
-        let mut cmsgspace: CmsgSpace<[RawFd; 2]> = CmsgSpace::new();
+        let mut cmsgspace = cmsg_space!([RawFd; 2]);
         let (paths, mut fds) = tryfmt!(
             sock.receive((libc::PATH_MAX * 2) as usize, &mut cmsgspace),
             "failed to receive mount namespace"

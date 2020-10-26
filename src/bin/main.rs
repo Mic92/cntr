@@ -3,7 +3,7 @@ extern crate cntr;
 extern crate nix;
 
 use argparse::{ArgumentParser, Collect, List, Store};
-use cntr::pwd::pwnam;
+use cntr::pwnam;
 use std::io::{stderr, stdout};
 use std::path::Path;
 use std::str::FromStr;

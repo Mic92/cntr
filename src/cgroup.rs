@@ -42,11 +42,7 @@ fn get_mounts() -> Result<HashMap<String, String>> {
             continue;
         }
         for option in fields[10].split(',') {
-            let name = if option.starts_with("name=") {
-                option[5..].to_string()
-            } else {
-                option.to_string()
-            };
+            let name = option.strip_prefix("name=").unwrap_or(option).to_string();
             if !subsystems.contains(&name) {
                 mountpoints.insert(name, fields[4].to_string());
             }
@@ -95,8 +91,7 @@ pub fn move_to(pid: unistd::Pid, target_pid: unistd::Pid) -> Result<()> {
     let mountpoints = tryfmt!(get_mounts(), "failed to get cgroup mountpoints");
     for cgroup in cgroups {
         let p = cgroup_path(&cgroup, &mountpoints);
-        if p.is_some() {
-            let path = p.unwrap();
+        if let Some(path) = p {
             match File::create(&path) {
                 Ok(mut buffer) => {
                     tryfmt!(

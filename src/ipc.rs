@@ -27,10 +27,10 @@ impl Socket {
         Ok(())
     }
 
-    pub fn receive<T>(
+    pub fn receive(
         &self,
         message_length: usize,
-        cmsgspace: &mut CmsgSpace<T>,
+        cmsgspace: &mut Vec<u8>,
     ) -> Result<(Vec<u8>, Vec<File>)> {
         let mut msg_buf = vec![0; (message_length) as usize];
         let received;
@@ -44,13 +44,15 @@ impl Socket {
                     Some(&mut *cmsgspace),
                     MsgFlags::empty(),
                 ) {
-                    Err(nix::Error::Sys(Errno::EAGAIN)) | Err(nix::Error::Sys(Errno::EINTR)) => continue,
+                    Err(nix::Error::Sys(Errno::EAGAIN)) | Err(nix::Error::Sys(Errno::EINTR)) => {
+                        continue
+                    }
                     Err(e) => return tryfmt!(Err(e), "recvmsg failed"),
                     Ok(msg) => {
                         for cmsg in msg.cmsgs() {
-                            if let ControlMessage::ScmRights(fds) = cmsg {
+                            if let ControlMessageOwned::ScmRights(fds) = cmsg {
                                 for fd in fds {
-                                    files.push(unsafe { File::from_raw_fd(*fd) })
+                                    files.push(unsafe { File::from_raw_fd(fd) })
                                 }
                             }
                         }

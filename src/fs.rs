@@ -1,4 +1,5 @@
 use concurrent_hashmap::ConcHashMap;
+use dirent;
 use dotcntr::DotcntrDir;
 use files::{fd_path, Fd, FdState};
 use fsuid;
@@ -9,20 +10,17 @@ use fuse::{
 };
 use fusefd;
 use inode::Inode;
-use ioctl;
 use libc::{self, c_long, dev_t};
 use nix::errno::Errno;
 use nix::fcntl::{self, AtFlags, OFlag, SpliceFFlags};
+use nix::sys::stat;
 use nix::sys::stat::SFlag;
 use nix::sys::time::{TimeSpec as NixTimeSpec, TimeValLike};
 use nix::sys::uio::{pread, pwrite};
-use nix::sys::{resource, stat};
 use nix::unistd::{Gid, Uid};
-use nix::{self, dirent, unistd};
+use nix::{self, unistd};
 use num_cpus;
 use parking_lot::{Mutex, RwLock};
-use readlink::readlinkat;
-use statvfs::fstatvfs;
 use std::cmp;
 use std::collections::HashMap;
 use std::ffi::{CStr, OsStr};
@@ -34,11 +32,15 @@ use std::path::Path;
 use std::sync::Arc;
 use std::vec::Vec;
 use std::{u32, u64};
+use sys_ext::{
+    fchownat, fstatvfs, fuse_getxattr, fuse_listxattr, fuse_readlinkat, fuse_removexattr,
+    fuse_setxattr, futimens, ioctl, ioctl_read, ioctl_write, linkat, mknodat, renameat2, setrlimit,
+    utimensat, Rlimit, UtimeSpec,
+};
 use thread_scoped::{scoped, JoinGuard};
 use time::Timespec;
 use types::{Error, Result};
 use user_namespace::IdMap;
-use xattr;
 
 const FH_MAGIC: char = 'F';
 const DIRP_MAGIC: char = 'D';
@@ -192,12 +194,12 @@ impl CntrFs {
     pub fn new(options: &CntrMountOptions, dotcntr: Option<DotcntrDir>) -> Result<CntrFs> {
         let fuse_fd = tryfmt!(fusefd::open(), "failed to initialize fuse");
 
-        let limit = resource::Rlimit {
+        let limit = Rlimit {
             rlim_cur: 1_048_576,
             rlim_max: 1_048_576,
         };
         tryfmt!(
-            resource::setrlimit(resource::Resource::RLIMIT_NOFILE, &limit),
+            setrlimit(libc::RLIMIT_NOFILE, &limit),
             "Cannot raise file descriptor limit"
         );
 
@@ -332,6 +334,7 @@ impl CntrFs {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn setattr_inner(
         &mut self,
         ino: u64,
@@ -352,7 +355,7 @@ impl CntrFs {
             let _uid = uid.map(|u| Uid::from_raw(self.uid_map.map_id_up(u)));
             let _gid = gid.map(|g| Gid::from_raw(self.gid_map.map_id_up(g)));
 
-            unistd::fchownat(fd.raw(), "", _uid, _gid, AtFlags::AT_EMPTY_PATH)?;
+            fchownat(fd.raw(), "", _uid, _gid, AtFlags::AT_EMPTY_PATH)?;
         }
 
         if let Some(s) = size {
@@ -444,7 +447,7 @@ impl CntrFs {
         }
     }
 
-    fn inode<'a>(&'a self, ino: u64) -> nix::Result<Arc<Inode>> {
+    fn inode(&self, ino: u64) -> nix::Result<Arc<Inode>> {
         assert!(ino > 0);
 
         if ino == fuse::FUSE_ROOT_ID {
@@ -476,7 +479,7 @@ impl CntrFs {
         (next_number, counter.generation)
     }
 
-    fn lookup_from_fd<'a>(&mut self, new_file: LookupFile<'a>) -> nix::Result<(FileAttr, u64)> {
+    fn lookup_from_fd(&mut self, new_file: LookupFile) -> nix::Result<(FileAttr, u64)> {
         let _stat = stat::fstat(new_file.as_raw_fd())?;
         let mut attr = self.attr_from_stat(_stat);
 
@@ -555,13 +558,13 @@ fn get_filehandle<'a>(fh: u64) -> &'a Fh {
     handle
 }
 
-fn to_utimespec(time: &fuse::UtimeSpec) -> stat::UtimeSpec {
+fn to_utimespec(time: &fuse::UtimeSpec) -> UtimeSpec {
     match *time {
-        fuse::UtimeSpec::Omit => stat::UtimeSpec::Omit,
-        fuse::UtimeSpec::Now => stat::UtimeSpec::Now,
+        fuse::UtimeSpec::Omit => UtimeSpec::Omit,
+        fuse::UtimeSpec::Now => UtimeSpec::Now,
         fuse::UtimeSpec::Time(time) => {
             let t = NixTimeSpec::seconds(time.sec) + NixTimeSpec::nanoseconds(i64::from(time.nsec));
-            stat::UtimeSpec::Time(t)
+            UtimeSpec::Time(t)
         }
     }
 }
@@ -576,7 +579,7 @@ fn set_time(
         // FIXME: fs_perms 660 99 99 100 99 t 1 return NOPERM for
         // utime(file) as user 100:99 when file is owned by 99:99
         let path = fd_path(fd);
-        stat::utimensat(
+        utimensat(
             libc::AT_FDCWD,
             Path::new(&path),
             &to_utimespec(mtime),
@@ -584,7 +587,7 @@ fn set_time(
             fcntl::AtFlags::empty(),
         )?;
     } else {
-        stat::futimens(fd.raw(), &to_utimespec(mtime), &to_utimespec(atime))?;
+        futimens(fd.raw(), &to_utimespec(mtime), &to_utimespec(atime))?;
     }
 
     Ok(())
@@ -599,7 +602,10 @@ fn dtype_kind(dtype: u8) -> FileType {
         libc::DT_LNK => FileType::Symlink,
         libc::DT_SOCK => FileType::Socket,
         libc::DT_REG => FileType::RegularFile,
-        _ => panic!("BUG! got unknown d_entry type received from d_type: {}", dtype),
+        _ => panic!(
+            "BUG! got unknown d_entry type received from d_type: {}",
+            dtype
+        ),
     }
 }
 
@@ -720,7 +726,7 @@ impl Filesystem for CntrFs {
 
         let inode = tryfuse!(self.inode(ino), reply);
         let fd = inode.fd.read();
-        let target = tryfuse!(readlinkat(fd.raw()), reply);
+        let target = tryfuse!(fuse_readlinkat(fd.raw()), reply);
         reply.data(&target.into_vec());
     }
 
@@ -747,7 +753,7 @@ impl Filesystem for CntrFs {
 
             let fd = inode.fd.read();
             tryfuse!(
-                stat::mknodat(&fd.raw(), name, kind, perm, dev_t::from(rdev)),
+                mknodat(&fd.raw(), name, kind, perm, dev_t::from(rdev)),
                 reply
             );
         }
@@ -773,7 +779,7 @@ impl Filesystem for CntrFs {
 
             let perm = stat::Mode::from_bits_truncate(mode);
             let fd = inode.fd.read();
-            tryfuse!(unistd::mkdirat(fd.raw(), name, perm), reply);
+            tryfuse!(stat::mkdirat(fd.raw(), name, perm), reply);
         }
         self.lookup(req, parent, name, reply);
     }
@@ -784,7 +790,7 @@ impl Filesystem for CntrFs {
         let inode = tryfuse!(self.inode(parent), reply);
         let fd = inode.fd.read();
 
-        let res = unistd::unlinkat(fd.raw(), name, fcntl::AtFlags::empty());
+        let res = unistd::unlinkat(Some(fd.raw()), name, unistd::UnlinkatFlags::NoRemoveDir);
         tryfuse!(res, reply);
         reply.ok();
     }
@@ -796,7 +802,7 @@ impl Filesystem for CntrFs {
         let fd = inode.fd.read();
 
         tryfuse!(
-            unistd::unlinkat(fd.raw(), name, AtFlags::AT_REMOVEDIR),
+            unistd::unlinkat(Some(fd.raw()), name, unistd::UnlinkatFlags::RemoveDir),
             reply
         );
         reply.ok();
@@ -815,7 +821,7 @@ impl Filesystem for CntrFs {
         {
             let inode = tryfuse!(self.inode(parent), reply);
             let fd = inode.fd.read();
-            let res = unistd::symlinkat(link, fd.raw(), name);
+            let res = unistd::symlinkat(link, Some(fd.raw()), name);
             tryfuse!(res, reply);
         }
         self.lookup(req, parent, name, reply);
@@ -837,7 +843,7 @@ impl Filesystem for CntrFs {
         let new_inode = tryfuse!(self.inode(newparent), reply);
         let new_fd = new_inode.fd.read();
         tryfuse!(
-            fcntl::renameat(parent_fd.raw(), name, new_fd.raw(), newname),
+            fcntl::renameat(Some(parent_fd.raw()), name, Some(new_fd.raw()), newname),
             reply
         );
 
@@ -860,13 +866,7 @@ impl Filesystem for CntrFs {
         let parent_fd = parent_inode.fd.read();
         let new_inode = tryfuse!(self.inode(newparent), reply);
         let new_fd = new_inode.fd.read();
-        let res = fcntl::renameat2(
-            parent_fd.raw(),
-            name,
-            new_fd.raw(),
-            newname,
-            fcntl::RenameAt2Flags::from_bits_truncate(flags as i32),
-        );
+        let res = renameat2(parent_fd.raw(), name, new_fd.raw(), newname, flags);
 
         tryfuse!(res, reply);
         reply.ok();
@@ -888,7 +888,7 @@ impl Filesystem for CntrFs {
             let newparent_inode = tryfuse!(self.inode(newparent), reply);
             let newparent_fd = newparent_inode.fd.read();
 
-            let res = unistd::linkat(
+            let res = linkat(
                 source_fd.raw(),
                 "",
                 newparent_fd.raw(),
@@ -1115,13 +1115,10 @@ impl Filesystem for CntrFs {
         let inode = tryfuse!(self.inode(ino), reply);
         let fd = inode.fd.read();
 
-        // as unify multiple filesystems with one mountpoint, some filesystems might not
-        // support extended attributes. To still support them we lie about supporting acls
         if size == 0 {
-            let res = xattr::getxattr(&fd, inode.kind, name, &mut []);
+            let res = fuse_getxattr(&fd, inode.kind, name, &mut []);
             let size = match res {
                 Ok(val) => val,
-                Err(nix::Error::Sys(Errno::EOPNOTSUPP)) => 0,
                 Err(err) => {
                     debug!("return error {} on {}:{}", err, file!(), line!());
                     let rc = match err {
@@ -1136,10 +1133,9 @@ impl Filesystem for CntrFs {
             reply.size(size as u32);
         } else {
             let mut buf = vec![0; size as usize];
-            let res = xattr::getxattr(&fd, inode.kind, name, buf.as_mut_slice());
+            let res = fuse_getxattr(&fd, inode.kind, name, buf.as_mut_slice());
             let size = match res {
                 Ok(val) => val,
-                Err(nix::Error::Sys(Errno::EOPNOTSUPP)) => 0,
                 Err(err) => {
                     debug!("return error {} on {}:{}", err, file!(), line!());
                     let rc = match err {
@@ -1162,12 +1158,12 @@ impl Filesystem for CntrFs {
         let fd = inode.fd.read();
 
         if size == 0 {
-            let res = xattr::listxattr(&fd, inode.kind, &mut []);
+            let res = fuse_listxattr(&fd, inode.kind, &mut []);
             let size = tryfuse!(res, reply);
             reply.size(size as u32);
         } else {
             let mut buf = vec![0; size as usize];
-            let size = tryfuse!(xattr::listxattr(&fd, inode.kind, buf.as_mut_slice()), reply);
+            let size = tryfuse!(fuse_listxattr(&fd, inode.kind, buf.as_mut_slice()), reply);
             reply.data(&buf[..size]);
         }
     }
@@ -1189,10 +1185,10 @@ impl Filesystem for CntrFs {
 
         if name == POSIX_ACL_DEFAULT_XATTR {
             let mut default_acl = inode.has_default_acl.write();
-            tryfuse!(xattr::setxattr(&fd, inode.kind, name, value, flags), reply);
+            tryfuse!(fuse_setxattr(&fd, inode.kind, name, value, flags), reply);
             *default_acl = Some(true);
         } else {
-            tryfuse!(xattr::setxattr(&fd, inode.kind, name, value, flags), reply);
+            tryfuse!(fuse_setxattr(&fd, inode.kind, name, value, flags), reply);
         }
 
         reply.ok();
@@ -1206,10 +1202,10 @@ impl Filesystem for CntrFs {
 
         if name == POSIX_ACL_DEFAULT_XATTR {
             let mut default_acl = inode.has_default_acl.write();
-            tryfuse!(xattr::removexattr(&fd, inode.kind, name), reply);
+            tryfuse!(fuse_removexattr(&fd, inode.kind, name), reply);
             *default_acl = Some(false);
         } else {
-            tryfuse!(xattr::removexattr(&fd, inode.kind, name), reply);
+            tryfuse!(fuse_removexattr(&fd, inode.kind, name), reply);
         }
 
         reply.ok();
@@ -1219,7 +1215,7 @@ impl Filesystem for CntrFs {
         fsuid::set_root();
 
         let inode = tryfuse!(self.inode(ino), reply);
-        let mode = unistd::AccessMode::from_bits_truncate(mask as i32);
+        let mode = unistd::AccessFlags::from_bits_truncate(mask as i32);
         tryfuse!(
             unistd::access(fd_path(&inode.fd.read()).as_str(), mode),
             reply
@@ -1364,13 +1360,13 @@ impl Filesystem for CntrFs {
             if let Some(data) = in_data {
                 out[..data.len()].clone_from_slice(data);
             }
-            tryfuse!(ioctl::ioctl_read(fd, cmd, out.as_mut_slice()), reply);
+            tryfuse!(ioctl_read(fd, cmd, out.as_mut_slice()), reply);
             reply.ioctl(0, out.as_slice());
         } else if let Some(data) = in_data {
-            tryfuse!(ioctl::ioctl_write(fd, cmd, data), reply);
+            tryfuse!(ioctl_write(fd, cmd, data), reply);
             reply.ioctl(0, &[]);
         } else {
-            tryfuse!(ioctl::ioctl(fd, cmd), reply);
+            tryfuse!(ioctl(fd, cmd), reply);
             reply.ioctl(0, &[]);
         }
     }

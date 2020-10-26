@@ -32,7 +32,7 @@ impl error::Error for Error {
     }
 
     fn cause(&self) -> Option<&dyn error::Error> {
-        self.cause.as_ref().map(|e| &**e)
+        self.cause.as_deref()
     }
 }
 
@@ -79,7 +79,7 @@ impl From<String> for Error {
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        (self as &dyn error::Error).to_string().fmt(f)
+        write!(f, "{}", self.desc)
     }
 }
 

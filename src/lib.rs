@@ -1,4 +1,5 @@
 extern crate libc;
+#[macro_use]
 extern crate nix;
 #[macro_use]
 extern crate log;
@@ -23,6 +24,7 @@ mod capabilities;
 mod cgroup;
 mod cmd;
 mod container;
+mod dirent;
 mod dotcntr;
 mod exec;
 mod files;
@@ -30,7 +32,6 @@ pub mod fs;
 mod fsuid;
 mod fusefd;
 mod inode;
-mod ioctl;
 mod ipc;
 mod logging;
 mod lsm;
@@ -39,10 +40,8 @@ mod mountns;
 pub mod namespace;
 mod procfs;
 mod pty;
-pub mod pwd;
-mod readlink;
-mod statvfs;
+mod sys_ext;
 mod user_namespace;
-mod xattr;
 pub use attach::{attach, AttachOptions};
 pub use exec::{exec, SETCAP_EXE};
+pub use sys_ext::pwnam;

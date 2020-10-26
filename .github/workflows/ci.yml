@@ -1,0 +1,91 @@
+name: CI
+on:
+  push:
+    branches: [staging, trying]
+  pull_request:
+    branches: [master]
+    types: [opened, reopened, synchronize]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target:
+          - x86_64-unknown-linux-gnu
+          - x86_64-unknown-linux-musl
+        rust: [1.46.0]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Install rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: ${{ matrix.rust }}
+          target: ${{ matrix.target }}
+          override: true
+      - name: Ready cache
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo chown -R $(whoami):$(id -ng) ~/.cargo/
+      - name: Cache cargo
+        uses: actions/cache@v1
+        id: cache
+        with:
+          path: ~/.cargo
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml') }}
+      - name: Test
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --target ${{ matrix.target }}
+      - name: Install cargo-cache
+        uses: actions-rs/install@v0.1
+        if: steps.cache.outputs.cache-hit != 'true'
+        with:
+          crate: cargo-cache
+          use-tool-cache: true
+      - name: Cleanup cache
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: cargo cache -a
+  lint:
+    name: Linting (fmt + clippy)
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [1.46.0]
+    steps:
+      - name: Install rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+          components: rustfmt, clippy
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Ready cache
+        run: sudo chown -R $(whoami):$(id -ng) ~/.cargo/
+      - name: Cache cargo
+        uses: actions/cache@v1
+        id: cache
+        with:
+          path: ~/.cargo
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml') }}
+      - name: Clippy for almost no features
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+      - name: Format check
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: -- --check
+      - name: Install cargo-cache
+        uses: actions-rs/install@v0.1
+        if: steps.cache.outputs.cache-hit != 'true'
+        with:
+          crate: cargo-cache
+          use-tool-cache: true
+      - name: Cleanup cache
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: cargo cache -a

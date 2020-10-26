@@ -4,9 +4,9 @@ use fs;
 use ipc;
 use nix::unistd::{self, ForkResult};
 use procfs;
-use pwd;
 use std::fs::{create_dir_all, metadata};
 use std::os::unix::prelude::*;
+use sys_ext::Passwd;
 use types::{Error, Result};
 use user_namespace::IdMap;
 use void::Void;
@@ -19,7 +19,7 @@ pub struct AttachOptions {
     pub arguments: Vec<String>,
     pub container_name: String,
     pub container_types: Vec<Box<dyn container::Container>>,
-    pub effective_user: Option<pwd::Passwd>,
+    pub effective_user: Option<Passwd>,
 }
 
 pub fn attach(opts: &AttachOptions) -> Result<Void> {
@@ -81,7 +81,8 @@ pub fn attach(opts: &AttachOptions) -> Result<Void> {
 
     let (parent_sock, child_sock) = tryfmt!(ipc::socket_pair(), "failed to set up ipc");
 
-    match tryfmt!(unistd::fork(), "failed to fork") {
+    let res = unsafe { unistd::fork() };
+    match tryfmt!(res, "failed to fork") {
         ForkResult::Parent { child } => parent::run(child, &parent_sock, cntrfs),
         ForkResult::Child => {
             let child_opts = child::ChildOptions {

@@ -11,6 +11,7 @@ use nix::unistd;
 use nix::unistd::{Gid, Uid};
 use procfs::ProcStatus;
 use pty;
+use std::convert::TryFrom;
 use std::env;
 use std::ffi::CStr;
 use std::fs::File;
@@ -156,7 +157,7 @@ pub fn run(options: &ChildOptions) -> Result<Void> {
     let status = tryfmt!(cmd.run(), "");
     if let Some(signum) = status.signal() {
         let signal = tryfmt!(
-            Signal::from_c_int(signum),
+            Signal::try_from(signum),
             "invalid signal received: {}",
             signum
         );
