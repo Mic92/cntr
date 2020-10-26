@@ -38,8 +38,9 @@ fn main() {
         println!("USAGE: {} from_path to_path", args[0]);
         process::exit(1);
     }
+    let res = unsafe { unistd::fork().unwrap() };
 
-    if let unistd::ForkResult::Parent { .. } = unistd::fork().unwrap() {
+    if let unistd::ForkResult::Parent { .. } = res {
         return;
     }
 
