@@ -1,0 +1,32 @@
+---
+kind: pipeline
+name: nixos-tests
+
+steps:
+- name: test
+  image: busybox
+  environment:
+    NIX_REMOTE: daemon
+    PATH: /nix/var/nix/profiles/system/sw/bin/
+    SSL_CERT_FILE: /nix/var/nix/profiles/system/etc/ssl/certs/ca-certificates.crt
+    GIT_SSL_CAINFO: /nix/var/nix/profiles/system/etc/ssl/certs/ca-certificates.crt
+    CURL_CA_BUNDLE: /nix/var/nix/profiles/system/etc/ssl/certs/ca-certificates.crt
+    PAGER: cat
+    USER: root
+  volumes:
+    - name: socket
+      path: /nix/var/nix/daemon-socket/socket
+  volumes:
+    - name: nixstore
+      path: /nix
+  commands:
+  - nix flake check
+volumes:
+- name: nixstore
+  host:
+    path: /nix
+---
+kind: signature
+hmac: 63370182a16a0e4500a7a04d1592e9b078095505cfc738c9cbce210484514be5
+
+...
