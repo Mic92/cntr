@@ -8,25 +8,29 @@ steps:
   environment:
     NIX_REMOTE: daemon
     PATH: /nix/var/nix/profiles/system/sw/bin/
-    SSL_CERT_FILE: /nix/var/nix/profiles/system/etc/ssl/certs/ca-certificates.crt
-    GIT_SSL_CAINFO: /nix/var/nix/profiles/system/etc/ssl/certs/ca-certificates.crt
-    CURL_CA_BUNDLE: /nix/var/nix/profiles/system/etc/ssl/certs/ca-certificates.crt
     PAGER: cat
     USER: root
   volumes:
-    - name: socket
-      path: /nix/var/nix/daemon-socket/socket
-  volumes:
     - name: nixstore
       path: /nix
+    - name: nixconf
+      path: /etc/nix
+    - name: sslcerts
+      path: /etc/ssl
   commands:
   - nix flake check
 volumes:
 - name: nixstore
   host:
     path: /nix
+- name: nixconf
+  host:
+    path: /nix/var/nix/profiles/system/etc/nix
+- name: sslcerts
+  host:
+    path: /nix/var/nix/profiles/system/etc/ssl
 ---
 kind: signature
-hmac: 8ab076dafc48eea4cf56d3030a19778fc4c2e29ee63e48be71d8c75a26991187
+hmac: b46736b9787f499301217e1a4022677a32e66fec72a33d02a174aa2485b3c1d2
 
 ...
