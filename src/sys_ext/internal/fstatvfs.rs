@@ -1,4 +1,3 @@
-use libc;
 use nix::errno::Errno;
 use nix::Result;
 use std::mem;

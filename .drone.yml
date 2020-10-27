@@ -18,7 +18,7 @@ steps:
     - name: sslcerts
       path: /etc/ssl
   commands:
-  - nix flake check
+  - nix shell 'nixpkgs#git' -c nix flake check
 volumes:
 - name: nixstore
   host:
@@ -31,6 +31,6 @@ volumes:
     path: /nix/var/nix/profiles/system/etc/ssl
 ---
 kind: signature
-hmac: b46736b9787f499301217e1a4022677a32e66fec72a33d02a174aa2485b3c1d2
+hmac: 94d915bf40b1103d1dbb434c7f2bdba2a9b8e1d30d67462e6a7aee82e0b2a121
 
 ...

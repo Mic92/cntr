@@ -1,6 +1,4 @@
 use core::num::ParseIntError;
-use log;
-use nix;
 use std::boxed::Box;
 use std::{error, fmt, io, result};
 
@@ -51,7 +49,6 @@ macro_rules! from {
 
 from!(io::Error);
 from!(nix::Error);
-from!(log::SetLoggerError);
 from!(ParseIntError);
 
 impl From<(Error, String)> for Error {

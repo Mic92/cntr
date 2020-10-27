@@ -1,12 +1,13 @@
-use mount_context;
 use nix::unistd::Pid;
-use procfs;
 use std::fs::{File, OpenOptions};
 use std::io::prelude::*;
 use std::io::BufReader;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
-use types::{Error, Result};
+
+use crate::mount_context;
+use crate::procfs;
+use crate::types::{Error, Result};
 
 #[derive(PartialEq, Eq)]
 enum LSMKind {

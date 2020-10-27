@@ -1,14 +1,3 @@
-extern crate cntr;
-extern crate fuse;
-extern crate libc;
-extern crate nix;
-extern crate thread_scoped;
-
-#[cfg(feature = "profiling")]
-extern crate cpuprofiler;
-
-extern crate parking_lot;
-
 use cntr::fs::{CntrFs, CntrMountOptions};
 
 #[cfg(feature = "profiling")]
@@ -44,20 +33,12 @@ fn main() {
         return;
     }
 
-    if cfg!(feature = "splice_read") {
-        println!("enable splice read");
-    }
-    if cfg!(feature = "splice_write") {
-        println!("enable splice write");
-    }
     #[cfg(feature = "profiling")]
     PROFILER.lock().unwrap().start("./cntrfs.profile").unwrap();
 
     let cntr = CntrFs::new(
         &CntrMountOptions {
             prefix: &args[1],
-            splice_read: cfg!(feature = "splice_read"),
-            splice_write: cfg!(feature = "splice_write"),
             uid_map: cntr::DEFAULT_ID_MAP,
             gid_map: cntr::DEFAULT_ID_MAP,
             effective_uid: None,

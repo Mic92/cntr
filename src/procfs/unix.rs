@@ -2,7 +2,8 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::io::BufReader;
 use std::path::PathBuf;
-use types::{Error, Result};
+
+use crate::types::{Error, Result};
 
 #[allow(dead_code)]
 pub fn read_open_sockets() -> Result<Vec<PathBuf>> {

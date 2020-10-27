@@ -1,5 +1,3 @@
-use libc;
-use nix;
 use nix::errno::Errno;
 use std::os::unix::prelude::RawFd;
 

@@ -1,6 +1,5 @@
-use libc;
+use log::warn;
 use nix::{self, unistd};
-use procfs;
 use std::collections::HashMap;
 use std::env;
 use std::ffi::{CStr, CString, OsStr, OsString};
@@ -11,7 +10,9 @@ use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus};
-use types::{Error, Result};
+
+use crate::procfs;
+use crate::types::{Error, Result};
 
 pub struct Cmd {
     environment: HashMap<OsString, OsString>,

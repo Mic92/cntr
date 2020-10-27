@@ -1,11 +1,12 @@
 use nix::sched;
 use nix::unistd;
-use procfs;
 use std::collections::HashSet;
 use std::fs::{self, File};
 use std::os::unix::prelude::*;
 use std::path::PathBuf;
-use types::{Error, Result};
+
+use crate::procfs;
+use crate::types::{Error, Result};
 
 pub const MOUNT: Kind = Kind { name: "mnt" };
 pub const UTS: Kind = Kind { name: "uts" };

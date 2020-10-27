@@ -1,25 +1,19 @@
-use concurrent_hashmap::ConcHashMap;
-use dirent;
-use dotcntr::DotcntrDir;
-use files::{fd_path, Fd, FdState};
-use fsuid;
-use fuse::{
+use cntr_fuse::{
     self, FileAttr, FileType, Filesystem, ReplyAttr, ReplyCreate, ReplyData, ReplyEmpty,
     ReplyEntry, ReplyIoctl, ReplyLseek, ReplyOpen, ReplyRead, ReplyStatfs, ReplyWrite, ReplyXattr,
     Request,
 };
-use fusefd;
-use inode::Inode;
+use concurrent_hashmap::ConcHashMap;
 use libc::{self, c_long, dev_t};
+use log::debug;
 use nix::errno::Errno;
-use nix::fcntl::{self, AtFlags, OFlag, SpliceFFlags};
+use nix::fcntl::{self, AtFlags, OFlag};
 use nix::sys::stat;
 use nix::sys::stat::SFlag;
 use nix::sys::time::{TimeSpec as NixTimeSpec, TimeValLike};
 use nix::sys::uio::{pread, pwrite};
 use nix::unistd::{Gid, Uid};
 use nix::{self, unistd};
-use num_cpus;
 use parking_lot::{Mutex, RwLock};
 use std::cmp;
 use std::collections::HashMap;
@@ -30,17 +24,24 @@ use std::mem;
 use std::os::unix::prelude::*;
 use std::path::Path;
 use std::sync::Arc;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::vec::Vec;
 use std::{u32, u64};
-use sys_ext::{
+use thread_scoped::{scoped, JoinGuard};
+
+use crate::dirent;
+use crate::dotcntr::DotcntrDir;
+use crate::files::{fd_path, Fd, FdState};
+use crate::fsuid;
+use crate::fusefd;
+use crate::inode::Inode;
+use crate::sys_ext::{
     fchownat, fstatvfs, fuse_getxattr, fuse_listxattr, fuse_readlinkat, fuse_removexattr,
     fuse_setxattr, futimens, ioctl, ioctl_read, ioctl_write, linkat, mknodat, renameat2, setrlimit,
     utimensat, Rlimit, UtimeSpec,
 };
-use thread_scoped::{scoped, JoinGuard};
-use time::Timespec;
-use types::{Error, Result};
-use user_namespace::IdMap;
+use crate::types::{Error, Result};
+use crate::user_namespace::IdMap;
 
 const FH_MAGIC: char = 'F';
 const DIRP_MAGIC: char = 'D';
@@ -90,13 +91,11 @@ pub struct CntrFs {
     fuse_fd: RawFd,
     uid_map: IdMap,
     gid_map: IdMap,
-    splice_read: bool,
-    splice_write: bool,
 }
 
 enum ReplyDirectory {
-    Directory(fuse::ReplyDirectory),
-    DirectoryPlus(fuse::ReplyDirectoryPlus),
+    Directory(cntr_fuse::ReplyDirectory),
+    DirectoryPlus(cntr_fuse::ReplyDirectoryPlus),
 }
 
 impl ReplyDirectory {
@@ -115,7 +114,7 @@ impl ReplyDirectory {
     }
 }
 
-const TTL: Timespec = Timespec { sec: 1, nsec: 0 };
+const TTL: Duration = Duration::from_secs(1);
 
 macro_rules! tryfuse {
     ($result:expr, $reply:expr) => {
@@ -142,8 +141,6 @@ fn posix_fadvise(fd: RawFd) -> nix::Result<()> {
 
 pub struct CntrMountOptions<'a> {
     pub prefix: &'a str,
-    pub splice_read: bool,
-    pub splice_write: bool,
     pub uid_map: IdMap,
     pub gid_map: IdMap,
     pub effective_uid: Option<Uid>,
@@ -205,7 +202,7 @@ impl CntrFs {
 
         Ok(CntrFs {
             prefix: String::from(options.prefix),
-            root_inode: open_static_dnode(fuse::FUSE_ROOT_ID, Path::new(options.prefix))?,
+            root_inode: open_static_dnode(cntr_fuse::FUSE_ROOT_ID, Path::new(options.prefix))?,
             dotcntr: Arc::new(dotcntr),
             inode_mapping: Arc::new(Mutex::new(HashMap::<InodeKey, u64>::new())),
             inodes: Arc::new(ConcHashMap::<u64, Arc<Inode>>::new()),
@@ -216,8 +213,6 @@ impl CntrFs {
             uid_map: options.uid_map,
             gid_map: options.gid_map,
             fuse_fd: fuse_fd.into_raw_fd(),
-            splice_read: options.splice_read,
-            splice_write: options.splice_write,
             effective_uid: options.effective_uid,
             effective_gid: options.effective_gid,
         })
@@ -277,8 +272,6 @@ impl CntrFs {
                 fuse_fd: self.fuse_fd,
                 inode_mapping: Arc::clone(&self.inode_mapping),
                 inodes: Arc::clone(&self.inodes),
-                splice_read: self.splice_read,
-                splice_write: self.splice_write,
                 inode_counter: Arc::clone(&self.inode_counter),
                 uid_map: self.uid_map,
                 gid_map: self.gid_map,
@@ -287,11 +280,10 @@ impl CntrFs {
             };
 
             let max_background = num_sessions as u16;
-            let res = fuse::Session::new_from_fd(
+            let res = cntr_fuse::Session::new_from_fd(
                 cntrfs,
                 self.fuse_fd,
                 Path::new(""),
-                self.splice_write,
                 max_background,
                 max_background,
             );
@@ -342,9 +334,9 @@ impl CntrFs {
         mode: Option<u32>,
         uid: Option<u32>,
         gid: Option<u32>,
-        size: Option<i64>,
-        atime: fuse::UtimeSpec,
-        mtime: fuse::UtimeSpec,
+        size: Option<u64>,
+        atime: cntr_fuse::UtimeSpec,
+        mtime: cntr_fuse::UtimeSpec,
     ) -> nix::Result<()> {
         if let Some(bits) = mode {
             let mode = stat::Mode::from_bits_truncate(bits);
@@ -359,23 +351,23 @@ impl CntrFs {
         }
 
         if let Some(s) = size {
-            unistd::ftruncate(fd.raw(), s)?;
+            unistd::ftruncate(fd.raw(), s as i64)?;
         }
-        if mtime != fuse::UtimeSpec::Omit || atime != fuse::UtimeSpec::Omit {
+        if mtime != cntr_fuse::UtimeSpec::Omit || atime != cntr_fuse::UtimeSpec::Omit {
             let inode = self.inode(ino)?;
             set_time(&inode, fd, &mtime, &atime)?;
         }
         Ok(())
     }
 
-    fn generic_readdir(&mut self, ino: u64, fh: u64, offset: i64, mut reply: ReplyDirectory) {
+    fn generic_readdir(&mut self, ino: u64, fh: u64, offset: u64, mut reply: ReplyDirectory) {
         fsuid::set_root();
 
         let dirp = unsafe { &mut (*(fh as *mut DirP)) };
         assert!(dirp.magic == DIRP_MAGIC);
 
-        if offset != dirp.offset {
-            dirent::seekdir(&mut dirp.dp, offset);
+        if (offset as i64) != dirp.offset {
+            dirent::seekdir(&mut dirp.dp, offset as i64);
             dirp.entry = None;
             dirp.offset = 0;
         }
@@ -427,13 +419,13 @@ impl CntrFs {
     }
 
     fn attr_from_stat(&self, attr: stat::FileStat) -> FileAttr {
-        let ctime = Timespec::new(attr.st_ctime, attr.st_ctime_nsec as i32);
+        let ctime = UNIX_EPOCH + Duration::new(attr.st_ctime as u64, attr.st_ctime_nsec as u32);
         FileAttr {
             ino: attr.st_ino, // replaced by ino pointer
-            size: attr.st_size,
+            size: attr.st_size as u64,
             blocks: attr.st_blocks as u64,
-            atime: Timespec::new(attr.st_atime, attr.st_atime_nsec as i32),
-            mtime: Timespec::new(attr.st_mtime, attr.st_mtime_nsec as i32),
+            atime: UNIX_EPOCH + Duration::new(attr.st_atime as u64, attr.st_atime_nsec as u32),
+            mtime: UNIX_EPOCH + Duration::new(attr.st_mtime as u64, attr.st_mtime_nsec as u32),
             ctime,
             crtime: ctime,
             uid: self.uid_map.map_id_down(attr.st_uid),
@@ -450,7 +442,7 @@ impl CntrFs {
     fn inode(&self, ino: u64) -> nix::Result<Arc<Inode>> {
         assert!(ino > 0);
 
-        if ino == fuse::FUSE_ROOT_ID {
+        if ino == cntr_fuse::FUSE_ROOT_ID {
             Ok(Arc::clone(&self.root_inode))
         } else {
             match self.inodes.find(&ino) {
@@ -472,7 +464,7 @@ impl CntrFs {
         counter.next_number += 1;
 
         if next_number == 0 {
-            counter.next_number = fuse::FUSE_ROOT_ID + 1;
+            counter.next_number = cntr_fuse::FUSE_ROOT_ID + 1;
             counter.generation += 1;
         }
 
@@ -531,7 +523,7 @@ impl CntrFs {
     pub fn lookup_inode(&mut self, parent: u64, name: &OsStr) -> nix::Result<(FileAttr, u64)> {
         fsuid::set_root();
 
-        if parent == fuse::FUSE_ROOT_ID && name == ".cntr" {
+        if parent == cntr_fuse::FUSE_ROOT_ID && name == ".cntr" {
             let dotcntr = Arc::clone(&self.dotcntr);
             if let Some(ref dotcntr) = *dotcntr {
                 return self.lookup_from_fd(LookupFile::Borrow(&dotcntr.file));
@@ -558,12 +550,14 @@ fn get_filehandle<'a>(fh: u64) -> &'a Fh {
     handle
 }
 
-fn to_utimespec(time: &fuse::UtimeSpec) -> UtimeSpec {
+fn to_utimespec(time: &cntr_fuse::UtimeSpec) -> UtimeSpec {
     match *time {
-        fuse::UtimeSpec::Omit => UtimeSpec::Omit,
-        fuse::UtimeSpec::Now => UtimeSpec::Now,
-        fuse::UtimeSpec::Time(time) => {
-            let t = NixTimeSpec::seconds(time.sec) + NixTimeSpec::nanoseconds(i64::from(time.nsec));
+        cntr_fuse::UtimeSpec::Omit => UtimeSpec::Omit,
+        cntr_fuse::UtimeSpec::Now => UtimeSpec::Now,
+        cntr_fuse::UtimeSpec::Time(time) => {
+            let d = time.duration_since(SystemTime::UNIX_EPOCH).unwrap();
+            let t = NixTimeSpec::seconds(d.as_secs() as i64)
+                + NixTimeSpec::nanoseconds(d.subsec_nanos() as i64);
             UtimeSpec::Time(t)
         }
     }
@@ -572,8 +566,8 @@ fn to_utimespec(time: &fuse::UtimeSpec) -> UtimeSpec {
 fn set_time(
     inode: &Inode,
     fd: &Fd,
-    mtime: &fuse::UtimeSpec,
-    atime: &fuse::UtimeSpec,
+    mtime: &cntr_fuse::UtimeSpec,
+    atime: &cntr_fuse::UtimeSpec,
 ) -> nix::Result<()> {
     if inode.kind == FileType::Symlink {
         // FIXME: fs_perms 660 99 99 100 99 t 1 return NOPERM for
@@ -681,14 +675,14 @@ impl Filesystem for CntrFs {
         mode: Option<u32>,
         uid: Option<u32>,
         gid: Option<u32>,
-        size: Option<i64>,
-        atime: fuse::UtimeSpec,
-        mtime: fuse::UtimeSpec,
+        size: Option<u64>,
+        atime: cntr_fuse::UtimeSpec,
+        mtime: cntr_fuse::UtimeSpec,
         fh: Option<u64>,
-        _crtime: Option<Timespec>,   // only mac os x
-        _chgtime: Option<Timespec>,  // only mac os x
-        _bkuptime: Option<Timespec>, // only mac os x
-        _flags: Option<u32>,         // only mac os x
+        _crtime: Option<SystemTime>,   // only mac os x
+        _chgtime: Option<SystemTime>,  // only mac os x
+        _bkuptime: Option<SystemTime>, // only mac os x
+        _flags: Option<u32>,           // only mac os x
         reply: ReplyAttr,
     ) {
         fsuid::set_root();
@@ -924,7 +918,10 @@ impl Filesystem for CntrFs {
         // avoid double caching
         tryfuse!(posix_fadvise(res), reply);
         let fh = Fh::new(Fd::new(res, FdState::from(oflags)));
-        reply.opened(Box::into_raw(fh) as u64, fuse::consts::FOPEN_KEEP_CACHE); // freed by close
+        reply.opened(
+            Box::into_raw(fh) as u64,
+            cntr_fuse::consts::FOPEN_KEEP_CACHE,
+        ); // freed by close
     }
 
     fn read(
@@ -938,15 +935,11 @@ impl Filesystem for CntrFs {
     ) {
         fsuid::set_root();
 
-        if self.splice_read {
-            reply.fd(get_filehandle(fh).fd.raw(), offset, size);
-        } else {
-            let mut v = vec![0; size as usize];
-            let buf = v.as_mut_slice();
-            tryfuse!(pread(get_filehandle(fh).fd.raw(), buf, offset), reply);
+        let mut v = vec![0; size as usize];
+        let buf = v.as_mut_slice();
+        tryfuse!(pread(get_filehandle(fh).fd.raw(), buf, offset), reply);
 
-            reply.data(buf);
-        }
+        reply.data(buf);
     }
 
     fn write(
@@ -954,32 +947,15 @@ impl Filesystem for CntrFs {
         _req: &Request,
         _ino: u64,
         fh: u64,
-        mut offset: i64,
-        _fd: Option<RawFd>,
+        offset: i64,
         data: &[u8],
-        size: u32,
         _flags: u32,
         reply: ReplyWrite,
     ) {
         fsuid::set_root();
         let dst_fd = get_filehandle(fh).fd.raw();
 
-        let written = if let Some(fd) = _fd {
-            tryfuse!(
-                fcntl::splice(
-                    fd,
-                    None,
-                    dst_fd,
-                    Some(&mut offset),
-                    size as usize,
-                    // SPLICE_F_MOVE is a no-op in the kernel at the moment according to manpage
-                    SpliceFFlags::SPLICE_F_MOVE | SpliceFFlags::SPLICE_F_NONBLOCK,
-                ),
-                reply
-            )
-        } else {
-            tryfuse!(pwrite(dst_fd, data, offset), reply)
-        };
+        let written = tryfuse!(pwrite(dst_fd, data, offset), reply);
 
         reply.written(written as u32);
     }
@@ -1051,9 +1027,9 @@ impl Filesystem for CntrFs {
         ino: u64,
         fh: u64,
         offset: i64,
-        reply: fuse::ReplyDirectory,
+        reply: cntr_fuse::ReplyDirectory,
     ) {
-        self.generic_readdir(ino, fh, offset, ReplyDirectory::Directory(reply))
+        self.generic_readdir(ino, fh, offset as u64, ReplyDirectory::Directory(reply))
     }
 
     fn readdirplus(
@@ -1061,8 +1037,8 @@ impl Filesystem for CntrFs {
         _req: &Request,
         ino: u64,
         fh: u64,
-        offset: i64,
-        reply: fuse::ReplyDirectoryPlus,
+        offset: u64,
+        reply: cntr_fuse::ReplyDirectoryPlus,
     ) {
         self.generic_readdir(ino, fh, offset, ReplyDirectory::DirectoryPlus(reply))
     }
@@ -1316,17 +1292,17 @@ impl Filesystem for CntrFs {
         _req: &Request,
         _ino: u64,
         fh: u64,
-        offset: i64,
-        length: i64,
-        mode: i32,
+        offset: u64,
+        length: u64,
+        mode: u32,
         reply: ReplyEmpty,
     ) {
         fsuid::set_root();
 
         let handle = get_filehandle(fh);
-        let flags = fcntl::FallocateFlags::from_bits_truncate(mode);
+        let flags = fcntl::FallocateFlags::from_bits_truncate(mode as i32);
         tryfuse!(
-            fcntl::fallocate(handle.fd.raw(), flags, offset, length),
+            fcntl::fallocate(handle.fd.raw(), flags, offset as i64, length as i64),
             reply
         );
         reply.ok();
@@ -1345,7 +1321,7 @@ impl Filesystem for CntrFs {
     ) {
         fsuid::set_root();
 
-        let fd = if (flags & fuse::consts::FUSE_IOCTL_DIR) > 0 {
+        let fd = if (flags & cntr_fuse::consts::FUSE_IOCTL_DIR) > 0 {
             let dirp = unsafe { &mut (*(fh as *mut DirP)) };
             assert!(dirp.magic == DIRP_MAGIC);
             tryfuse!(dirent::dirfd(&mut dirp.dp), reply)

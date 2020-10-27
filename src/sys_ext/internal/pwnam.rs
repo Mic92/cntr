@@ -1,4 +1,3 @@
-use libc;
 use nix::errno::Errno;
 use nix::unistd::{Gid, Uid};
 use nix::{Error, NixPath, Result};

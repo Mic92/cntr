@@ -13,7 +13,8 @@ use nix::{self, fcntl, unistd};
 use std::fs::File;
 use std::io::{Read, Write};
 use std::os::unix::prelude::*;
-use types::{Error, Result};
+
+use crate::types::{Error, Result};
 
 enum FilePairState {
     Write,

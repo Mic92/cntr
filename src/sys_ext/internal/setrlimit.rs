@@ -1,7 +1,5 @@
 pub use libc::rlimit64 as Rlimit;
 
-use libc;
-use nix;
 use nix::errno::Errno;
 
 #[cfg(not(any(target_env = "musl")))]

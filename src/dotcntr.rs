@@ -1,19 +1,19 @@
-use capabilities;
 use libc::pid_t;
 use nix::fcntl::{self, OFlag};
 use nix::sys::stat;
 use nix::unistd::Pid;
-use procfs::ProcStatus;
 use std::fs::{self, File};
 use std::io::prelude::*;
 use std::os::unix::prelude::*;
-use tempdir::TempDir;
-use types::{Error, Result};
+
+use crate::capabilities;
+use crate::procfs::ProcStatus;
+use crate::types::{Error, Result};
 
 /// Hidden directory with CAP_CHROOT enabled cntr-exec binary
 pub struct DotcntrDir {
     pub file: File,
-    pub dir: TempDir,
+    pub dir: tempfile::TempDir,
 }
 
 impl DotcntrDir {
@@ -48,10 +48,7 @@ impl DotcntrDir {
 }
 
 pub fn create(process_status: &ProcStatus) -> Result<DotcntrDir> {
-    let dotcntr_dir = tryfmt!(
-        TempDir::new("dotcntr"),
-        "failed to create temporary directory"
-    );
+    let dotcntr_dir = tryfmt!(tempfile::tempdir(), "failed to create temporary directory");
     let dotcntr_fd = tryfmt!(
         fcntl::open(
             dotcntr_dir.path(),
