@@ -21,7 +21,6 @@ enum Kind {
 
 #[derive(Clone, Copy)]
 pub struct IdMap {
-    kind: Kind,
     nr_extents: usize,
     extent: [Extent; 5], // 5 == UID_GID_MAP_MAX_EXTENTS
 }
@@ -50,7 +49,6 @@ const DEFAULT_EXTENT: Extent = Extent {
 };
 
 pub const DEFAULT_ID_MAP: IdMap = IdMap {
-    kind: Kind::UidMap,
     nr_extents: 1,
     extent: [DEFAULT_EXTENT; 5],
 };
@@ -62,7 +60,6 @@ impl IdMap {
         let f = tryfmt!(File::open(&path), "failed to open {}", path.display());
         let buf_reader = BufReader::new(f);
         let mut id_map = IdMap {
-            kind,
             nr_extents: 0,
             extent: [DEFAULT_EXTENT; 5],
         };
