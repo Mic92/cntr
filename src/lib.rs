@@ -27,6 +27,7 @@ mod procfs;
 mod pty;
 mod sys_ext;
 mod user_namespace;
+mod tmp;
 pub use attach::{attach, AttachOptions};
 pub use exec::{exec, SETCAP_EXE};
 pub use sys_ext::pwnam;

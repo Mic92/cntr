@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use crate::fs::CntrFs;
 use crate::ipc;
 use crate::namespace;
+use crate::tmp;
 use crate::types::{Error, Result};
 
 pub struct MountNamespace {
@@ -39,9 +40,9 @@ impl MountNamespace {
         let path = PathBuf::from("/tmp");
         tryfmt!(mkdir_p(&path), "failed to create /tmp");
 
-        let mountpoint = tryfmt!(tempfile::tempdir(), "failed to create temporary mountpoint");
+        let mountpoint = tryfmt!(tmp::tempdir(), "failed to create temporary mountpoint");
 
-        let temp_mountpoint = tryfmt!(tempfile::tempdir(), "failed to create temporary mountpoint");
+        let temp_mountpoint = tryfmt!(tmp::tempdir(), "failed to create temporary mountpoint");
 
         tryfmt!(
             sched::unshare(CloneFlags::CLONE_NEWNS),
