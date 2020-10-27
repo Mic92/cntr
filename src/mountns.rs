@@ -7,7 +7,6 @@ use std::fs::{create_dir_all, metadata, remove_dir};
 use std::io;
 use std::os::unix::prelude::*;
 use std::path::{Path, PathBuf};
-use tempdir::TempDir;
 
 use crate::fs::CntrFs;
 use crate::ipc;
@@ -40,15 +39,9 @@ impl MountNamespace {
         let path = PathBuf::from("/tmp");
         tryfmt!(mkdir_p(&path), "failed to create /tmp");
 
-        let mountpoint = tryfmt!(
-            TempDir::new("cntrfs"),
-            "failed to create temporary mountpoint"
-        );
+        let mountpoint = tryfmt!(tempfile::tempdir(), "failed to create temporary mountpoint");
 
-        let temp_mountpoint = tryfmt!(
-            TempDir::new("cntrfs-temp"),
-            "failed to create temporary mountpoint"
-        );
+        let temp_mountpoint = tryfmt!(tempfile::tempdir(), "failed to create temporary mountpoint");
 
         tryfmt!(
             sched::unshare(CloneFlags::CLONE_NEWNS),
