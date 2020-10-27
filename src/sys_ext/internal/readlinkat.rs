@@ -1,6 +1,5 @@
-use libc;
 use nix::errno::Errno;
-use nix::{self, NixPath};
+use nix::NixPath;
 use std::ffi::{OsStr, OsString};
 use std::os::unix::prelude::*;
 

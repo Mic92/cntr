@@ -1,15 +1,15 @@
-use files::{fd_path, Fd, FdState};
-use fs::POSIX_ACL_DEFAULT_XATTR;
-use fsuid;
-use fuse::FileType;
-use nix;
+use cntr_fuse::FileType;
 use nix::fcntl;
 use nix::fcntl::OFlag;
 use nix::sys::stat;
-use parking_lot::RwLock;
+use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use std::ffi::OsStr;
 use std::path::Path;
-use sys_ext::fuse_getxattr;
+
+use crate::files::{fd_path, Fd, FdState};
+use crate::fs::POSIX_ACL_DEFAULT_XATTR;
+use crate::fsuid;
+use crate::sys_ext::fuse_getxattr;
 
 pub struct Inode {
     pub fd: RwLock<Fd>,
@@ -26,7 +26,7 @@ impl Inode {
         if fd.state >= *state {
             return Ok(());
         }
-        let mut fd = fd.upgrade();
+        let mut fd = RwLockUpgradableReadGuard::upgrade(fd);
 
         let perm = if *state == FdState::ReadWritable {
             OFlag::O_RDWR
@@ -53,7 +53,7 @@ impl Inode {
         if let Some(s) = *state {
             return Ok(s);
         }
-        let mut state = state.upgrade();
+        let mut state = RwLockUpgradableReadGuard::upgrade(state);
 
         self.upgrade_fd(&FdState::Readable)?;
         let fd = self.fd.read();

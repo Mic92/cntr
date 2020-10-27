@@ -1,9 +1,10 @@
 use nix::unistd::Pid;
-use procfs;
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::BufReader;
-use types::{Error, Result};
+
+use crate::procfs;
+use crate::types::{Error, Result};
 
 //$ cat /proc/self/mounts
 // tmpfs /proc/kcore tmpfs rw,context="system_u:object_r:container_file_t:s0:c125,c287",nosuid,mode=755 0 0

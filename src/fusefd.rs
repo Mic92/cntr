@@ -3,7 +3,8 @@ use nix::sys::stat::{self, Mode, SFlag};
 use nix::{self, errno, fcntl};
 use std::fs::File;
 use std::os::unix::prelude::*;
-use types::{Error, Result};
+
+use crate::types::{Error, Result};
 
 pub fn open() -> Result<File> {
     let res = fcntl::open("/dev/fuse", OFlag::O_RDWR, stat::Mode::empty());

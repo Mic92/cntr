@@ -1,6 +1,7 @@
 use nix::unistd::Pid;
 use std::fmt::Debug;
-use types::{Error, Result};
+
+use crate::types::{Error, Result};
 
 mod command;
 mod docker;

@@ -1,10 +1,10 @@
-use nix;
 use nix::errno::Errno;
 use nix::sys::socket::*;
 use nix::sys::uio::IoVec;
 use std::fs::File;
 use std::os::unix::prelude::*;
-use types::{Error, Result};
+
+use crate::types::{Error, Result};
 
 pub struct Socket {
     fd: File,

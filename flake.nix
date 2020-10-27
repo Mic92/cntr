@@ -18,7 +18,8 @@
       };
       defaultPackage = self.packages.${system}.cntr;
       devShell = pkgs.mkShell {
-        buildInputs = [ pkgs.cargo pkgs.rustc ];
+        buildInputs = [ pkgs.cargo pkgs.rustc pkgs.clippy ];
+        #buildInputs = [ pkgs.pkgsMusl.cargo pkgs.pkgsMusl.rustc ];
       };
     })) // {
     checks.x86_64-linux = let

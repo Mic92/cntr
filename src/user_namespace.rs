@@ -1,9 +1,10 @@
 use nix::unistd::Pid;
-use procfs;
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::BufReader;
-use types::{Error, Result};
+
+use crate::procfs;
+use crate::types::{Error, Result};
 
 #[derive(Clone, Copy, Debug)]
 struct Extent {
@@ -18,7 +19,7 @@ enum Kind {
     GidMap,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub struct IdMap {
     kind: Kind,
     nr_extents: usize,

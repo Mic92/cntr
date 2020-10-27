@@ -6,7 +6,8 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::io::BufReader;
 use std::path::PathBuf;
-use types::{Error, Result};
+
+use crate::types::{Error, Result};
 
 mod unix;
 

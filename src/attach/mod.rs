@@ -1,15 +1,16 @@
-use container;
-use dotcntr;
-use fs;
-use ipc;
 use nix::unistd::{self, ForkResult};
-use procfs;
 use std::fs::{create_dir_all, metadata};
 use std::os::unix::prelude::*;
-use sys_ext::Passwd;
-use types::{Error, Result};
-use user_namespace::IdMap;
 use void::Void;
+
+use crate::container;
+use crate::dotcntr;
+use crate::fs;
+use crate::ipc;
+use crate::procfs;
+use crate::sys_ext::Passwd;
+use crate::types::{Error, Result};
+use crate::user_namespace::IdMap;
 
 mod child;
 mod parent;
@@ -62,8 +63,6 @@ pub fn attach(opts: &AttachOptions) -> Result<Void> {
         fs::CntrFs::new(
             &fs::CntrMountOptions {
                 prefix: "/",
-                splice_read: cfg!(feature = "splice_read"),
-                splice_write: false,
                 uid_map,
                 gid_map,
                 effective_uid,

@@ -1,15 +1,15 @@
 use libc::{self, c_int};
-use nix;
 use nix::errno::Errno;
-use procfs;
 use std::fs::File;
 use std::io::Read;
 use std::mem;
 use std::path::Path;
 use std::ptr;
 use std::slice;
-use sys_ext::{prctl, setxattr};
-use types::{Error, Result};
+
+use crate::procfs;
+use crate::sys_ext::{prctl, setxattr};
+use crate::types::{Error, Result};
 
 pub const _LINUX_CAPABILITY_VERSION_1: u32 = 0x1998_0330;
 pub const _LINUX_CAPABILITY_VERSION_2: u32 = 0x2007_1026;

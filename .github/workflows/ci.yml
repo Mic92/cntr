@@ -71,7 +71,7 @@ jobs:
         with:
           path: ~/.cargo
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml') }}
-      - name: Clippy for almost no features
+      - name: Clippy
         uses: actions-rs/cargo@v1
         with:
           command: clippy

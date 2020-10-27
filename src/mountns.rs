@@ -1,17 +1,18 @@
-use fs::CntrFs;
-use ipc;
-use libc;
-use namespace;
+use log::warn;
 use nix::mount::MsFlags;
 use nix::sched::CloneFlags;
-use nix::{mount, sched, unistd};
+use nix::{cmsg_space, mount, sched, unistd};
 use std::ffi::OsStr;
 use std::fs::{create_dir_all, metadata, remove_dir};
 use std::io;
 use std::os::unix::prelude::*;
 use std::path::{Path, PathBuf};
 use tempdir::TempDir;
-use types::{Error, Result};
+
+use crate::fs::CntrFs;
+use crate::ipc;
+use crate::namespace;
+use crate::types::{Error, Result};
 
 pub struct MountNamespace {
     old_namespace: namespace::Namespace,

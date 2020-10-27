@@ -1,4 +1,3 @@
-use nix;
 use nix::errno::Errno;
 use nix::sys::stat;
 use std::os::unix::prelude::RawFd;
