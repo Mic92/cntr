@@ -24,6 +24,7 @@ thread-scoped = "1.0.*"
 [dependencies.cntr-fuse]
 git = "https://github.com/Mic92/cntr-fuse"
 rev = "5c4f80d9aa0d567a8a1fd381c8f4e3c62adbba6c"
+branch = "cntrfs"
 default-features = false
 
 [dependencies.concurrent-hashmap]
