@@ -35,6 +35,7 @@ use crate::files::{fd_path, Fd, FdState};
 use crate::fsuid;
 use crate::fusefd;
 use crate::inode::Inode;
+use crate::num_cpus;
 use crate::sys_ext::{
     fchownat, fstatvfs, fuse_getxattr, fuse_listxattr, fuse_readlinkat, fuse_removexattr,
     fuse_setxattr, futimens, ioctl, ioctl_read, ioctl_write, linkat, mknodat, renameat2, setrlimit,
