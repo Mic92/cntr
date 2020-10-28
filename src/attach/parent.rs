@@ -4,7 +4,6 @@ use nix::unistd::Pid;
 use nix::{cmsg_space, unistd};
 use std::os::unix::io::RawFd;
 use std::process;
-use void::Void;
 
 use crate::fs;
 use crate::ipc;
@@ -12,7 +11,7 @@ use crate::mountns;
 use crate::pty;
 use crate::types::{Error, Result};
 
-pub fn run(pid: Pid, mount_ready_sock: &ipc::Socket, fs: fs::CntrFs) -> Result<Void> {
+pub fn run(pid: Pid, mount_ready_sock: &ipc::Socket, fs: fs::CntrFs) -> Result<()> {
     let ns = tryfmt!(
         mountns::MountNamespace::receive(mount_ready_sock),
         "failed to receive mount namespace from child"
