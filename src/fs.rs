@@ -588,6 +588,7 @@ fn set_time(
 
 fn dtype_kind(dtype: u8) -> FileType {
     match dtype {
+        libc::DT_UNKNOWN => FileType::Unknown,
         libc::DT_BLK => FileType::BlockDevice,
         libc::DT_CHR => FileType::CharDevice,
         libc::DT_DIR => FileType::Directory,
