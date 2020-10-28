@@ -8,12 +8,13 @@ use std::os::unix::prelude::*;
 
 use crate::capabilities;
 use crate::procfs::ProcStatus;
+use crate::tmp;
 use crate::types::{Error, Result};
 
 /// Hidden directory with CAP_CHROOT enabled cntr-exec binary
 pub struct DotcntrDir {
     pub file: File,
-    pub dir: tempfile::TempDir,
+    pub dir: tmp::TempDir,
 }
 
 impl DotcntrDir {
@@ -48,7 +49,7 @@ impl DotcntrDir {
 }
 
 pub fn create(process_status: &ProcStatus) -> Result<DotcntrDir> {
-    let dotcntr_dir = tryfmt!(tempfile::tempdir(), "failed to create temporary directory");
+    let dotcntr_dir = tryfmt!(tmp::tempdir(), "failed to create temporary directory");
     let dotcntr_fd = tryfmt!(
         fcntl::open(
             dotcntr_dir.path(),

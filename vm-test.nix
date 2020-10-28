@@ -9,6 +9,7 @@ makeTest {
     virtualisation.oci-containers.containers.nginx = {
       image = "nginx-container";
       imageFile = pkgs.dockerTools.examples.nginx;
+      ports = ["8181:80"];
     };
 
     environment.systemPackages = [
@@ -19,6 +20,7 @@ makeTest {
   testScript = ''
     start_all()
     server.wait_for_unit("docker-nginx.service")
+    server.wait_for_open_port(8181)
     server.succeed("cntr attach nginx true")
   '';
 } {
