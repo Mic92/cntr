@@ -1,7 +1,6 @@
 use nix::unistd::{self, ForkResult};
 use std::fs::{create_dir_all, metadata};
 use std::os::unix::prelude::*;
-use void::Void;
 
 use crate::container;
 use crate::dotcntr;
@@ -23,7 +22,7 @@ pub struct AttachOptions {
     pub effective_user: Option<Passwd>,
 }
 
-pub fn attach(opts: &AttachOptions) -> Result<Void> {
+pub fn attach(opts: &AttachOptions) -> Result<()> {
     let container_pid = tryfmt!(
         container::lookup_container_pid(opts.container_name.as_str(), &opts.container_types),
         ""

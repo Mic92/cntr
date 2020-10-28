@@ -9,7 +9,6 @@ use std::fs::File;
 use std::os::unix::io::IntoRawFd;
 use std::os::unix::prelude::*;
 use std::process;
-use void::Void;
 
 use crate::capabilities;
 use crate::cgroup;
@@ -34,7 +33,7 @@ pub struct ChildOptions<'a> {
     pub gid: Gid,
 }
 
-pub fn run(options: &ChildOptions) -> Result<Void> {
+pub fn run(options: &ChildOptions) -> Result<()> {
     let lsm_profile = tryfmt!(
         lsm::read_profile(options.process_status.global_pid),
         "failed to get lsm profile"
