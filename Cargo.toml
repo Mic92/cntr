@@ -17,12 +17,10 @@ parking_lot = "0.11.*"
 void = "1.0.*"
 nix = "0.19.*"
 #cntr-fuse = "0.3.*"
-thread-scoped = "1.0.*"
 
 [dependencies.cntr-fuse]
 git = "https://github.com/Mic92/cntr-fuse"
-rev = "5c4f80d9aa0d567a8a1fd381c8f4e3c62adbba6c"
-branch = "cntrfs"
+rev = "fa781f13102279c723c650fcdea316457c4500cf"
 default-features = false
 
 [dependencies.concurrent-hashmap]

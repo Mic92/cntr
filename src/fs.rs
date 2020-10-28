@@ -24,10 +24,10 @@ use std::mem;
 use std::os::unix::prelude::*;
 use std::path::Path;
 use std::sync::Arc;
+use std::thread::{self, JoinHandle};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::vec::Vec;
 use std::{u32, u64};
-use thread_scoped::{scoped, JoinGuard};
 
 use crate::dirent;
 use crate::dotcntr::DotcntrDir;
@@ -258,7 +258,7 @@ impl CntrFs {
         Ok(fd)
     }
 
-    pub fn spawn_sessions<'a>(self) -> Result<Vec<JoinGuard<'a, io::Result<()>>>> {
+    pub fn spawn_sessions<'a>(self) -> Result<Vec<JoinHandle<io::Result<()>>>> {
         let mut sessions = Vec::new();
 
         // numbers of sessions is optimized for cached read
@@ -290,12 +290,10 @@ impl CntrFs {
             );
             let session = tryfmt!(res, "failed to inherit fuse session");
 
-            let guard = unsafe {
-                scoped(move || {
-                    let mut se = session;
-                    se.run()
-                })
-            };
+            let guard = thread::spawn(move || {
+                let mut se = session;
+                se.run()
+            });
 
             sessions.push(guard);
         }
