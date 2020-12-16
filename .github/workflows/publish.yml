@@ -1,0 +1,54 @@
+name: Publish
+on:
+  push:
+    tags:
+      - '*'
+
+jobs:
+  build:
+    name: Publish binaries
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target:
+          - x86_64-unknown-linux-musl
+          # TODO: fix other architectures support
+          #- i686-unknown-linux-musl
+          #- armv7-unknown-linux-musleabihf
+          #- aarch64-unknown-linux-musl
+        rust:
+          - 1.46.0
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Install rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: ${{ matrix.rust }}
+          target: ${{ matrix.target }}
+          override: true
+      - name: Build
+        run: cargo build --release --target $TARGET --locked
+      - name: Package
+        run: |
+          install -D target/$target/release/cntr $name/cntr
+          install -D target/$target/release/cntr cntr-bin-$version-$target
+          mkdir $depsname
+          git archive HEAD | tar -x -C $depsname
+          cargo vendor
+          mv vendor $depsname/
+          tar czvf $depsname.tar.gz $depsname
+        env:
+          target: "${{ matrix.target }}"
+          version: "${{ github.ref }}"
+          depsname: "cntr-src-${{ github.ref }}"
+          name: "cntr-${{ github.ref }}"
+      - name: Upload binaries to release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: dist/*
+          tag: ${{ github.ref }}
+          overwrite: true
+          file_glob: true
