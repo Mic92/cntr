@@ -32,18 +32,16 @@ jobs:
         run: cargo build --release --target ${{ matrix.target }} --locked
       - name: Package
         run: |
-          install -D target/$target/release/cntr $name/cntr
-          install -D target/$target/release/cntr cntr-bin-$version-$target
+          version=$(basename ${{ github.ref }})
+          name="cntr-$version"
+          depsname="cntr-src-$version"
+          install -D target/${{ matrix.target }}/release/cntr $name/cntr
+          install -D target/${{ matrix.target }}/release/cntr cntr-bin-$version-$target
           mkdir $depsname
           git archive HEAD | tar -x -C $depsname
           cargo vendor
           mv vendor $depsname/
           tar czvf $depsname.tar.gz $depsname
-        env:
-          target: "${{ matrix.target }}"
-          version: "${{ github.ref }}"
-          depsname: "cntr-src-${{ github.ref }}"
-          name: "cntr-${{ github.ref }}"
       - name: Upload binaries to release
         uses: svenstaro/upload-release-action@v2
         with:
