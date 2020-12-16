@@ -15,12 +15,8 @@ log = "0.4.*"
 libc = "0.2.*"
 parking_lot = "0.11.*"
 nix = "0.19.*"
-#cntr-fuse = "0.3.*"
+cntr-fuse = { version = "0.4.*", default-features = false }
 
-[dependencies.cntr-fuse]
-git = "https://github.com/Mic92/cntr-fuse"
-rev = "9e855af2ffc56a61becdec29fa2524f90b9ae3f7"
-default-features = false
 
 [dependencies.concurrent-hashmap]
 version = "0.2.*"
