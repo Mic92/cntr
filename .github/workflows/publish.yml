@@ -29,7 +29,8 @@ jobs:
           target: ${{ matrix.target }}
           override: true
       - name: Build
-        run: cargo build --release --target $TARGET --locked
+        run: cargo build --release --target $target --locked
+        target: "${{ matrix.target }}"
       - name: Package
         run: |
           install -D target/$target/release/cntr $name/cntr
