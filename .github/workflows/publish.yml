@@ -35,13 +35,13 @@ jobs:
           version=$(basename ${{ github.ref }})
           name="cntr-$version"
           depsname="cntr-src-$version"
-          install -D target/${{ matrix.target }}/release/cntr $name/cntr
-          install -D target/${{ matrix.target }}/release/cntr cntr-bin-$version-$target
+          install -D target/${{ matrix.target }}/release/cntr dist/$name/cntr
+          install -D target/${{ matrix.target }}/release/cntr dist/cntr-bin-$version-$target
           mkdir $depsname
           git archive HEAD | tar -x -C $depsname
           cargo vendor
           mv vendor $depsname/
-          tar czvf $depsname.tar.gz $depsname
+          tar czvf dist/$depsname.tar.gz $depsname
       - name: Upload binaries to release
         uses: svenstaro/upload-release-action@v2
         with:
