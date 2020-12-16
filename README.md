@@ -4,6 +4,8 @@
 
 Say no to `$ apt install vim` in containers!
 `cntr` is a replacement for `docker exec` that brings all your developers tools with you.
+This is done by mounting the file system from one container or the host into the target container
+by creating a nested container with the help of a FUSE filesystem.
 This allows to ship minimal runtime image in production and limit the surface for exploits.
 
 Cntr was also published in [Usenix ATC 2018](https://www.usenix.org/conference/atc18/presentation/thalheim).
@@ -151,6 +153,8 @@ Use `cntr exec` to execute container native commands (while running in the cntr 
 $ cntr attach boxbusy
 [root@55a93d71b53b:/var/lib/cntr]# cntr exec sh -c 'busybox | head -1'
 ```
+
+Also see Dockerfile.example on how to build a docker container with cntr.
 
 ### LXD
 

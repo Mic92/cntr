@@ -1,36 +1,19 @@
 ---
 kind: pipeline
+type: exec
 name: nixos-tests
+
+platform:
+  os: linux
+  arch: amd64
 
 steps:
 - name: test
-  image: busybox
-  environment:
-    NIX_REMOTE: daemon
-    PATH: /nix/var/nix/profiles/system/sw/bin/
-    PAGER: cat
-    USER: root
-  volumes:
-    - name: nixstore
-      path: /nix
-    - name: nixconf
-      path: /etc/nix
-    - name: sslcerts
-      path: /etc/ssl
   commands:
   - nix shell 'nixpkgs#git' -c nix flake check
-volumes:
-- name: nixstore
-  host:
-    path: /nix
-- name: nixconf
-  host:
-    path: /nix/var/nix/profiles/system/etc/nix
-- name: sslcerts
-  host:
-    path: /nix/var/nix/profiles/system/etc/ssl
+
 ---
 kind: signature
-hmac: 94d915bf40b1103d1dbb434c7f2bdba2a9b8e1d30d67462e6a7aee82e0b2a121
+hmac: 5d8d8a905775664e3767957413f19d588cdf550746547ad985ad8254bf265d9e
 
 ...
