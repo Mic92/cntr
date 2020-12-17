@@ -11,7 +11,7 @@ pub struct Containerd {}
 
 impl Container for Containerd {
     fn lookup(&self, container_id: &str) -> Result<Pid> {
-        let command = format!("ctr task list");
+        let command = "ctr task list";
         let output = tryfmt!(
             Command::new("ctr").args(&["task", "list"]).output(),
             "Running '{}' failed",
