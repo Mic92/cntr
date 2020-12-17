@@ -258,7 +258,7 @@ impl CntrFs {
         Ok(fd)
     }
 
-    pub fn spawn_sessions<'a>(self) -> Result<Vec<JoinHandle<io::Result<()>>>> {
+    pub fn spawn_sessions(self) -> Result<Vec<JoinHandle<io::Result<()>>>> {
         let mut sessions = Vec::new();
 
         // numbers of sessions is optimized for cached read
