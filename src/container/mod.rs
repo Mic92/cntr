@@ -4,6 +4,7 @@ use std::fmt::Debug;
 use crate::types::{Error, Result};
 
 mod command;
+mod containerd;
 mod docker;
 mod lxc;
 mod lxd;
@@ -24,6 +25,7 @@ pub const AVAILABLE_CONTAINER_TYPES: &[&str] = &[
     "lxc",
     "lxd",
     "command",
+    "containerd",
 ];
 
 fn default_order() -> Vec<Box<dyn Container>> {
@@ -34,6 +36,7 @@ fn default_order() -> Vec<Box<dyn Container>> {
         Box::new(nspawn::Nspawn {}),
         Box::new(lxc::Lxc {}),
         Box::new(lxd::Lxd {}),
+        Box::new(containerd::Containerd {}),
     ];
     containers
         .into_iter()
@@ -49,6 +52,7 @@ pub fn lookup_container_type(name: &str) -> Option<Box<dyn Container>> {
         "nspawn" => Box::new(nspawn::Nspawn {}),
         "lxc" => Box::new(lxc::Lxc {}),
         "lxd" => Box::new(lxd::Lxd {}),
+        "containerd" => Box::new(containerd::Containerd {}),
         "command" => Box::new(command::Command {}),
         _ => return None,
     })

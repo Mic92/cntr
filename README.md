@@ -23,6 +23,7 @@ In this two minute recording you learn all the basics of cntr:
   * LXD
   * rkt
   * systemd-nspawn
+  * containerd
 - For other container engines cntr also takes process ids (PIDs) instead of container names.
 
 ## Installation
@@ -303,6 +304,50 @@ dr-xr-xr-x  306 nobody nogroup     0 Mar 13 09:38 proc
 drwx------   22 nobody nogroup    43 Mar 13 15:09 root
 ...
 ```
+
+### Containerd
+
+For containerd integration the `ctr` binary is required. You can get a binary by running:
+
+``` console
+$ GOPATH=$(mktemp -d)
+$ go get github.com/containerd/containerd/cmd/ctr
+$ $GOPATH/bin/ctr --help
+```
+
+Put the resulting `ctr` binary in your `$PATH`
+
+1: Start container
+```console
+$ ctr images pull docker.io/library/busybox:latest
+$ ctr run docker.io/library/busybox:latest boxbusy
+$ ctr tasks lists
+TASK        PID      STATUS
+boxbusy    24310    RUNNING
+```
+
+2: Attach
+```console
+$ cntr attach boxbusy
+```
+
+It's also possible to run cntr from a container itself.
+This repository contains a example Dockerfile for that:
+
+```console
+$ docker build -f Dockerfile.example . -t cntr
+$ docker save cntr > cntr.tar
+$ ctr images import --base-name cntr ./cntr.tar
+```
+
+In this example we attach to containerd by process id. The proccess id of a task is given in `ctr tasks list`.
+
+```console
+$ ctr run --privileged --with-ns pid:/proc/1/ns/pid --tty docker.io/library/cntr:latest cntr /usr/bin/cntr attach 31523 /bin/sh
+```
+
+To resolve containerd names one also would need to add the `ctr` binary (~12mb) to the Dockerfile.
+
 
 # How it works
 
