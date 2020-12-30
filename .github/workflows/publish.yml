@@ -49,3 +49,6 @@ jobs:
           tag: ${{ github.ref }}
           overwrite: true
           file_glob: true
+      - uses: katyo/publish-crates@v1
+        with:
+          registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}
