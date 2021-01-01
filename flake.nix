@@ -15,6 +15,7 @@
     in {
       packages.cntr = pkgs.callPackage ./. {
         inherit naersk-lib;
+        src = self;
       };
       defaultPackage = self.packages.${system}.cntr;
       devShell = pkgs.mkShell {
