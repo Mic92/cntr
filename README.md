@@ -19,6 +19,7 @@ In this two minute recording you learn all the basics of cntr:
 
 - For convenience cntr supports container names/identifier for the following container engines natively:
   * docker
+  * podman
   * LXC
   * LXD
   * rkt
@@ -79,43 +80,53 @@ hypervisor.
 ```console
 $ cntr --help
 Usage:
-    cntr COMMAND [ARGUMENTS ...]
+cntr COMMAND [ARGUMENTS ...]
+
 Enter or executed in container
-positional arguments:
+
+Positional arguments:
   command               Command to run (either "attach" or "exec")
   arguments             Arguments for command
-optional arguments:
-  -h,--help             show this help message and exit
+
+Optional arguments:
+  -h,--help             Show this help message and exit
 ```
 
 ```console
 $ cntr attach --help
 Usage:
-    subcommand attach [OPTIONS] ID [COMMAND] [ARGUMENTS ...]
+  subcommand attach [OPTIONS] ID [COMMAND] [ARGUMENTS ...]
+
 Enter container
-positional arguments:
+
+Positional arguments:
   id                    container id, container name or process id
   command               command to execute after attach (default: $SHELL)
   arguments             arguments passed to command
-optional arguments:
-  -h,--help             show this help message and exit
+
+Optional arguments:
+  -h,--help             Show this help message and exit
   --effective-user EFFECTIVE_USER
                         effective username that should be owner of new created
                         files on the host
-  --type TYPE           Container type (docker|lxc|rkt|process_id|nspawn,
-                        default: all)
+  -t,--type TYPE        Container type
+                        (process_id|rkt|docker|podman|nspawn|lxc|lxd|command|containerd),
+                        default: all except command)
 ```
 
 ```console
 $ cntr exec --help
 Usage:
-    subcommand exec [COMMAND] [ARGUMENTS ...]
+  subcommand exec [COMMAND] [ARGUMENTS ...]
+
 Execute command in container filesystem
-positional arguments:
+
+Positional arguments:
   command               command to execute (default: $SHELL)
   arguments             Arguments to pass to command
-optional arguments:
-  -h,--help             show this help message and exit
+
+Optional arguments:
+  -h,--help             Show this help message and exit
 ```
 
 ### Docker
@@ -160,6 +171,11 @@ $ docker build -f Dockerfile.example . -t cntr
 # boxbusy here is the name of the target container to attach to
 $ docker run --pid=host --privileged=true -v /var/run/docker.sock:/var/run/docker.sock -ti --rm cntr attach boxbusy /bin/sh
 ```
+
+### Podman
+
+See docker usage, just replace `docker` with the `podman` command.
+
 
 ### LXD
 
