@@ -9,6 +9,7 @@ mod docker;
 mod lxc;
 mod lxd;
 mod nspawn;
+mod podman;
 mod process_id;
 mod rkt;
 
@@ -20,6 +21,7 @@ pub trait Container: Debug {
 pub const AVAILABLE_CONTAINER_TYPES: &[&str] = &[
     "process_id",
     "rkt",
+    "podman",
     "docker",
     "nspawn",
     "lxc",
@@ -32,6 +34,7 @@ fn default_order() -> Vec<Box<dyn Container>> {
     let containers: Vec<Box<dyn Container>> = vec![
         Box::new(process_id::ProcessId {}),
         Box::new(rkt::Rkt {}),
+        Box::new(podman::Podman {}),
         Box::new(docker::Docker {}),
         Box::new(nspawn::Nspawn {}),
         Box::new(lxc::Lxc {}),
@@ -48,6 +51,7 @@ pub fn lookup_container_type(name: &str) -> Option<Box<dyn Container>> {
     Some(match name {
         "process_id" => Box::new(process_id::ProcessId {}),
         "rkt" => Box::new(rkt::Rkt {}),
+        "podman" => Box::new(podman::Podman {}),
         "docker" => Box::new(docker::Docker {}),
         "nspawn" => Box::new(nspawn::Nspawn {}),
         "lxc" => Box::new(lxc::Lxc {}),

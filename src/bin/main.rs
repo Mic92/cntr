@@ -50,7 +50,7 @@ fn parse_attach_args(args: Vec<String>) -> cntr::AttachOptions {
         ap.refer(&mut container_type).add_option(
             &["-t", "--type"],
             Store,
-            "Container type (process_id|rkt|docker|nspawn|lxc|lxd|command|containerd), default: all except command)",
+            "Container type (process_id|rkt|docker|podman|nspawn|lxc|lxd|command|containerd), default: all except command)",
         );
         ap.refer(&mut container_name).required().add_argument(
             "id",
