@@ -89,7 +89,7 @@ fn parse_attach_args(args: Vec<String>) -> cntr::AttachOptions {
         };
     }
 
-    if effective_username != "" {
+    if !effective_username.is_empty() {
         match pwnam(effective_username.as_str()) {
             Ok(Some(passwd)) => {
                 options.effective_user = Some(passwd);
@@ -108,7 +108,7 @@ fn parse_attach_args(args: Vec<String>) -> cntr::AttachOptions {
         };
     }
 
-    if command != "" {
+    if !command.is_empty() {
         options.command = Some(command);
     }
 

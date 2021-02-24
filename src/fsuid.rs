@@ -1,7 +1,7 @@
 use libc::{setfsgid, setfsuid, uid_t};
 use std::cell::Cell;
 
-const CURRENT_FSUID: uid_t = (-1 as i32) as uid_t;
+const CURRENT_FSUID: uid_t = (-1_i32) as uid_t;
 
 thread_local! {
     static FSUID : Cell<u32> = Cell::new(unsafe { setfsuid(CURRENT_FSUID) as u32 });

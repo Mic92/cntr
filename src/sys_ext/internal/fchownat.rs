@@ -8,11 +8,11 @@ use std::os::unix::prelude::RawFd;
 // gid_t are unsigned types, we use wrapping_sub to get '-1'.
 fn optional_user(val: Option<unistd::Uid>) -> u32 {
     val.map(Into::into)
-        .unwrap_or_else(|| (0 as libc::uid_t).wrapping_sub(1))
+        .unwrap_or_else(|| (0_u32).wrapping_sub(1))
 }
 fn optional_group(val: Option<unistd::Gid>) -> u32 {
     val.map(Into::into)
-        .unwrap_or_else(|| (0 as libc::gid_t).wrapping_sub(1))
+        .unwrap_or_else(|| (0_u32).wrapping_sub(1))
 }
 
 /// Change ownership of a file
