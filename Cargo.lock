@@ -75,9 +75,9 @@ dependencies = [
 
 [[package]]
 name = "cntr-fuse"
-version = "0.4.0"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "18aade3cdc06f81ad887ceda79055d7e3d755871f69c95f7d294efc38833f5c0"
+checksum = "b6086675ec972930e5db2402db5456691f1023253c3e18c9a13440fc4c16a39d"
 dependencies = [
  "cntr-fuse-abi",
  "cntr-fuse-sys",
@@ -87,15 +87,15 @@ dependencies = [
 
 [[package]]
 name = "cntr-fuse-abi"
-version = "0.4.0"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "34c51ee584968575df4aaa084964d9d43f2f2945bb2c0f043035e7c8e0da82dc"
+checksum = "9ea6ecd4a8a57b0262d82c7521f498ecc01f60888091b1eb3b3c70ccafd2a25d"
 
 [[package]]
 name = "cntr-fuse-sys"
-version = "0.4.0"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8ae3892895a649be4477b275deeca4a4f5e64f31c7986eb3dab81d6cfa88491a"
+checksum = "bfb0da5a62f5c9c384041af4d81ab52c19b0064663d0b5b6626393af20c224f9"
 dependencies = [
  "pkg-config",
 ]
@@ -187,9 +187,9 @@ dependencies = [
 
 [[package]]
 name = "nix"
-version = "0.19.1"
+version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b2ccba0cfe4fdf15982d1674c69b1fd80bad427d293849982668dfe454bd61f2"
+checksum = "fa9b4819da1bc61c0ea48b63b7bc8604064dd43013e7cc325df098d49cd7c18a"
 dependencies = [
  "bitflags",
  "cc",
