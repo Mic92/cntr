@@ -31,8 +31,8 @@ arg_enum! {
         nspawn,
         lxc,
         lxd,
-        command,
         containerd,
+        command,
     }
 }
 
