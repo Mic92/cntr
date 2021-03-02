@@ -2,95 +2,40 @@ extern crate argparse;
 extern crate cntr;
 extern crate nix;
 
-use argparse::{ArgumentParser, Collect, List, Store};
+use clap::{crate_version, crate_authors, value_t, App, AppSettings, Arg, ArgMatches, SubCommand};
 use cntr::pwnam;
-use std::io::{stderr, stdout};
-use std::path::Path;
-use std::str::FromStr;
+use cntr::ContainerType;
 use std::{env, process};
 
-#[allow(non_camel_case_types)]
-#[derive(Debug)]
-enum Command {
-    attach,
-    exec,
-}
-
-impl FromStr for Command {
-    type Err = ();
-    fn from_str(src: &str) -> Result<Command, ()> {
-        match src {
-            "attach" => Ok(Command::attach),
-            "exec" => Ok(Command::exec),
-            _ => Err(()),
-        }
-    }
-}
-
-fn parse_attach_args(args: Vec<String>) -> cntr::AttachOptions {
-    let mut options = cntr::AttachOptions {
-        command: None,
-        arguments: vec![],
-        container_name: String::from(""),
-        container_types: vec![],
-        effective_user: None,
+fn attach(args: &ArgMatches) {
+    let command = args.value_of("command").unwrap(); // always has default value
+    let arguments = match args.values_of("arguments") {
+        Some(arguments) => arguments.map(|s| s.to_string()).collect(),
+        None => vec![],
     };
-    let mut container_type = String::from("");
-    let mut container_name = String::from("");
-    let mut effective_username = String::from("");
-    let mut command = String::from("");
-    {
-        let mut ap = ArgumentParser::new();
-        ap.set_description("Enter container");
-        ap.refer(&mut effective_username).add_option(
-            &["--effective-user"],
-            Store,
-            "effective username that should be owner of new created files on the host",
-        );
-        ap.refer(&mut container_type).add_option(
-            &["-t", "--type"],
-            Store,
-            "Container type (process_id|rkt|docker|podman|nspawn|lxc|lxd|command|containerd), default: all except command)",
-        );
-        ap.refer(&mut container_name).required().add_argument(
-            "id",
-            Store,
-            "container id, container name or process id",
-        );
-        ap.refer(&mut command).add_argument(
-            "command",
-            Store,
-            "command to execute after attach (default: $SHELL)",
-        );
-        ap.refer(&mut options.arguments).add_argument(
-            "arguments",
-            Collect,
-            "arguments passed to command",
-        );
-        match ap.parse(args, &mut stdout(), &mut stderr()) {
-            Ok(()) => {}
-            Err(x) => {
-                std::process::exit(x);
-            }
-        }
-    }
-    options.container_name = container_name;
-    if !container_type.is_empty() {
-        options.container_types = match cntr::lookup_container_type(container_type.as_str()) {
-            Some(container) => vec![container],
-            None => {
-                eprintln!(
-                    "invalid argument '{}' passed to `--type`; valid values are: {}",
-                    container_type,
-                    cntr::AVAILABLE_CONTAINER_TYPES.join(", ")
-                );
-                process::exit(1)
-            }
-        };
+
+    let container_name = args.value_of("id").unwrap().to_string(); // container id is .required
+
+    let mut container_types = vec![];
+    if args.is_present("type") {
+        let v = value_t!(args.value_of("type"), ContainerType).unwrap_or_else(|e| e.exit());
+        container_types = vec![cntr::lookup_container_type(&v)];
     }
 
+    let mut options = cntr::AttachOptions {
+        command: match command {
+            "$SHELL" => None,
+            _ => Some(command.to_string()),
+        },
+        arguments,
+        effective_user: None,
+        container_types,
+        container_name,
+    };
+
+    let effective_username = args.value_of("effective-user").unwrap_or("");
     if !effective_username.is_empty() {
-        match pwnam(effective_username.as_str()) {
+        match pwnam(effective_username) {
             Ok(Some(passwd)) => {
                 options.effective_user = Some(passwd);
             }
@@ -108,46 +53,23 @@ fn parse_attach_args(args: Vec<String>) -> cntr::AttachOptions {
         };
     }
 
-    if !command.is_empty() {
-        options.command = Some(command);
-    }
-
-    options
-}
-
-fn attach_command(args: Vec<String>) {
-    let opts = parse_attach_args(args);
-    if let Err(err) = cntr::attach(&opts) {
+    if let Err(err) = cntr::attach(&options) {
         eprintln!("{}", err);
         process::exit(1);
     };
 }
 
-fn exec_command(args: Vec<String>, setcap: bool) {
-    let mut command = String::from("");
-    let mut arguments = vec![];
-    {
-        let mut ap = ArgumentParser::new();
-        ap.set_description("Execute command in container filesystem");
-        ap.refer(&mut command).add_argument(
-            &"command",
-            Store,
-            "command to execute (default: $SHELL)",
-        );
-        ap.refer(&mut arguments)
-            .add_argument(&"arguments", List, "Arguments to pass to command");
-        ap.stop_on_first_argument(true);
-        match ap.parse(args, &mut stdout(), &mut stderr()) {
-            Ok(()) => {}
-            Err(x) => {
-                std::process::exit(x);
-            }
-        }
-    }
+fn exec(args: &ArgMatches, setcap: bool) {
+    let command = args.value_of("command").unwrap(); // always has default value
     let command = if command.is_empty() {
         None
     } else {
-        Some(command)
+        Some(command.to_string())
+    };
+
+    let arguments = match args.values_of("arguments") {
+        Some(arguments) => arguments.map(|s| s.to_string()).collect(),
+        None => vec![],
     };
 
     if let Err(err) = cntr::exec(command, arguments, setcap) {
@@ -157,39 +79,77 @@ fn exec_command(args: Vec<String>, setcap: bool) {
 }
 
 fn main() {
-    match std::env::current_exe() {
-        Ok(exe) => {
-            if exe == Path::new(cntr::SETCAP_EXE) {
-                exec_command(env::args().collect::<Vec<String>>(), true)
-            }
-        }
-        Err(e) => {
-            eprintln!("failed to resolve executable: {}", e);
-            process::exit(1);
-        }
-    }
-
-    let mut subcommand = Command::attach;
-    let mut args = vec![];
-    {
-        let mut ap = ArgumentParser::new();
-        ap.set_description("Enter or executed in container");
-        ap.refer(&mut subcommand).required().add_argument(
-            "command",
-            Store,
-            r#"Command to run (either "attach" or "exec")"#,
+    let attach_command = SubCommand::with_name("attach")
+        .about("Enter container")
+        .setting(AppSettings::DisableVersion)
+        .arg(
+            Arg::with_name("effective-user")
+                .long("effective-user")
+                .takes_value(true)
+                .empty_values(false)
+                .value_name("EFFECTIVE_USER")
+                .help("effective username that should be owner of new created files on the host"),
+        )
+        .arg(
+            Arg::with_name("type")
+                .short("t")
+                .long("type")
+                .takes_value(true)
+                .empty_values(false)
+                .value_name("TYPE")
+                .help("Container type")
+                .possible_values(&ContainerType::variants()),
+        )
+        .arg(
+            Arg::with_name("id")
+                .help("container id, container name or process id")
+                .required(true)
+                .index(1),
+        )
+        .arg(
+            Arg::with_name("command")
+                .help("command to execute after attach")
+                .default_value("$SHELL")
+                .required(true)
+                .index(2),
+        )
+        .arg(
+            Arg::with_name("arguments")
+                .help("arguments passed to command")
+                .requires("command")
+                .index(3)
+                .multiple(true),
         );
-        ap.refer(&mut args)
-            .add_argument("arguments", List, r#"Arguments for command"#);
 
-        ap.stop_on_first_argument(true);
-        ap.parse_args_or_exit();
-    }
+    let exec_command = SubCommand::with_name("exec")
+        .about("Execute command in container filesystem")
+        .arg(
+            Arg::with_name("command")
+                .help("command to execute (default: $SHELL)")
+                .required(true)
+                .index(1),
+        )
+        .arg(
+            Arg::with_name("arguments")
+                .help("arguments passed to command")
+                .requires("command")
+                .index(2)
+                .multiple(true),
+        );
 
-    args.insert(0, format!("subcommand {:?}", subcommand));
+    let matches = App::new("Cntr")
+        .about("Enter or executed in container")
+        .version(crate_version!())
+        .author(crate_authors!("\n"))
+        .setting(AppSettings::SubcommandRequiredElseHelp)
+        .subcommand(attach_command)
+        .subcommand(exec_command)
+        .get_matches();
 
-    match subcommand {
-        Command::attach => attach_command(args),
-        Command::exec => exec_command(args, false),
-    }
+    match matches.subcommand() {
+        ("exec", Some(exec_matches)) => exec(exec_matches, true),
+        ("attach", Some(attach_matches)) => attach(attach_matches),
+        ("", None) => unreachable!(), // beause of AppSettings::SubCommandRequired
+        _ => unreachable!(),
+    };
 }
