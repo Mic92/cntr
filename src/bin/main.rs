@@ -5,6 +5,7 @@ extern crate nix;
 use clap::{crate_authors, crate_version, values_t, App, AppSettings, Arg, ArgMatches, SubCommand};
 use cntr::pwnam;
 use cntr::ContainerType;
+use std::path::Path;
 use std::{env, process};
 
 fn command_arg(index: u64) -> Arg<'static, 'static> {
@@ -91,6 +92,8 @@ fn exec(args: &ArgMatches, setcap: bool) {
 fn main() {
     let attach_command = SubCommand::with_name("attach")
         .about("Enter container")
+        .version(crate_version!())
+        .author(crate_authors!("\n"))
         .setting(AppSettings::DisableVersion)
         .arg(
             Arg::with_name("effective-user")
@@ -121,22 +124,37 @@ fn main() {
 
     let exec_command = SubCommand::with_name("exec")
         .about("Execute command in container filesystem")
+        .version(crate_version!())
+        .author(crate_authors!("\n"))
         .arg(command_arg(1));
 
-    let matches = App::new("Cntr")
+    let main_app = App::new("Cntr")
         .about("Enter or executed in container")
         .version(crate_version!())
         .author(crate_authors!("\n"))
         .setting(AppSettings::SubcommandRequiredElseHelp)
-        .setting(AppSettings::VersionlessSubcommands)
         .subcommand(attach_command)
-        .subcommand(exec_command)
-        .get_matches();
+        .subcommand(exec_command.clone());
 
-    match matches.subcommand() {
-        ("exec", Some(exec_matches)) => exec(exec_matches, true),
-        ("attach", Some(attach_matches)) => attach(attach_matches),
-        ("", None) => unreachable!(), // beause of AppSettings::SubCommandRequired
-        _ => unreachable!(),
-    };
+    // find and run subcommand/app
+    match std::env::current_exe() {
+        Ok(exe) => {
+            if exe == Path::new(cntr::SETCAP_EXE) {
+                let matches = exec_command.get_matches();
+                exec(&matches, true);
+            } else {
+                let matches = main_app.get_matches();
+                match matches.subcommand() {
+                    ("exec", Some(exec_matches)) => exec(exec_matches, false),
+                    ("attach", Some(attach_matches)) => attach(attach_matches),
+                    ("", None) => unreachable!(), // beause of AppSettings::SubCommandRequired
+                    _ => unreachable!(),
+                };
+            }
+        }
+        Err(e) => {
+            eprintln!("failed to resolve executable: {}", e);
+            process::exit(1);
+        }
+    }
 }
