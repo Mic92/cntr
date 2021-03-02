@@ -13,22 +13,28 @@ mod podman;
 mod process_id;
 mod rkt;
 
+use clap::arg_enum;
+
 pub trait Container: Debug {
     fn lookup(&self, id: &str) -> Result<Pid>;
     fn check_required_tools(&self) -> Result<()>;
 }
 
-pub const AVAILABLE_CONTAINER_TYPES: &[&str] = &[
-    "process_id",
-    "rkt",
-    "podman",
-    "docker",
-    "nspawn",
-    "lxc",
-    "lxd",
-    "command",
-    "containerd",
-];
+arg_enum! {
+    #[derive(Debug)]
+    #[allow(non_camel_case_types)]
+    pub enum ContainerType {
+        process_id,
+        rkt,
+        podman,
+        docker,
+        nspawn,
+        lxc,
+        lxd,
+        command,
+        containerd,
+    }
+}
 
 fn default_order() -> Vec<Box<dyn Container>> {
     let containers: Vec<Box<dyn Container>> = vec![
@@ -47,19 +53,18 @@ fn default_order() -> Vec<Box<dyn Container>> {
         .collect()
 }
 
-pub fn lookup_container_type(name: &str) -> Option<Box<dyn Container>> {
-    Some(match name {
-        "process_id" => Box::new(process_id::ProcessId {}),
-        "rkt" => Box::new(rkt::Rkt {}),
-        "podman" => Box::new(podman::Podman {}),
-        "docker" => Box::new(docker::Docker {}),
-        "nspawn" => Box::new(nspawn::Nspawn {}),
-        "lxc" => Box::new(lxc::Lxc {}),
-        "lxd" => Box::new(lxd::Lxd {}),
-        "containerd" => Box::new(containerd::Containerd {}),
-        "command" => Box::new(command::Command {}),
-        _ => return None,
-    })
+pub fn lookup_container_type(name: &ContainerType) -> Box<dyn Container> {
+    match name {
+        ContainerType::process_id => Box::new(process_id::ProcessId {}),
+        ContainerType::rkt => Box::new(rkt::Rkt {}),
+        ContainerType::podman => Box::new(podman::Podman {}),
+        ContainerType::docker => Box::new(docker::Docker {}),
+        ContainerType::nspawn => Box::new(nspawn::Nspawn {}),
+        ContainerType::lxc => Box::new(lxc::Lxc {}),
+        ContainerType::lxd => Box::new(lxd::Lxd {}),
+        ContainerType::containerd => Box::new(containerd::Containerd {}),
+        ContainerType::command => Box::new(command::Command {}),
+    }
 }
 
 pub fn lookup_container_pid(
