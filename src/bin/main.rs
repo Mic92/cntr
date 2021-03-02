@@ -2,31 +2,51 @@ extern crate argparse;
 extern crate cntr;
 extern crate nix;
 
-use clap::{crate_version, crate_authors, values_t, App, AppSettings, Arg, ArgMatches, SubCommand};
+use clap::{crate_authors, crate_version, values_t, App, AppSettings, Arg, ArgMatches, SubCommand};
 use cntr::pwnam;
 use cntr::ContainerType;
 use std::{env, process};
 
-fn attach(args: &ArgMatches) {
-    let command = args.value_of("command").unwrap(); // always has default value
-    let arguments = match args.values_of("arguments") {
-        Some(arguments) => arguments.map(|s| s.to_string()).collect(),
-        None => vec![],
-    };
+fn command_arg(index: u64) -> Arg<'static, 'static> {
+    Arg::with_name("command")
+                .help("Command and its arguments to execute after attach. Consider prepending it with '-- ' to prevent parsing of '-x'-like flags. [default: $SHELL]")
+                .requires("command")
+                .index(index)
+                .multiple(true)
+}
 
-    let container_name = args.value_of("id").unwrap().to_string(); // container id is .required
+fn parse_command_arg(args: &ArgMatches) -> (Option<String>, Vec<String>) {
+    match args.values_of("command") {
+        Some(args) => {
+            let mut values: Vec<String> = args.map(|s| s.to_string()).collect();
+            let command = values.remove(0);
+            let command = match command.is_empty() {
+                true => None, // indicates $SHELL default case
+                false => Some(command),
+            };
+            let arguments = values;
+            (command, arguments)
+        }
+        None => (None, vec![]), // indicates $SHELL default case
+    }
+}
+
+fn attach(args: &ArgMatches) {
+    let (command, arguments) = parse_command_arg(args);
+
+    let container_name = args.value_of("id").unwrap().to_string(); // safe, because container id is .required
 
     let mut container_types = vec![];
     if args.is_present("type") {
         let types = values_t!(args.values_of("type"), ContainerType).unwrap_or_else(|e| e.exit());
-        container_types = types.into_iter().map(|t| cntr::lookup_container_type(&t)).collect();
+        container_types = types
+            .into_iter()
+            .map(|t| cntr::lookup_container_type(&t))
+            .collect();
     }
 
     let mut options = cntr::AttachOptions {
-        command: match command {
-            "$SHELL" => None,
-            _ => Some(command.to_string()),
-        },
+        command,
         arguments,
         effective_user: None,
         container_types,
@@ -60,17 +80,7 @@ fn attach(args: &ArgMatches) {
 }
 
 fn exec(args: &ArgMatches, setcap: bool) {
-    let command = args.value_of("command").unwrap(); // always has default value
-    let command = if command.is_empty() {
-        None
-    } else {
-        Some(command.to_string())
-    };
-
-    let arguments = match args.values_of("arguments") {
-        Some(arguments) => arguments.map(|s| s.to_string()).collect(),
-        None => vec![],
-    };
+    let (command, arguments) = parse_command_arg(args);
 
     if let Err(err) = cntr::exec(command, arguments, setcap) {
         eprintln!("{}", err);
@@ -98,7 +108,7 @@ fn main() {
                 .empty_values(false)
                 .require_delimiter(true)
                 .value_name("TYPE")
-                .help("Container types to try (sperated by ',') [default: all but command]")
+                .help("Container types to try (sperated by ','). [default: all but command]")
                 .possible_values(&ContainerType::variants()),
         )
         .arg(
@@ -107,42 +117,18 @@ fn main() {
                 .required(true)
                 .index(1),
         )
-        .arg(
-            Arg::with_name("command")
-                .help("command to execute after attach")
-                .default_value("$SHELL")
-                .required(true)
-                .index(2),
-        )
-        .arg(
-            Arg::with_name("arguments")
-                .help("arguments passed to command")
-                .requires("command")
-                .index(3)
-                .multiple(true),
-        );
+        .arg(command_arg(2));
 
     let exec_command = SubCommand::with_name("exec")
         .about("Execute command in container filesystem")
-        .arg(
-            Arg::with_name("command")
-                .help("command to execute (default: $SHELL)")
-                .required(true)
-                .index(1),
-        )
-        .arg(
-            Arg::with_name("arguments")
-                .help("arguments passed to command")
-                .requires("command")
-                .index(2)
-                .multiple(true),
-        );
+        .arg(command_arg(1));
 
     let matches = App::new("Cntr")
         .about("Enter or executed in container")
         .version(crate_version!())
         .author(crate_authors!("\n"))
         .setting(AppSettings::SubcommandRequiredElseHelp)
+        .setting(AppSettings::VersionlessSubcommands)
         .subcommand(attach_command)
         .subcommand(exec_command)
         .get_matches();
