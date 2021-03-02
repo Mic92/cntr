@@ -2,7 +2,7 @@ extern crate argparse;
 extern crate cntr;
 extern crate nix;
 
-use clap::{crate_version, crate_authors, value_t, App, AppSettings, Arg, ArgMatches, SubCommand};
+use clap::{crate_version, crate_authors, values_t, App, AppSettings, Arg, ArgMatches, SubCommand};
 use cntr::pwnam;
 use cntr::ContainerType;
 use std::{env, process};
@@ -18,8 +18,8 @@ fn attach(args: &ArgMatches) {
 
     let mut container_types = vec![];
     if args.is_present("type") {
-        let v = value_t!(args.value_of("type"), ContainerType).unwrap_or_else(|e| e.exit());
-        container_types = vec![cntr::lookup_container_type(&v)];
+        let types = values_t!(args.values_of("type"), ContainerType).unwrap_or_else(|e| e.exit());
+        container_types = types.into_iter().map(|t| cntr::lookup_container_type(&t)).collect();
     }
 
     let mut options = cntr::AttachOptions {
@@ -96,8 +96,9 @@ fn main() {
                 .long("type")
                 .takes_value(true)
                 .empty_values(false)
+                .require_delimiter(true)
                 .value_name("TYPE")
-                .help("Container type")
+                .help("Container types to try (sperated by ',') [default: all but command]")
                 .possible_values(&ContainerType::variants()),
         )
         .arg(
