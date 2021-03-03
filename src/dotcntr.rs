@@ -5,6 +5,10 @@ use nix::unistd::Pid;
 use std::fs::{self, File};
 use std::io::prelude::*;
 use std::os::unix::prelude::*;
+use std::{
+    fs::{set_permissions, Permissions},
+    os::unix::fs::PermissionsExt,
+};
 
 use crate::capabilities;
 use crate::procfs::ProcStatus;
@@ -50,6 +54,12 @@ impl DotcntrDir {
 
 pub fn create(process_status: &ProcStatus) -> Result<DotcntrDir> {
     let dotcntr_dir = tryfmt!(tmp::tempdir(), "failed to create temporary directory");
+    let permissions = Permissions::from_mode(0o755);
+    tryfmt!(
+        set_permissions(dotcntr_dir.path(), permissions),
+        "cannot change permissions of '{}'",
+        dotcntr_dir.path().display()
+    );
     let dotcntr_fd = tryfmt!(
         fcntl::open(
             dotcntr_dir.path(),
