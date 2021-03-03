@@ -1,4 +1,4 @@
-pub use container::{lookup_container_type, AVAILABLE_CONTAINER_TYPES};
+pub use container::{lookup_container_type, ContainerType};
 pub use logging::enable_debug_log;
 pub use user_namespace::DEFAULT_ID_MAP;
 
