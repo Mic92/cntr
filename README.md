@@ -79,54 +79,63 @@ hypervisor.
 
 ```console
 $ cntr --help
-Usage:
-cntr COMMAND [ARGUMENTS ...]
-
+Cntr 1.5.1
+Jörg Thalheim <joerg@thalheim.io>
 Enter or executed in container
 
-Positional arguments:
-  command               Command to run (either "attach" or "exec")
-  arguments             Arguments for command
+USAGE:
+    cntr <SUBCOMMAND>
 
-Optional arguments:
-  -h,--help             Show this help message and exit
+FLAGS:
+    -h, --help       Prints help information
+    -V, --version    Prints version information
+
+SUBCOMMANDS:
+    attach    Enter container
+    exec      Execute command in container filesystem
+    help      Prints this message or the help of the given subcommand(s)
 ```
 
 ```console
 $ cntr attach --help
-Usage:
-  subcommand attach [OPTIONS] ID [COMMAND] [ARGUMENTS ...]
-
+cntr-attach 1.5.1
+Jörg Thalheim <joerg@thalheim.io>
 Enter container
 
-Positional arguments:
-  id                    container id, container name or process id
-  command               command to execute after attach (default: $SHELL)
-  arguments             arguments passed to command
+USAGE:
+    cntr attach [OPTIONS] <id> [command]...
 
-Optional arguments:
-  -h,--help             Show this help message and exit
-  --effective-user EFFECTIVE_USER
-                        effective username that should be owner of new created
-                        files on the host
-  -t,--type TYPE        Container type
-                        (process_id|rkt|docker|podman|nspawn|lxc|lxd|command|containerd),
-                        default: all except command)
+FLAGS:
+    -h, --help    Prints help information
+
+OPTIONS:
+        --effective-user <EFFECTIVE_USER>    effective username that should be owner of new created files on the host
+    -t, --type <TYPE>                        Container types to try (sperated by ','). [default: all but command]
+                                             [possible values: process_id, rkt, podman, docker, nspawn, lxc, lxd,
+                                             containerd, command]
+
+ARGS:
+    <id>            container id, container name or process id
+    <command>...    Command and its arguments to execute after attach. Consider prepending it with '-- ' to prevent
+                    parsing of '-x'-like flags. [default: $SHELL]
 ```
 
 ```console
 $ cntr exec --help
-Usage:
-  subcommand exec [COMMAND] [ARGUMENTS ...]
-
+cntr-exec 1.5.1
+Jörg Thalheim <joerg@thalheim.io>
 Execute command in container filesystem
 
-Positional arguments:
-  command               command to execute (default: $SHELL)
-  arguments             Arguments to pass to command
+USAGE:
+    cntr exec [command]...
 
-Optional arguments:
-  -h,--help             Show this help message and exit
+FLAGS:
+    -h, --help       Prints help information
+    -V, --version    Prints version information
+
+ARGS:
+    <command>...    Command and its arguments to execute after attach. Consider prepending it with '-- ' to prevent
+                    parsing of '-x'-like flags. [default: $SHELL]
 ```
 
 ### Docker
@@ -161,7 +170,7 @@ Use `cntr exec` to execute container native commands (while running in the cntr 
 
 ```console
 $ cntr attach boxbusy
-[root@55a93d71b53b:/var/lib/cntr]# cntr exec sh -c 'busybox | head -1'
+[root@55a93d71b53b:/var/lib/cntr]# cntr exec -- sh -c 'busybox | head -1'
 ```
 
 You can also use Dockerfile.example from this repo to build a docker container with cntr:
