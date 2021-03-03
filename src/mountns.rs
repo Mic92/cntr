@@ -2,11 +2,14 @@ use log::warn;
 use nix::mount::MsFlags;
 use nix::sched::CloneFlags;
 use nix::{cmsg_space, mount, sched, unistd};
-use std::ffi::OsStr;
 use std::fs::{create_dir_all, metadata, remove_dir};
 use std::io;
 use std::os::unix::prelude::*;
 use std::path::{Path, PathBuf};
+use std::{
+    ffi::OsStr,
+    fs::{set_permissions, Permissions},
+};
 
 use crate::fs::CntrFs;
 use crate::ipc;
@@ -41,8 +44,18 @@ impl MountNamespace {
         tryfmt!(mkdir_p(&path), "failed to create /tmp");
 
         let mountpoint = tryfmt!(tmp::tempdir(), "failed to create temporary mountpoint");
+        tryfmt!(
+            set_permissions(mountpoint.path(), Permissions::from_mode(0o755)),
+            "cannot change permissions of '{}'",
+            mountpoint.path().display()
+        );
 
         let temp_mountpoint = tryfmt!(tmp::tempdir(), "failed to create temporary mountpoint");
+        tryfmt!(
+            set_permissions(temp_mountpoint.path(), Permissions::from_mode(0o755)),
+            "cannot change permissions of '{}'",
+            temp_mountpoint.path().display()
+        );
 
         tryfmt!(
             sched::unshare(CloneFlags::CLONE_NEWNS),
