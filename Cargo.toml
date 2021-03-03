@@ -2,25 +2,23 @@
 name = "cntr"
 edition = "2018"
 description = "A container debugging tool based on FUSE"
-version = "1.4.1"
+version = "1.5.0"
 authors = ["Jörg Thalheim <joerg@thalheim.io>"]
 categories = ["development-tools::debugging", "os::unix-apis"]
 repository = "https://github.com/Mic92/cntr"
 license = "MIT"
 
 [dependencies]
-cpuprofiler = { version = "0.0.*", optional = true }
-argparse = "0.2.*"
+cpuprofiler = { version = "0.0.4", optional = true }
+log = "0.4.14"
 clap = "2"
-log = "0.4.*"
-libc = "0.2.*"
-parking_lot = "0.11.*"
-nix = "0.19.*"
-cntr-fuse = { version = "0.4.*", default-features = false }
-
+libc = "0.2.86"
+parking_lot = "0.11.1"
+nix = "0.20.0"
+cntr-fuse = { version = "0.4.1", default-features = false }
 
 [dependencies.concurrent-hashmap]
-version = "0.2.*"
+version = "0.2.2"
 default-features = false
 
 [[bin]]
