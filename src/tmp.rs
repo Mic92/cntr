@@ -1,5 +1,5 @@
 use nix::errno::Errno;
-use nix::{Error, Result};
+use nix::Result;
 use std::env;
 use std::ffi::OsString;
 use std::fs;
@@ -26,7 +26,7 @@ pub fn tempdir() -> Result<TempDir> {
     bytes.push(0);
     let res = unsafe { libc::mkdtemp(bytes.as_mut_ptr().cast()) };
     if res.is_null() {
-        Err(Error::Sys(Errno::last()))
+        Err(nix::Error::Sys(Errno::last()))
     } else {
         // remove null byte
         bytes.pop();

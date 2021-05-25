@@ -2,6 +2,7 @@ use log::warn;
 use nix::mount::MsFlags;
 use nix::sched::CloneFlags;
 use nix::{cmsg_space, mount, sched, unistd};
+use simple_error::try_with;
 use std::fs::{create_dir_all, metadata, remove_dir};
 use std::io;
 use std::os::unix::prelude::*;
@@ -14,8 +15,8 @@ use std::{
 use crate::fs::CntrFs;
 use crate::ipc;
 use crate::namespace;
+use crate::result::Result;
 use crate::tmp;
-use crate::types::{Error, Result};
 
 pub struct MountNamespace {
     old_namespace: namespace::Namespace,
@@ -41,23 +42,23 @@ const CNTR_MOUNT_POINT: &str = "var/lib/cntr";
 impl MountNamespace {
     fn new(old_namespace: namespace::Namespace) -> Result<MountNamespace> {
         let path = PathBuf::from("/tmp");
-        tryfmt!(mkdir_p(&path), "failed to create /tmp");
+        try_with!(mkdir_p(&path), "failed to create /tmp");
 
-        let mountpoint = tryfmt!(tmp::tempdir(), "failed to create temporary mountpoint");
-        tryfmt!(
+        let mountpoint = try_with!(tmp::tempdir(), "failed to create temporary mountpoint");
+        try_with!(
             set_permissions(mountpoint.path(), Permissions::from_mode(0o755)),
             "cannot change permissions of '{}'",
             mountpoint.path().display()
         );
 
-        let temp_mountpoint = tryfmt!(tmp::tempdir(), "failed to create temporary mountpoint");
-        tryfmt!(
+        let temp_mountpoint = try_with!(tmp::tempdir(), "failed to create temporary mountpoint");
+        try_with!(
             set_permissions(temp_mountpoint.path(), Permissions::from_mode(0o755)),
             "cannot change permissions of '{}'",
             temp_mountpoint.path().display()
         );
 
-        tryfmt!(
+        try_with!(
             sched::unshare(CloneFlags::CLONE_NEWNS),
             "failed to create mount namespace"
         );
@@ -89,7 +90,7 @@ impl MountNamespace {
 
     pub fn receive(sock: &ipc::Socket) -> Result<MountNamespace> {
         let mut cmsgspace = cmsg_space!([RawFd; 2]);
-        let (paths, mut fds) = tryfmt!(
+        let (paths, mut fds) = try_with!(
             sock.receive((libc::PATH_MAX * 2) as usize, &mut cmsgspace),
             "failed to receive mount namespace"
         );
@@ -150,7 +151,7 @@ pub fn setup_bindmounts(mounts: &[&str]) -> Result<()> {
                 if e.kind() == io::ErrorKind::NotFound {
                     continue;
                 }
-                return tryfmt!(
+                return try_with!(
                     Err(e),
                     "failed to get metadata of path {}",
                     mountpoint.display()
@@ -164,7 +165,7 @@ pub fn setup_bindmounts(mounts: &[&str]) -> Result<()> {
                 if e.kind() == io::ErrorKind::NotFound {
                     continue;
                 }
-                return tryfmt!(
+                return try_with!(
                     Err(e),
                     "failed to get metadata of path {}",
                     source.display()
@@ -200,15 +201,15 @@ pub fn setup(
     container_namespace: namespace::Namespace,
     mount_label: &Option<String>,
 ) -> Result<()> {
-    tryfmt!(
+    try_with!(
         mkdir_p(&CNTR_MOUNT_POINT),
         "cannot create container mountpoint /{}",
         CNTR_MOUNT_POINT
     );
 
-    let ns = tryfmt!(MountNamespace::new(container_namespace), "");
+    let ns = try_with!(MountNamespace::new(container_namespace), "");
 
-    tryfmt!(
+    try_with!(
         mount::mount(
             Some("none"),
             "/",
@@ -220,7 +221,7 @@ pub fn setup(
     );
 
     // prepare bind mounts
-    tryfmt!(
+    try_with!(
         mount::mount(
             Some("/"),
             &ns.temp_mountpoint,
@@ -230,11 +231,11 @@ pub fn setup(
         ),
         "unable to move container mounts to new mountpoint"
     );
-    tryfmt!(fs.mount(ns.mountpoint.as_path(), mount_label), "mount()");
+    try_with!(fs.mount(ns.mountpoint.as_path(), mount_label), "mount()");
 
-    let ns = tryfmt!(ns.send(socket), "parent failed");
+    let ns = try_with!(ns.send(socket), "parent failed");
 
-    tryfmt!(
+    try_with!(
         mount::mount(
             Some(&ns.temp_mountpoint),
             &ns.mountpoint.join(CNTR_MOUNT_POINT),
@@ -245,17 +246,17 @@ pub fn setup(
         "unable to move container mounts to new mountpoint"
     );
 
-    tryfmt!(
+    try_with!(
         unistd::chdir(&ns.mountpoint),
         "failed to chdir to new mountpoint"
     );
 
-    tryfmt!(
+    try_with!(
         unistd::chroot(&ns.mountpoint),
         "failed to chroot to new mountpoint"
     );
 
-    tryfmt!(setup_bindmounts(MOUNTS), "failed to setup bind mounts");
+    try_with!(setup_bindmounts(MOUNTS), "failed to setup bind mounts");
 
     Ok(())
 }

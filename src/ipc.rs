@@ -1,10 +1,11 @@
 use nix::errno::Errno;
 use nix::sys::socket::*;
 use nix::sys::uio::IoVec;
+use simple_error::try_with;
 use std::fs::File;
 use std::os::unix::prelude::*;
 
-use crate::types::{Error, Result};
+use crate::result::Result;
 
 pub struct Socket {
     fd: File,
@@ -20,7 +21,7 @@ impl Socket {
             vec![ControlMessage::ScmRights(&fds)]
         };
 
-        tryfmt!(
+        try_with!(
             sendmsg(self.fd.as_raw_fd(), &iov, &cmsg, MsgFlags::empty(), None),
             "sendmsg failed"
         );
@@ -47,7 +48,7 @@ impl Socket {
                     Err(nix::Error::Sys(Errno::EAGAIN)) | Err(nix::Error::Sys(Errno::EINTR)) => {
                         continue
                     }
-                    Err(e) => return tryfmt!(Err(e), "recvmsg failed"),
+                    Err(e) => return try_with!(Err(e), "recvmsg failed"),
                     Ok(msg) => {
                         for cmsg in msg.cmsgs() {
                             if let ControlMessageOwned::ScmRights(fds) = cmsg {
@@ -75,7 +76,7 @@ pub fn socket_pair() -> Result<(Socket, Socket)> {
         SockFlag::SOCK_CLOEXEC,
     );
 
-    let (parent_fd, child_fd) = tryfmt!(res, "failed to create socketpair");
+    let (parent_fd, child_fd) = try_with!(res, "failed to create socketpair");
     Ok((
         Socket {
             fd: unsafe { File::from_raw_fd(parent_fd) },

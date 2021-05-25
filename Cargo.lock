@@ -109,6 +109,7 @@ dependencies = [
  "log",
  "nix",
  "parking_lot",
+ "simple-error",
 ]
 
 [[package]]

@@ -2,6 +2,7 @@ use nix::sys::signal::{self, Signal};
 use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
 use nix::unistd::Pid;
 use nix::{cmsg_space, unistd};
+use simple_error::try_with;
 use std::os::unix::io::RawFd;
 use std::process;
 
@@ -9,10 +10,10 @@ use crate::fs;
 use crate::ipc;
 use crate::mountns;
 use crate::pty;
-use crate::types::{Error, Result};
+use crate::result::Result;
 
 pub fn run(pid: Pid, mount_ready_sock: &ipc::Socket, fs: fs::CntrFs) -> Result<()> {
-    let ns = tryfmt!(
+    let ns = try_with!(
         mountns::MountNamespace::receive(mount_ready_sock),
         "failed to receive mount namespace from child"
     );
@@ -20,7 +21,7 @@ pub fn run(pid: Pid, mount_ready_sock: &ipc::Socket, fs: fs::CntrFs) -> Result<(
     let sessions = fs.spawn_sessions();
 
     let mut cmsgspace = cmsg_space!([RawFd; 1]);
-    let (_, mut fds) = tryfmt!(
+    let (_, mut fds) = try_with!(
         mount_ready_sock.receive(1, &mut cmsgspace),
         "failed to receive pty file descriptor"
     );
@@ -30,7 +31,7 @@ pub fn run(pid: Pid, mount_ready_sock: &ipc::Socket, fs: fs::CntrFs) -> Result<(
     ns.cleanup();
 
     loop {
-        tryfmt!(
+        try_with!(
             pty::forward(&fd),
             "failed to forward terminal output of command"
         );
@@ -40,7 +41,7 @@ pub fn run(pid: Pid, mount_ready_sock: &ipc::Socket, fs: fs::CntrFs) -> Result<(
                 let _ = signal::kill(child, Signal::SIGCONT);
             }
             Ok(WaitStatus::Signaled(_, signal, _)) => {
-                tryfmt!(
+                try_with!(
                     signal::kill(unistd::getpid(), signal),
                     "failed to send signal {:?} to our own process",
                     signal
@@ -54,7 +55,7 @@ pub fn run(pid: Pid, mount_ready_sock: &ipc::Socket, fs: fs::CntrFs) -> Result<(
             }
             Err(e) => {
                 drop(sessions);
-                return tryfmt!(Err(e), "waitpid failed");
+                return try_with!(Err(e), "waitpid failed");
             }
         };
     }

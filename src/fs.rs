@@ -15,6 +15,7 @@ use nix::sys::uio::{pread, pwrite};
 use nix::unistd::{Gid, Uid};
 use nix::{self, unistd};
 use parking_lot::{Mutex, RwLock};
+use simple_error::try_with;
 use std::cmp;
 use std::collections::HashMap;
 use std::ffi::{CStr, OsStr};
@@ -36,12 +37,12 @@ use crate::fsuid;
 use crate::fusefd;
 use crate::inode::Inode;
 use crate::num_cpus;
+use crate::result::Result;
 use crate::sys_ext::{
     fchownat, fstatvfs, fuse_getxattr, fuse_listxattr, fuse_readlinkat, fuse_removexattr,
     fuse_setxattr, futimens, ioctl, ioctl_read, ioctl_write, linkat, mknodat, renameat2, setrlimit,
     utimensat, Rlimit, UtimeSpec,
 };
-use crate::types::{Error, Result};
 use crate::user_namespace::IdMap;
 
 const FH_MAGIC: char = 'F';
@@ -172,7 +173,7 @@ impl<'a> LookupFile<'a> {
 }
 
 fn open_static_dnode(static_ino: u64, path: &Path) -> Result<Arc<Inode>> {
-    let fd = tryfmt!(
+    let fd = try_with!(
         fcntl::open(path, OFlag::O_RDONLY | OFlag::O_CLOEXEC, stat::Mode::all()),
         "failed to open backing filesystem '{}'",
         path.display()
@@ -190,13 +191,13 @@ fn open_static_dnode(static_ino: u64, path: &Path) -> Result<Arc<Inode>> {
 
 impl CntrFs {
     pub fn new(options: &CntrMountOptions, dotcntr: Option<DotcntrDir>) -> Result<CntrFs> {
-        let fuse_fd = tryfmt!(fusefd::open(), "failed to initialize fuse");
+        let fuse_fd = try_with!(fusefd::open(), "failed to initialize fuse");
 
         let limit = Rlimit {
             rlim_cur: 1_048_576,
             rlim_max: 1_048_576,
         };
-        tryfmt!(
+        try_with!(
             setrlimit(libc::RLIMIT_NOFILE, &limit),
             "Cannot raise file descriptor limit"
         );
@@ -288,7 +289,7 @@ impl CntrFs {
                 max_background,
                 max_background,
             );
-            let session = tryfmt!(res, "failed to inherit fuse session");
+            let session = try_with!(res, "failed to inherit fuse session");
 
             let guard = thread::spawn(move || {
                 let mut se = session;
@@ -312,7 +313,7 @@ impl CntrFs {
             self.fuse_fd, context
         );
 
-        tryfmt!(
+        try_with!(
             nix::mount::mount(
                 Some(self.prefix.as_str()),
                 mountpoint,

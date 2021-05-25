@@ -1,12 +1,13 @@
 use nix::sched;
 use nix::unistd;
+use simple_error::try_with;
 use std::collections::HashSet;
 use std::fs::{self, File};
 use std::os::unix::prelude::*;
 use std::path::PathBuf;
 
 use crate::procfs;
-use crate::types::{Error, Result};
+use crate::result::Result;
 
 pub const MOUNT: Kind = Kind { name: "mnt" };
 pub const UTS: Kind = Kind { name: "uts" };
@@ -24,12 +25,12 @@ pub struct Kind {
 
 pub fn supported_namespaces() -> Result<HashSet<String>> {
     let mut namespaces = HashSet::new();
-    let entries = tryfmt!(
+    let entries = try_with!(
         fs::read_dir(PathBuf::from("/proc/self/ns")),
         "failed to open directory /proc/self/ns"
     );
     for entry in entries {
-        let entry = tryfmt!(entry, "failed to read directory /proc/self/ns");
+        let entry = try_with!(entry, "failed to read directory /proc/self/ns");
         if let Ok(name) = entry.file_name().into_string() {
             namespaces.insert(name);
         }
@@ -41,7 +42,7 @@ impl Kind {
     pub fn open(&'static self, pid: unistd::Pid) -> Result<Namespace> {
         let buf = self.path(pid);
         let path = buf.to_str().unwrap();
-        let file = tryfmt!(File::open(path), "failed to open namespace file '{}'", path);
+        let file = try_with!(File::open(path), "failed to open namespace file '{}'", path);
         Ok(Namespace { kind: self, file })
     }
 
@@ -78,7 +79,7 @@ pub struct Namespace {
 
 impl Namespace {
     pub fn apply(&self) -> Result<()> {
-        tryfmt!(
+        try_with!(
             sched::setns(self.file.as_raw_fd(), sched::CloneFlags::empty()),
             "setns"
         );

@@ -1,3 +1,4 @@
+use simple_error::{bail,try_with};
 use fs::Cntr;
 use fuse;
 use libc;

@@ -2,7 +2,9 @@ extern crate argparse;
 extern crate cntr;
 extern crate nix;
 
-use clap::{arg_enum, crate_authors, crate_version, values_t, App, AppSettings, Arg, ArgMatches, SubCommand};
+use clap::{
+    arg_enum, crate_authors, crate_version, values_t, App, AppSettings, Arg, ArgMatches, SubCommand,
+};
 use cntr::pwnam;
 use std::path::Path;
 use std::{env, process};
@@ -46,7 +48,6 @@ arg_enum! {
         command,
     }
 }
-
 
 fn attach(args: &ArgMatches) {
     let (command, arguments) = parse_command_arg(args);
