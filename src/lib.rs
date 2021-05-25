@@ -1,4 +1,4 @@
-pub use container::{lookup_container_type, ContainerType};
+pub use container_pid::{lookup_container_type, AVAILABLE_CONTAINER_TYPES};
 pub use logging::enable_debug_log;
 pub use user_namespace::DEFAULT_ID_MAP;
 
@@ -8,7 +8,6 @@ mod attach;
 mod capabilities;
 mod cgroup;
 mod cmd;
-mod container;
 mod dirent;
 mod dotcntr;
 mod exec;

@@ -1,8 +1,7 @@
-use nix::unistd::{self, ForkResult};
+use nix::unistd::{self, ForkResult, Pid};
 use std::fs::{create_dir_all, metadata};
 use std::os::unix::prelude::*;
 
-use crate::container;
 use crate::dotcntr;
 use crate::fs;
 use crate::ipc;
@@ -18,15 +17,15 @@ pub struct AttachOptions {
     pub command: Option<String>,
     pub arguments: Vec<String>,
     pub container_name: String,
-    pub container_types: Vec<Box<dyn container::Container>>,
+    pub container_types: Vec<Box<dyn container_pid::Container>>,
     pub effective_user: Option<Passwd>,
 }
 
 pub fn attach(opts: &AttachOptions) -> Result<()> {
-    let container_pid = tryfmt!(
-        container::lookup_container_pid(opts.container_name.as_str(), &opts.container_types),
-        ""
-    );
+    let container_pid = match container_pid::lookup_container_pid(opts.container_name.as_str(), &opts.container_types) {
+        Ok(pid) => Pid::from_raw(pid),
+        Err(e) => return errfmt!(format!("{}", e))
+    };
 
     let (uid_map, gid_map) = tryfmt!(
         IdMap::new_from_pid(container_pid),

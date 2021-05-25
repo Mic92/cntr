@@ -2,9 +2,8 @@ extern crate argparse;
 extern crate cntr;
 extern crate nix;
 
-use clap::{crate_authors, crate_version, values_t, App, AppSettings, Arg, ArgMatches, SubCommand};
+use clap::{arg_enum, crate_authors, crate_version, values_t, App, AppSettings, Arg, ArgMatches, SubCommand};
 use cntr::pwnam;
-use cntr::ContainerType;
 use std::path::Path;
 use std::{env, process};
 
@@ -32,6 +31,23 @@ fn parse_command_arg(args: &ArgMatches) -> (Option<String>, Vec<String>) {
     }
 }
 
+arg_enum! {
+    #[derive(Debug)]
+    #[allow(non_camel_case_types)]
+    pub enum ContainerType {
+        process_id,
+        rkt,
+        podman,
+        docker,
+        nspawn,
+        lxc,
+        lxd,
+        containerd,
+        command,
+    }
+}
+
+
 fn attach(args: &ArgMatches) {
     let (command, arguments) = parse_command_arg(args);
 
@@ -42,7 +58,7 @@ fn attach(args: &ArgMatches) {
         let types = values_t!(args.values_of("type"), ContainerType).unwrap_or_else(|e| e.exit());
         container_types = types
             .into_iter()
-            .map(|t| cntr::lookup_container_type(&t))
+            .filter_map(|t| cntr::lookup_container_type(&t.to_string()))
             .collect();
     }
 

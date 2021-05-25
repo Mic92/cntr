@@ -8,7 +8,6 @@ use std::io;
 use std::io::{BufRead, BufReader};
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::os::unix::process::CommandExt;
-use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus};
 
 use crate::procfs;
@@ -44,25 +43,6 @@ fn read_environment(pid: unistd::Pid) -> Result<HashMap<OsString, OsString>> {
         })
         .collect();
     Ok(res)
-}
-
-pub fn which<P>(exe_name: P) -> Option<PathBuf>
-where
-    P: AsRef<Path>,
-{
-    env::var_os("PATH").and_then(|paths| {
-        env::split_paths(&paths)
-            .filter_map(|dir| {
-                let full_path = dir.join(&exe_name);
-                let res = unistd::access(&full_path, unistd::AccessFlags::X_OK);
-                if res.is_ok() {
-                    Some(full_path)
-                } else {
-                    None
-                }
-            })
-            .next()
-    })
 }
 
 impl Cmd {
