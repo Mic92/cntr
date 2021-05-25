@@ -22,9 +22,12 @@ pub struct AttachOptions {
 }
 
 pub fn attach(opts: &AttachOptions) -> Result<()> {
-    let container_pid = match container_pid::lookup_container_pid(opts.container_name.as_str(), &opts.container_types) {
+    let container_pid = match container_pid::lookup_container_pid(
+        opts.container_name.as_str(),
+        &opts.container_types,
+    ) {
         Ok(pid) => Pid::from_raw(pid),
-        Err(e) => return errfmt!(format!("{}", e))
+        Err(e) => return errfmt!(format!("{}", e)),
     };
 
     let (uid_map, gid_map) = tryfmt!(
