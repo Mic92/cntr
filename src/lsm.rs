@@ -1,4 +1,5 @@
 use nix::unistd::Pid;
+use simple_error::try_with;
 use std::fs::{File, OpenOptions};
 use std::io::prelude::*;
 use std::io::BufReader;
@@ -7,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use crate::mount_context;
 use crate::procfs;
-use crate::types::{Error, Result};
+use crate::result::Result;
 
 #[derive(PartialEq, Eq)]
 enum LSMKind {
@@ -41,7 +42,7 @@ fn is_apparmor_enabled() -> Result<bool> {
     match File::open(aa_path) {
         Ok(mut file) => {
             let mut contents = String::new();
-            tryfmt!(
+            try_with!(
                 file.read_to_string(&mut contents),
                 "failed to read {}",
                 aa_path
@@ -50,7 +51,7 @@ fn is_apparmor_enabled() -> Result<bool> {
         }
         Err(err) => {
             if err.kind() != ErrorKind::NotFound {
-                tryfmt!(Err(err), "failed to open {}", aa_path);
+                try_with!(Err(err), "failed to open {}", aa_path);
             }
             Ok(false)
         }
@@ -58,13 +59,13 @@ fn is_apparmor_enabled() -> Result<bool> {
 }
 
 fn is_selinux_enabled() -> Result<bool> {
-    let file = tryfmt!(
+    let file = try_with!(
         File::open("/proc/filesystems"),
         "failed to open /proc/filesystems"
     );
     let reader = BufReader::new(file);
     for line in reader.lines() {
-        let l = tryfmt!(line, "failed to read from /proc/filesystems");
+        let l = try_with!(line, "failed to read from /proc/filesystems");
         if l.contains("selinuxfs") {
             return Ok(true);
         }
@@ -73,12 +74,12 @@ fn is_selinux_enabled() -> Result<bool> {
 }
 
 fn check_type() -> Result<Option<LSMKind>> {
-    if tryfmt!(
+    if try_with!(
         is_apparmor_enabled(),
         "failed to check availability of apparmor"
     ) {
         Ok(Some(LSMKind::AppArmor))
-    } else if tryfmt!(
+    } else if try_with!(
         is_selinux_enabled(),
         "failed to check availability of selinux"
     ) {
@@ -90,8 +91,8 @@ fn check_type() -> Result<Option<LSMKind>> {
 
 fn read_proclabel(path: &Path, kind: &LSMKind) -> Result<String> {
     let mut attr = String::new();
-    let mut file = tryfmt!(File::open(&path), "failed to open {}", path.display());
-    tryfmt!(
+    let mut file = try_with!(File::open(&path), "failed to open {}", path.display());
+    try_with!(
         file.read_to_string(&mut attr),
         "failed to read {}",
         path.display()
@@ -106,17 +107,17 @@ fn read_proclabel(path: &Path, kind: &LSMKind) -> Result<String> {
 }
 
 pub fn read_profile(pid: Pid) -> Result<Option<LSMProfile>> {
-    let kind = tryfmt!(check_type(), "");
+    let kind = check_type()?;
 
     if let Some(kind) = kind {
         let target_path = kind.profile_path(Some(pid));
-        let target_label = tryfmt!(
+        let target_label = try_with!(
             read_proclabel(&target_path, &kind),
             "failed to get security label of target process"
         );
 
         let own_path = kind.profile_path(None);
-        let own_label = tryfmt!(
+        let own_label = try_with!(
             read_proclabel(&own_path, &kind),
             "failed to get own security label"
         );
@@ -131,7 +132,7 @@ pub fn read_profile(pid: Pid) -> Result<Option<LSMProfile>> {
         return Ok(Some(LSMProfile {
             kind,
             label: target_label,
-            label_file: tryfmt!(res, "failed to open {}", own_path.display()),
+            label_file: try_with!(res, "failed to open {}", own_path.display()),
         }));
     }
     Ok(None)
@@ -145,7 +146,7 @@ impl LSMProfile {
         };
 
         let res = self.label_file.write_all(attr.as_bytes());
-        tryfmt!(res, "failed to write '{}' to /proc/self/attr/current", attr);
+        try_with!(res, "failed to write '{}' to /proc/self/attr/current", attr);
         Ok(())
     }
 
@@ -153,7 +154,7 @@ impl LSMProfile {
         match self.kind {
             LSMKind::AppArmor => Ok(None),
             LSMKind::SELinux => {
-                let context = tryfmt!(
+                let context = try_with!(
                     mount_context::parse_selinux_context(pid),
                     "failed to parse selinux mount options"
                 );

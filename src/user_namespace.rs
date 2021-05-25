@@ -1,10 +1,11 @@
 use nix::unistd::Pid;
+use simple_error::try_with;
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::BufReader;
 
 use crate::procfs;
-use crate::types::{Error, Result};
+use crate::result::Result;
 
 #[derive(Clone, Copy, Debug)]
 struct Extent {
@@ -57,31 +58,31 @@ impl IdMap {
     fn _new_from_pid(pid: Pid, kind: Kind) -> Result<IdMap> {
         let what: &str = kind.into();
         let path = procfs::get_path().join(pid.to_string()).join(what);
-        let f = tryfmt!(File::open(&path), "failed to open {}", path.display());
+        let f = try_with!(File::open(&path), "failed to open {}", path.display());
         let buf_reader = BufReader::new(f);
         let mut id_map = IdMap {
             nr_extents: 0,
             extent: [DEFAULT_EXTENT; 5],
         };
         for line in buf_reader.lines() {
-            let line = tryfmt!(line, "failed to read {}", path.display());
+            let line = try_with!(line, "failed to read {}", path.display());
             let cols: Vec<&str> = line.split_whitespace().collect();
             assert!(cols.len() == 3);
             assert!(id_map.nr_extents < id_map.extent.len());
             id_map.extent[id_map.nr_extents] = Extent {
-                first: tryfmt!(
+                first: try_with!(
                     cols[0].parse::<u32>(),
                     "invalid id value in {}: {}",
                     what,
                     line
                 ),
-                lower_first: tryfmt!(
+                lower_first: try_with!(
                     cols[1].parse::<u32>(),
                     "invalid id value in {}: {}",
                     what,
                     line
                 ),
-                count: tryfmt!(
+                count: try_with!(
                     cols[2].parse::<u32>(),
                     "invalid id value in {}: {}",
                     what,
@@ -94,11 +95,11 @@ impl IdMap {
     }
 
     pub fn new_from_pid(pid: Pid) -> Result<(IdMap, IdMap)> {
-        let uid_map = tryfmt!(
+        let uid_map = try_with!(
             IdMap::_new_from_pid(pid, Kind::UidMap),
             "failed to read uid_map"
         );
-        let gid_map = tryfmt!(
+        let gid_map = try_with!(
             IdMap::_new_from_pid(pid, Kind::GidMap),
             "failed to read uid_map"
         );

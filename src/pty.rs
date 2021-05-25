@@ -10,11 +10,12 @@ use nix::sys::termios::{
     tcgetattr, tcsetattr, ControlFlags, InputFlags, LocalFlags, OutputFlags, SetArg, Termios,
 };
 use nix::{self, fcntl, unistd};
+use simple_error::try_with;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::os::unix::prelude::*;
 
-use crate::types::{Error, Result};
+use crate::result::Result;
 
 enum FilePairState {
     Write,
@@ -78,7 +79,7 @@ struct RawTty {
 
 impl RawTty {
     fn new(stdin: RawFd) -> Result<RawTty> {
-        let orig_attr = tryfmt!(tcgetattr(stdin), "failed to get termios attributes");
+        let orig_attr = try_with!(tcgetattr(stdin), "failed to get termios attributes");
 
         let mut attr = orig_attr.clone();
         attr.input_flags.remove(
@@ -105,7 +106,7 @@ impl RawTty {
         attr.control_chars[VMIN as usize] = 1; // One character-at-a-time input
         attr.control_chars[VTIME as usize] = 0; // with blocking read
 
-        tryfmt!(
+        try_with!(
             tcsetattr(stdin, SetArg::TCSAFLUSH, &attr),
             "failed to set termios attributes"
         );
@@ -197,7 +198,7 @@ pub fn forward(pty: &File) -> Result<()> {
     if unsafe { libc::isatty(libc::STDIN_FILENO as i32) } != 0 {
         resize_pty(pty.as_raw_fd());
 
-        raw_tty = Some(tryfmt!(
+        raw_tty = Some(try_with!(
             RawTty::new(libc::STDIN_FILENO),
             "failed to set stdin tty into raw mode"
         ))
@@ -209,7 +210,7 @@ pub fn forward(pty: &File) -> Result<()> {
         SaFlags::empty(),
         SigSet::empty(),
     );
-    tryfmt!(
+    try_with!(
         unsafe { sigaction(SIGWINCH, &sig_action) },
         "failed to install SIGWINCH handler"
     );
@@ -261,10 +262,10 @@ fn resize_pty(pty_master: RawFd) {
 }
 
 pub fn open_ptm() -> Result<PtyMaster> {
-    let pty_master = tryfmt!(posix_openpt(OFlag::O_RDWR), "posix_openpt()");
+    let pty_master = try_with!(posix_openpt(OFlag::O_RDWR), "posix_openpt()");
 
-    tryfmt!(grantpt(&pty_master), "grantpt()");
-    tryfmt!(unlockpt(&pty_master), "unlockpt()");
+    try_with!(grantpt(&pty_master), "grantpt()");
+    try_with!(unlockpt(&pty_master), "unlockpt()");
 
     Ok(pty_master)
 }

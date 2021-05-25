@@ -2,6 +2,7 @@ use libc::pid_t;
 use nix::fcntl::{self, OFlag};
 use nix::sys::stat;
 use nix::unistd::Pid;
+use simple_error::try_with;
 use std::fs::{self, File};
 use std::io::prelude::*;
 use std::os::unix::prelude::*;
@@ -12,8 +13,8 @@ use std::{
 
 use crate::capabilities;
 use crate::procfs::ProcStatus;
+use crate::result::Result;
 use crate::tmp;
-use crate::types::{Error, Result};
 
 /// Hidden directory with CAP_CHROOT enabled cntr-exec binary
 pub struct DotcntrDir {
@@ -24,10 +25,10 @@ pub struct DotcntrDir {
 impl DotcntrDir {
     pub fn write_pid_file(&self, target_pid: Pid) -> Result<()> {
         let path = self.dir.path().join("pid");
-        let mut file = tryfmt!(File::create(&path), "failed to create {}", path.display());
+        let mut file = try_with!(File::create(&path), "failed to create {}", path.display());
 
         let raw_pid: pid_t = target_pid.into();
-        tryfmt!(
+        try_with!(
             file.write_all(format!("{}", raw_pid).as_bytes()),
             "failed to write {}",
             path.display()
@@ -37,13 +38,13 @@ impl DotcntrDir {
 
     pub fn write_setcap_exe(&self) -> Result<()> {
         let path = self.dir.path().join("cntr-exec");
-        tryfmt!(
+        try_with!(
             fs::copy("/proc/self/exe", &path),
             "failed to copy /proc/self/exe to {}",
             path.display()
         );
 
-        tryfmt!(
+        try_with!(
             capabilities::set_chroot_capability(&path),
             "Failed set file capability CAP_SYS_CHROOT on {}",
             path.display()
@@ -53,14 +54,14 @@ impl DotcntrDir {
 }
 
 pub fn create(process_status: &ProcStatus) -> Result<DotcntrDir> {
-    let dotcntr_dir = tryfmt!(tmp::tempdir(), "failed to create temporary directory");
+    let dotcntr_dir = try_with!(tmp::tempdir(), "failed to create temporary directory");
     let permissions = Permissions::from_mode(0o755);
-    tryfmt!(
+    try_with!(
         set_permissions(dotcntr_dir.path(), permissions),
         "cannot change permissions of '{}'",
         dotcntr_dir.path().display()
     );
-    let dotcntr_fd = tryfmt!(
+    let dotcntr_fd = try_with!(
         fcntl::open(
             dotcntr_dir.path(),
             OFlag::O_RDONLY | OFlag::O_CLOEXEC,
@@ -74,9 +75,9 @@ pub fn create(process_status: &ProcStatus) -> Result<DotcntrDir> {
         file: dotcntr_file,
         dir: dotcntr_dir,
     };
-    tryfmt!(d.write_setcap_exe(), "failed to create setcap executable");
+    try_with!(d.write_setcap_exe(), "failed to create setcap executable");
 
-    tryfmt!(
+    try_with!(
         d.write_pid_file(process_status.local_pid),
         "failed to create pid file"
     );

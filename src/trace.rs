@@ -1,3 +1,4 @@
+use simple_error::{bail,try_with};
 use libc;
 use nix;
 use nix::errno;
@@ -6,25 +7,25 @@ use nix::sys::ptrace::ptrace::*;
 use nix::sys::wait::{WaitStatus, wait, waitpid};
 use sigstr;
 use std::ptr;
-use types::{Error, Result};
+use types::{Result};
 
 pub fn install(pid: libc::pid_t) -> Result<()> {
-    let status = tryfmt!(waitpid(pid, None), "process died prematurely");
+    let status = try_with!(waitpid(pid, None), "process died prematurely");
     match status {
         WaitStatus::Exited(_, rc) => {
-            return errfmt!(format!("process exited prematurely with {}", rc));
+            bail!("process exited prematurely with {}", rc);
         }
         WaitStatus::Signaled(_, signal, _) => {
-            return errfmt!(format!(
+            bail!(
                 "process was terminated with signal {:}",
                 sigstr::Signal { n: signal }
-            ));
+            );
         }
         WaitStatus::Continued(_) => {
-            return errfmt!(format!("BUG: process was continued by someone"));
+            bail!("BUG: process was continued by someone");
         }
         WaitStatus::StillAlive => {
-            return errfmt!(format!("process should be stopped"));
+            bail!("process should be stopped");
         }
         WaitStatus::Stopped(_, _) => {}
     }
@@ -32,8 +33,8 @@ pub fn install(pid: libc::pid_t) -> Result<()> {
     let opts = PTRACE_O_TRACESECCOMP | PTRACE_O_TRACESYSGOOD | PTRACE_O_TRACEFORK |
         PTRACE_O_TRACEVFORK | PTRACE_O_TRACECLONE | PTRACE_O_TRACEEXEC |
         PTRACE_O_TRACEVFORKDONE | PTRACE_O_TRACEEXIT;
-    tryfmt!(ptrace_setoptions(pid, opts), "failed to ptrace process");
-    tryfmt!(
+    try_with!(ptrace_setoptions(pid, opts), "failed to ptrace process");
+    try_with!(
         ptrace(PTRACE_CONT, pid, ptr::null_mut(), ptr::null_mut()),
         "failed to resume tracee"
     );

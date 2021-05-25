@@ -2,6 +2,7 @@ use log::warn;
 use nix::sys::signal::{self, Signal};
 use nix::unistd;
 use nix::unistd::{Gid, Uid};
+use simple_error::{bail, try_with};
 use std::convert::TryFrom;
 use std::env;
 use std::ffi::CStr;
@@ -20,7 +21,7 @@ use crate::mountns;
 use crate::namespace;
 use crate::procfs::ProcStatus;
 use crate::pty;
-use crate::types::{Error, Result};
+use crate::result::Result;
 
 pub struct ChildOptions<'a> {
     pub command: Option<String>,
@@ -34,13 +35,13 @@ pub struct ChildOptions<'a> {
 }
 
 pub fn run(options: &ChildOptions) -> Result<()> {
-    let lsm_profile = tryfmt!(
+    let lsm_profile = try_with!(
         lsm::read_profile(options.process_status.global_pid),
         "failed to get lsm profile"
     );
 
     let mount_label = if let Some(ref p) = lsm_profile {
-        tryfmt!(
+        try_with!(
             p.mount_label(options.process_status.global_pid),
             "failed to read mount options"
         )
@@ -48,12 +49,12 @@ pub fn run(options: &ChildOptions) -> Result<()> {
         None
     };
 
-    tryfmt!(
+    try_with!(
         cgroup::move_to(unistd::getpid(), options.process_status.global_pid),
         "failed to change cgroup"
     );
 
-    let cmd = tryfmt!(
+    let cmd = try_with!(
         Cmd::new(
             options.command.clone(),
             options.arguments.clone(),
@@ -63,16 +64,16 @@ pub fn run(options: &ChildOptions) -> Result<()> {
         ""
     );
 
-    let supported_namespaces = tryfmt!(
+    let supported_namespaces = try_with!(
         namespace::supported_namespaces(),
         "failed to list namespaces"
     );
 
     if !supported_namespaces.contains(namespace::MOUNT.name) {
-        return errfmt!("the system has no support for mount namespaces");
+        bail!("the system has no support for mount namespaces")
     };
 
-    let mount_namespace = tryfmt!(
+    let mount_namespace = try_with!(
         namespace::MOUNT.open(options.process_status.global_pid),
         "could not access mount namespace"
     );
@@ -95,16 +96,16 @@ pub fn run(options: &ChildOptions) -> Result<()> {
             continue;
         }
 
-        other_namespaces.push(tryfmt!(
+        other_namespaces.push(try_with!(
             kind.open(options.process_status.global_pid),
             "failed to open {} namespace",
             kind.name
         ));
     }
 
-    tryfmt!(mount_namespace.apply(), "failed to apply mount namespace");
+    try_with!(mount_namespace.apply(), "failed to apply mount namespace");
 
-    tryfmt!(
+    try_with!(
         mountns::setup(
             &options.fs,
             options.mount_ready_sock,
@@ -120,49 +121,49 @@ pub fn run(options: &ChildOptions) -> Result<()> {
     };
 
     for ns in other_namespaces {
-        tryfmt!(ns.apply(), "failed to apply namespace");
+        try_with!(ns.apply(), "failed to apply namespace");
     }
 
     if supported_namespaces.contains(namespace::USER.name) {
         if let Err(e) = unistd::setgroups(&[]) {
             if !dropped_groups {
-                tryfmt!(Err(e), "could not set groups");
+                try_with!(Err(e), "could not set groups");
             }
         }
-        tryfmt!(unistd::setgid(options.gid), "could not set group id");
-        tryfmt!(unistd::setuid(options.uid), "could not set user id");
+        try_with!(unistd::setgid(options.gid), "could not set group id");
+        try_with!(unistd::setuid(options.uid), "could not set user id");
     }
 
-    tryfmt!(
+    try_with!(
         capabilities::drop(options.process_status.effective_capabilities),
         "failed to apply capabilities"
     );
 
-    let pty_master = tryfmt!(pty::open_ptm(), "open pty master");
-    tryfmt!(pty::attach_pts(&pty_master), "failed to setup pty master");
+    let pty_master = try_with!(pty::open_ptm(), "open pty master");
+    try_with!(pty::attach_pts(&pty_master), "failed to setup pty master");
 
     // we have to destroy f manually, since we only borrow fd here.
     let f = unsafe { File::from_raw_fd(pty_master.as_raw_fd()) };
     let res = options.mount_ready_sock.send(&[], &[&f]);
     f.into_raw_fd();
-    tryfmt!(res, "failed to send pty file descriptor to parent process");
+    try_with!(res, "failed to send pty file descriptor to parent process");
 
     if let Err(e) = env::set_current_dir("/var/lib/cntr") {
         warn!("failed to change directory to /var/lib/cntr: {}", e);
     }
 
     if let Some(profile) = lsm_profile {
-        tryfmt!(profile.inherit_profile(), "failed to inherit lsm profile");
+        try_with!(profile.inherit_profile(), "failed to inherit lsm profile");
     }
 
-    let status = tryfmt!(cmd.run(), "");
+    let status = cmd.run()?;
     if let Some(signum) = status.signal() {
-        let signal = tryfmt!(
+        let signal = try_with!(
             Signal::try_from(signum),
             "invalid signal received: {}",
             signum
         );
-        tryfmt!(
+        try_with!(
             signal::kill(unistd::getpid(), signal),
             "failed to send signal {:?} to own pid",
             signal

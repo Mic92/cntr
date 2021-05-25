@@ -1,10 +1,11 @@
 use nix::fcntl::OFlag;
 use nix::sys::stat::{self, Mode, SFlag};
 use nix::{self, errno, fcntl};
+use simple_error::{bail, try_with};
 use std::fs::File;
 use std::os::unix::prelude::*;
 
-use crate::types::{Error, Result};
+use crate::result::Result;
 
 pub fn open() -> Result<File> {
     let res = fcntl::open("/dev/fuse", OFlag::O_RDWR, stat::Mode::empty());
@@ -15,10 +16,10 @@ pub fn open() -> Result<File> {
             return Ok(file);
         }
         Err(nix::Error::Sys(errno::Errno::ENOENT)) => {}
-        Err(err) => return errfmt!(err, "failed to open /dev/fuse"),
+        Err(err) => bail!("failed to open /dev/fuse: {}", err),
     };
 
-    tryfmt!(
+    try_with!(
         stat::mknod(
             "/dev/fuse",
             SFlag::S_IFCHR,
@@ -29,7 +30,7 @@ pub fn open() -> Result<File> {
     );
 
     let file = unsafe {
-        File::from_raw_fd(tryfmt!(
+        File::from_raw_fd(try_with!(
             fcntl::open("/dev/fuse", OFlag::O_RDWR, stat::Mode::empty()),
             "failed to open fuse device"
         ))

@@ -2,8 +2,6 @@ pub use container_pid::{lookup_container_type, AVAILABLE_CONTAINER_TYPES};
 pub use logging::enable_debug_log;
 pub use user_namespace::DEFAULT_ID_MAP;
 
-#[macro_use]
-pub mod types;
 mod attach;
 mod capabilities;
 mod cgroup;
@@ -25,6 +23,7 @@ pub mod namespace;
 mod num_cpus;
 mod procfs;
 mod pty;
+mod result;
 mod sys_ext;
 mod tmp;
 mod user_namespace;

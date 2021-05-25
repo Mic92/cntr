@@ -1,5 +1,6 @@
 use libc::{self, c_int};
 use nix::errno::Errno;
+use simple_error::try_with;
 use std::fs::File;
 use std::io::Read;
 use std::mem;
@@ -8,8 +9,8 @@ use std::ptr;
 use std::slice;
 
 use crate::procfs;
+use crate::result::Result;
 use crate::sys_ext::{prctl, setxattr};
-use crate::types::{Error, Result};
 
 pub const _LINUX_CAPABILITY_VERSION_1: u32 = 0x1998_0330;
 pub const _LINUX_CAPABILITY_VERSION_2: u32 = 0x2007_1026;
@@ -51,7 +52,7 @@ struct vfs_cap_data {
 }
 
 pub fn has_chroot() -> Result<bool> {
-    let status = tryfmt!(
+    let status = try_with!(
         procfs::status(nix::unistd::getpid()),
         "Failed to get capabilities"
     );
@@ -67,7 +68,7 @@ pub fn set_chroot_capability(path: &Path) -> Result<()> {
             ptr::null() as *const cap_user_data_t,
         )
     };
-    tryfmt!(Errno::result(res), "Failed to get capability version");
+    try_with!(Errno::result(res), "Failed to get capability version");
 
     let (magic, size) = match u32::from_le(header.version) | VFS_CAP_REVISION_MASK {
         _LINUX_CAPABILITY_VERSION_1 => (VFS_CAP_REVISION_1, 4 * (1 + 2)),
@@ -95,7 +96,7 @@ pub fn set_chroot_capability(path: &Path) -> Result<()> {
     let bytep: *const u8 = datap as *const _;
     let bytes: &[u8] = unsafe { slice::from_raw_parts(bytep, size) };
 
-    tryfmt!(
+    try_with!(
         setxattr(path, "security.capability", bytes, 0),
         "setxattr failed"
     );
@@ -105,12 +106,12 @@ pub fn set_chroot_capability(path: &Path) -> Result<()> {
 
 fn last_capability() -> Result<u64> {
     let path = "/proc/sys/kernel/cap_last_cap";
-    let mut f = tryfmt!(File::open(path), "failed to open {}", path);
+    let mut f = try_with!(File::open(path), "failed to open {}", path);
 
     let mut contents = String::new();
-    tryfmt!(f.read_to_string(&mut contents), "failed to read {}", path);
+    try_with!(f.read_to_string(&mut contents), "failed to read {}", path);
     contents.pop(); // remove newline
-    Ok(tryfmt!(
+    Ok(try_with!(
         contents.parse::<u64>(),
         "failed to parse capability, got: '{}'",
         contents
@@ -120,7 +121,7 @@ fn last_capability() -> Result<u64> {
 pub fn drop(inheritable_capabilities: u64) -> Result<()> {
     // we need chroot at the moment for `exec` command
     let inheritable = inheritable_capabilities | 1 << CAP_SYS_CHROOT | 1 << CAP_SYS_PTRACE;
-    let last_capability = tryfmt!(last_capability(), "failed to read capability limit");
+    let last_capability = try_with!(last_capability(), "failed to read capability limit");
 
     for cap in 0..last_capability {
         if (inheritable & (1 << cap)) == 0 {
