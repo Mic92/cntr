@@ -207,7 +207,7 @@ pub fn setup(
         CNTR_MOUNT_POINT
     );
 
-    let ns = try_with!(MountNamespace::new(container_namespace), "");
+    let ns = MountNamespace::new(container_namespace)?;
 
     try_with!(
         mount::mount(

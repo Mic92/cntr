@@ -54,15 +54,12 @@ pub fn run(options: &ChildOptions) -> Result<()> {
         "failed to change cgroup"
     );
 
-    let cmd = try_with!(
-        Cmd::new(
-            options.command.clone(),
-            options.arguments.clone(),
-            options.process_status.global_pid,
-            options.home,
-        ),
-        ""
-    );
+    let cmd = Cmd::new(
+        options.command.clone(),
+        options.arguments.clone(),
+        options.process_status.global_pid,
+        options.home,
+    )?;
 
     let supported_namespaces = try_with!(
         namespace::supported_namespaces(),
@@ -105,15 +102,12 @@ pub fn run(options: &ChildOptions) -> Result<()> {
 
     try_with!(mount_namespace.apply(), "failed to apply mount namespace");
 
-    try_with!(
-        mountns::setup(
-            &options.fs,
-            options.mount_ready_sock,
-            mount_namespace,
-            &mount_label,
-        ),
-        ""
-    );
+    mountns::setup(
+        &options.fs,
+        options.mount_ready_sock,
+        mount_namespace,
+        &mount_label,
+    )?;
     let dropped_groups = if supported_namespaces.contains(namespace::USER.name) {
         unistd::setgroups(&[]).is_ok()
     } else {
