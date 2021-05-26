@@ -68,30 +68,23 @@ pub fn status(target_pid: Pid) -> Result<ProcStatus> {
 
     Ok(ProcStatus {
         global_pid: target_pid,
-        local_pid: try_with!(
-            ns_pid.ok_or_else(|| SimpleError::new(format!(
+        local_pid: ns_pid.ok_or_else(|| {
+            SimpleError::new(format!(
                 "Could not find namespace pid in {}",
                 path.display()
-            ))),
-            ""
-        ),
-        inherited_capabilities: try_with!(
-            inherited_caps.ok_or_else(|| {
-                SimpleError::new(format!(
-                    "Could not find inherited capabilities in {}",
-                    path.display()
-                ))
-            }),
-            ""
-        ),
-        effective_capabilities: try_with!(
-            effective_caps.ok_or_else(|| {
-                SimpleError::new(format!(
-                    "Could not find effective capabilities in {}",
-                    path.display()
-                ))
-            }),
-            ""
-        ),
+            ))
+        })?,
+        inherited_capabilities: inherited_caps.ok_or_else(|| {
+            SimpleError::new(format!(
+                "Could not find inherited capabilities in {}",
+                path.display()
+            ))
+        })?,
+        effective_capabilities: effective_caps.ok_or_else(|| {
+            SimpleError::new(format!(
+                "Could not find effective capabilities in {}",
+                path.display()
+            ))
+        })?,
     })
 }
