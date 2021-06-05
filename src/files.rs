@@ -1,6 +1,9 @@
 use nix::fcntl::OFlag;
 use std::fs::File;
 use std::os::unix::prelude::*;
+use std::fs::create_dir_all;
+use std::path::Path;
+use std::io;
 
 #[derive(PartialOrd, PartialEq)]
 pub enum FdState {
@@ -11,6 +14,15 @@ pub enum FdState {
 
 pub fn fd_path(fd: &Fd) -> String {
     format!("/proc/self/fd/{}", fd.raw())
+}
+
+pub fn mkdir_p<P: AsRef<Path>>(path: &P) -> io::Result<()> {
+    if let Err(e) = create_dir_all(path) {
+        if e.kind() != io::ErrorKind::AlreadyExists {
+            return Err(e);
+        }
+    }
+    Ok(())
 }
 
 impl From<OFlag> for FdState {

@@ -1,10 +1,13 @@
 use nix::errno::Errno;
-use nix::Result;
 use std::env;
 use std::ffi::OsString;
 use std::fs;
 use std::os::unix::ffi::OsStringExt;
 use std::path::{Path, PathBuf};
+use simple_error::{bail, try_with};
+
+use crate::files::mkdir_p;
+use crate::result::Result;
 
 pub struct TempDir {
     name: Option<PathBuf>,
@@ -20,13 +23,22 @@ impl TempDir {
 
 pub fn tempdir() -> Result<TempDir> {
     let mut template = env::temp_dir();
+    if !template.exists() {
+        let mut template = PathBuf::from("/dev/shm");
+        if !template.exists() {
+            template = PathBuf::from("/tmp");
+            if !template.exists() {
+                try_with!(mkdir_p(&template), "mkdir failed");
+            }
+        }
+    }
     template.push("cntr.XXXXXX");
     let mut bytes = template.into_os_string().into_vec();
     // null byte
     bytes.push(0);
     let res = unsafe { libc::mkdtemp(bytes.as_mut_ptr().cast()) };
     if res.is_null() {
-        Err(nix::Error::Sys(Errno::last()))
+        bail!("mkdtemp failed with {}", nix::Error::Sys(Errno::last()));
     } else {
         // remove null byte
         bytes.pop();
