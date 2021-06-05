@@ -1,13 +1,12 @@
 { pkgs ? import <nixpkgs> {}
 , src ? ./.
-, naersk-lib
 }:
 with pkgs;
 
-naersk-lib.buildPackage rec {
+pkgs.rustPlatform.buildRustPackage {
   name = "cntr";
   inherit src;
-
+  cargoLock.lockFile = ./Cargo.lock;
   meta = with stdenv.lib; {
     description = "A container debugging tool based on FUSE";
     homepage = "https://github.com/Mic92/cntr";
@@ -15,4 +14,4 @@ naersk-lib.buildPackage rec {
     maintainers = with maintainers; [ mic92 ];
     platforms = platforms.unix;
   };
- }
+}

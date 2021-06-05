@@ -2,19 +2,15 @@
   description = "A container debugging tool based on FUSE";
 
   inputs = {
-    naersk.url = "github:nmattia/naersk/master";
-    naersk.inputs.nixpkgs.follows = "nixpkgs";
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     utils.url = "github:numtide/flake-utils";
   };
 
-  outputs = { self, nixpkgs, naersk, utils }:
+  outputs = { self, nixpkgs, utils }:
     (utils.lib.eachDefaultSystem (system: let
       pkgs = import nixpkgs { inherit system; };
-      naersk-lib = pkgs.callPackage naersk { };
     in {
       packages.cntr = pkgs.callPackage ./. {
-        inherit naersk-lib;
         src = self;
       };
       defaultPackage = self.packages.${system}.cntr;
