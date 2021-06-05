@@ -2,11 +2,11 @@ use log::warn;
 use nix::mount::MsFlags;
 use nix::sched::CloneFlags;
 use nix::{cmsg_space, mount, sched, unistd};
+use std::fs;
 use simple_error::try_with;
-use std::fs::{create_dir_all, metadata, remove_dir};
 use std::io;
 use std::os::unix::prelude::*;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::{
     ffi::OsStr,
     fs::{set_permissions, Permissions},
@@ -17,6 +17,7 @@ use crate::ipc;
 use crate::namespace;
 use crate::result::Result;
 use crate::tmp;
+use crate::files::mkdir_p;
 
 pub struct MountNamespace {
     old_namespace: namespace::Namespace,
@@ -41,9 +42,6 @@ const CNTR_MOUNT_POINT: &str = "var/lib/cntr";
 
 impl MountNamespace {
     fn new(old_namespace: namespace::Namespace) -> Result<MountNamespace> {
-        let path = PathBuf::from("/tmp");
-        try_with!(mkdir_p(&path), "failed to create /tmp");
-
         let mountpoint = try_with!(tmp::tempdir(), "failed to create temporary mountpoint");
         try_with!(
             set_permissions(mountpoint.path(), Permissions::from_mode(0o755)),
@@ -112,14 +110,14 @@ impl MountNamespace {
             return;
         }
 
-        if let Err(err) = remove_dir(&self.mountpoint) {
+        if let Err(err) = fs::remove_dir(&self.mountpoint) {
             warn!(
                 "failed to cleanup mountpoint {:?}: {}",
                 self.mountpoint, err
             );
         }
 
-        if let Err(err) = remove_dir(&self.temp_mountpoint) {
+        if let Err(err) = fs::remove_dir(&self.temp_mountpoint) {
             warn!(
                 "failed to cleanup temporary mountpoint {:?}: {}",
                 self.mountpoint, err
@@ -130,15 +128,6 @@ impl MountNamespace {
 
 const NONE: Option<&'static [u8]> = None;
 
-fn mkdir_p<P: AsRef<Path>>(path: &P) -> io::Result<()> {
-    if let Err(e) = create_dir_all(path) {
-        if e.kind() != io::ErrorKind::AlreadyExists {
-            return Err(e);
-        }
-    }
-    Ok(())
-}
-
 pub fn setup_bindmounts(mounts: &[&str]) -> Result<()> {
     for m in mounts {
         let mountpoint_buf = PathBuf::from("/").join(m);
@@ -146,7 +135,7 @@ pub fn setup_bindmounts(mounts: &[&str]) -> Result<()> {
         let source_buf = PathBuf::from("/var/lib/cntr").join(m);
         let source = source_buf.as_path();
 
-        let mountpoint_stat = match metadata(mountpoint) {
+        let mountpoint_stat = match fs::metadata(mountpoint) {
             Err(e) => {
                 if e.kind() == io::ErrorKind::NotFound {
                     continue;
@@ -160,7 +149,7 @@ pub fn setup_bindmounts(mounts: &[&str]) -> Result<()> {
             Ok(data) => data,
         };
 
-        let source_stat = match metadata(source) {
+        let source_stat = match fs::metadata(source) {
             Err(e) => {
                 if e.kind() == io::ErrorKind::NotFound {
                     continue;
