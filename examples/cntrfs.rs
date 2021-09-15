@@ -2,16 +2,16 @@ use cntr::fs::{CntrFs, CntrMountOptions};
 
 #[cfg(feature = "profiling")]
 use cpuprofiler::PROFILER;
+use lazy_static::lazy_static;
+use log::{error, info};
 use nix::sys::signal;
 use nix::{mount, unistd};
 use simple_error::{try_with, SimpleError};
 use std::env;
-use std::sync::Mutex;
-use log::{info, error};
 use std::path::Path;
 use std::process;
-use std::sync::mpsc::{SyncSender, sync_channel};
-use lazy_static::lazy_static;
+use std::sync::mpsc::{sync_channel, SyncSender};
+use std::sync::Mutex;
 
 struct MountGuard {
     mount_point: String,

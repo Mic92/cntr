@@ -158,7 +158,7 @@ impl<'a> AsRawFd for LookupFile<'a> {
     fn as_raw_fd(&self) -> RawFd {
         match *self {
             LookupFile::Donate(ref f) => f.as_raw_fd(),
-            LookupFile::Borrow(ref f) => f.as_raw_fd(),
+            LookupFile::Borrow(f) => f.as_raw_fd(),
         }
     }
 }
