@@ -26,9 +26,9 @@ pub struct IdMap {
     extent: [Extent; 5], // 5 == UID_GID_MAP_MAX_EXTENTS
 }
 
-impl Into<&'static str> for Kind {
-    fn into(self) -> &'static str {
-        match self {
+impl From<Kind> for &'static str {
+    fn from(k: Kind) -> &'static str {
+        match k {
             Kind::UidMap => "uid_map",
             Kind::GidMap => "gid_map",
         }

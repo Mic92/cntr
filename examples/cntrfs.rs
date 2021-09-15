@@ -2,10 +2,16 @@ use cntr::fs::{CntrFs, CntrMountOptions};
 
 #[cfg(feature = "profiling")]
 use cpuprofiler::PROFILER;
+use lazy_static::lazy_static;
+use log::{error, info};
+use nix::sys::signal;
 use nix::{mount, unistd};
+use simple_error::{try_with, SimpleError};
 use std::env;
 use std::path::Path;
 use std::process;
+use std::sync::mpsc::{sync_channel, SyncSender};
+use std::sync::Mutex;
 
 struct MountGuard {
     mount_point: String,
@@ -15,6 +21,50 @@ impl Drop for MountGuard {
     fn drop(&mut self) {
         let _ = mount::umount(self.mount_point.as_str());
     }
+}
+
+pub type Result<T> = std::result::Result<T, SimpleError>;
+
+lazy_static! {
+    static ref SIGNAL_SENDER: Mutex<Option<SyncSender<()>>> = Mutex::new(None);
+}
+
+extern "C" fn signal_handler(_: ::libc::c_int) {
+    let sender = match SIGNAL_SENDER.lock().expect("cannot lock sender").take() {
+        Some(s) => {
+            info!("shutdown cntrfs");
+            s
+        }
+        None => {
+            info!("received sigterm. stopping already in progress");
+            return;
+        }
+    };
+    if let Err(e) = sender.send(()) {
+        error!("cannot notify main process: {}", e);
+    }
+}
+
+pub fn setup_signal_handler(sender: SyncSender<()>) -> Result<()> {
+    try_with!(SIGNAL_SENDER.lock(), "cannot get lock").replace(sender);
+
+    let sig_action = signal::SigAction::new(
+        signal::SigHandler::Handler(signal_handler),
+        signal::SaFlags::empty(),
+        signal::SigSet::empty(),
+    );
+
+    unsafe {
+        try_with!(
+            signal::sigaction(signal::SIGINT, &sig_action),
+            "unable to register SIGINT handler"
+        );
+        try_with!(
+            signal::sigaction(signal::SIGTERM, &sig_action),
+            "unable to register SIGTERM handler"
+        );
+    }
+    Ok(())
 }
 
 fn main() {
@@ -53,6 +103,11 @@ fn main() {
         mount_point: args[2].clone(),
     };
     cntr.spawn_sessions().unwrap();
+    let (sender, receiver) = sync_channel(1);
+    setup_signal_handler(sender).unwrap();
+    // wait for exit signal
+    let _ = receiver.recv();
+
     drop(guard);
 
     #[cfg(feature = "profiling")]

@@ -4,6 +4,7 @@ use simple_error::try_with;
 use std::fs::File;
 use std::io::Read;
 use std::mem;
+use std::mem::MaybeUninit;
 use std::path::Path;
 use std::ptr;
 use std::slice;
@@ -60,7 +61,7 @@ pub fn has_chroot() -> Result<bool> {
 }
 
 pub fn set_chroot_capability(path: &Path) -> Result<()> {
-    let header: cap_user_header_t = unsafe { mem::MaybeUninit::uninit().assume_init() };
+    let header: MaybeUninit<cap_user_header_t> = mem::MaybeUninit::uninit();
     let res = unsafe {
         libc::syscall(
             libc::SYS_capget,
@@ -68,6 +69,7 @@ pub fn set_chroot_capability(path: &Path) -> Result<()> {
             ptr::null() as *const cap_user_data_t,
         )
     };
+    let header: cap_user_header_t = unsafe { header.assume_init() };
     try_with!(Errno::result(res), "Failed to get capability version");
 
     let (magic, size) = match u32::from_le(header.version) | VFS_CAP_REVISION_MASK {

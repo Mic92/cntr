@@ -105,6 +105,7 @@ dependencies = [
  "concurrent-hashmap",
  "container-pid",
  "cpuprofiler",
+ "lazy_static",
  "libc",
  "log",
  "nix",

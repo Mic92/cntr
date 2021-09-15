@@ -35,3 +35,6 @@ lto = true
 [features]
 verbose_fuse_test_log = []
 profiling = []
+
+[dev-dependencies]
+lazy_static = "1.4"
