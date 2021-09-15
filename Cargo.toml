@@ -15,7 +15,7 @@ clap = "2.33.3"
 log = "0.4.14"
 libc = "0.2.102"
 parking_lot = "0.11.1"
-nix = "0.20.0"
+nix = "0.22.1"
 container-pid = "0.2.0"
 simple-error = "0.2.3"
 cntr-fuse = { version = "0.4.1", default-features = false }
