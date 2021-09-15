@@ -151,9 +151,9 @@ dependencies = [
 
 [[package]]
 name = "container-pid"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9c327b0815d6d05f0de10ba33afad03f42892423756acc2e4c07ba7a7a850c57"
+checksum = "68d1dacc03e8237a068c9f700c4fddad103cb59b6f891ab401df10eb0bee4e76"
 dependencies = [
  "libc",
  "simple-error",
