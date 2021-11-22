@@ -13,7 +13,7 @@ cpuprofiler = { version = "0.0.4", optional = true }
 argparse = "0.2.2"
 clap = "2.33.3"
 log = "0.4.14"
-libc = "0.2.107"
+libc = "0.2.108"
 parking_lot = "0.11.1"
 nix = "0.20.0"
 container-pid = "0.2.0"
