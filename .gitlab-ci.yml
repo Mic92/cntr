@@ -1,0 +1,7 @@
+stages:
+  - build
+
+build-job:
+  stage: build
+  script:
+    - nix shell 'nixpkgs#git' -c nix flake check
