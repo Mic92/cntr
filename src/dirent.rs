@@ -4,7 +4,7 @@
 
 use libc::{c_long, DIR};
 use nix::errno::Errno;
-use std::convert::{AsRef, Into};
+use std::convert::AsRef;
 use std::mem;
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
@@ -29,10 +29,10 @@ impl AsRef<DIR> for DirectoryStream {
 /// Consumes directory stream and return underlying directory pointer.
 ///
 /// The pointer must be deallocated manually using `libc::closedir`
-impl Into<*mut DIR> for DirectoryStream {
-    fn into(self) -> *mut DIR {
-        let dirp = self.0;
-        mem::forget(self);
+impl From<DirectoryStream> for *mut DIR {
+    fn from(e: DirectoryStream) -> Self {
+        let dirp = e.0;
+        mem::forget(e);
         dirp
     }
 }

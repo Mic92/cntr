@@ -35,7 +35,7 @@ pub fn parse_selinux_context(p: Pid) -> Result<String> {
     let options = try_with!(find_mount_options(p), "failed to parse mount options of /");
     let needle = "context=\"";
     if let Some(index) = options.find(needle) {
-        if let Some(context) = options[(index + needle.len())..].splitn(2, '"').next() {
+        if let Some(context) = options[(index + needle.len())..].split('"').next() {
             return Ok(String::from(context));
         } else {
             bail!("missing quotes selinux context: {}", options);
