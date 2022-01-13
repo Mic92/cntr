@@ -163,6 +163,7 @@ pub fn setup_bindmounts(mounts: &[&str]) -> Result<()> {
             Ok(data) => data,
         };
 
+        #[allow(clippy::suspicious_operation_groupings)]
         if !((source_stat.is_file() && !mountpoint_stat.is_dir())
             || (source_stat.is_dir() && mountpoint_stat.is_dir()))
         {
