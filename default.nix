@@ -1,18 +1,16 @@
-{ pkgs ? import <nixpkgs> {}
-, src ? ./.
-, naersk-lib
-}:
-with pkgs;
-
-naersk-lib.buildPackage rec {
-  name = "cntr";
-  inherit src;
-
-  meta = with stdenv.lib; {
-    description = "A container debugging tool based on FUSE";
-    homepage = "https://github.com/Mic92/cntr";
-    license = licenses.mit;
-    maintainers = with maintainers; [ mic92 ];
-    platforms = platforms.unix;
-  };
- }
+(
+  import
+  (
+    let
+      lock = builtins.fromJSON (builtins.readFile ./flake.lock);
+    in
+      fetchTarball {
+        url = "https://github.com/edolstra/flake-compat/archive/${lock.nodes.flake-compat.locked.rev}.tar.gz";
+        sha256 = lock.nodes.flake-compat.locked.narHash;
+      }
+  )
+  {
+    src = ./.;
+  }
+)
+.defaultNix
