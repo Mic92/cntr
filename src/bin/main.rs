@@ -1,20 +1,17 @@
-extern crate argparse;
 extern crate cntr;
 extern crate nix;
 
-use clap::{
-    arg_enum, crate_authors, crate_version, values_t, App, AppSettings, Arg, ArgMatches, SubCommand,
-};
+use clap::{crate_authors, crate_version, Arg, ArgEnum, ArgMatches, Command, PossibleValue};
 use cntr::pwnam;
 use std::path::Path;
 use std::{env, process};
 
-fn command_arg(index: u64) -> Arg<'static, 'static> {
-    Arg::with_name("command")
-                .help("Command and its arguments to execute after attach. Consider prepending it with '-- ' to prevent parsing of '-x'-like flags. [default: $SHELL]")
-                .requires("command")
-                .index(index)
-                .multiple(true)
+fn command_arg(index: usize) -> Arg<'static> {
+    Arg::new("command")
+        .help("Command and its arguments to execute after attach. Consider prepending it with '-- ' to prevent parsing of '-x'-like flags. [default: $SHELL]")
+        .requires("command")
+        .index(index)
+        .multiple_occurrences(true)
 }
 
 fn parse_command_arg(args: &ArgMatches) -> (Option<String>, Vec<String>) {
@@ -33,19 +30,38 @@ fn parse_command_arg(args: &ArgMatches) -> (Option<String>, Vec<String>) {
     }
 }
 
-arg_enum! {
-    #[derive(Debug)]
-    #[allow(non_camel_case_types)]
-    pub enum ContainerType {
-        process_id,
-        rkt,
-        podman,
-        docker,
-        nspawn,
-        lxc,
-        lxd,
-        containerd,
-        command,
+#[derive(clap::ArgEnum, Debug, Clone, Copy)]
+#[allow(non_camel_case_types)]
+pub enum ContainerType {
+    process_id,
+    rkt,
+    podman,
+    docker,
+    nspawn,
+    lxc,
+    lxd,
+    containerd,
+    command,
+}
+
+impl ContainerType {
+    pub fn possible_values() -> impl Iterator<Item = PossibleValue<'static>> {
+        ContainerType::value_variants()
+            .iter()
+            .filter_map(ArgEnum::to_possible_value)
+    }
+}
+
+impl std::str::FromStr for ContainerType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        for variant in Self::value_variants() {
+            if variant.to_possible_value().unwrap().matches(s, false) {
+                return Ok(*variant);
+            }
+        }
+        Err(format!("Invalid variant: {}", s))
     }
 }
 
@@ -56,10 +72,12 @@ fn attach(args: &ArgMatches) {
 
     let mut container_types = vec![];
     if args.is_present("type") {
-        let types = values_t!(args.values_of("type"), ContainerType).unwrap_or_else(|e| e.exit());
+        let types = args
+            .values_of_t::<ContainerType>("type")
+            .unwrap_or_else(|e| e.exit());
         container_types = types
             .into_iter()
-            .filter_map(|t| cntr::lookup_container_type(&t.to_string()))
+            .filter_map(|t| cntr::lookup_container_type(&format!("{:?}", t)))
             .collect();
     }
 
@@ -107,49 +125,49 @@ fn exec(args: &ArgMatches, setcap: bool) {
 }
 
 fn main() {
-    let attach_command = SubCommand::with_name("attach")
+    let attach_command = Command::new("attach")
         .about("Enter container")
         .version(crate_version!())
         .author(crate_authors!("\n"))
-        .setting(AppSettings::DisableVersion)
+        .disable_version_flag(true)
         .arg(
-            Arg::with_name("effective-user")
+            Arg::new("effective-user")
                 .long("effective-user")
                 .takes_value(true)
-                .empty_values(false)
+                .forbid_empty_values(true)
                 .value_name("EFFECTIVE_USER")
                 .help("effective username that should be owner of new created files on the host"),
         )
         .arg(
-            Arg::with_name("type")
-                .short("t")
+            Arg::new("type")
+                .short('t')
                 .long("type")
                 .takes_value(true)
-                .empty_values(false)
-                .require_delimiter(true)
+                .forbid_empty_values(true)
+                .require_value_delimiter(true)
                 .value_name("TYPE")
                 .help("Container types to try (sperated by ','). [default: all but command]")
-                .possible_values(&ContainerType::variants()),
+                .possible_values(ContainerType::possible_values()),
         )
         .arg(
-            Arg::with_name("id")
+            Arg::new("id")
                 .help("container id, container name or process id")
                 .required(true)
                 .index(1),
         )
         .arg(command_arg(2));
 
-    let exec_command = SubCommand::with_name("exec")
+    let exec_command = Command::new("exec")
         .about("Execute command in container filesystem")
         .version(crate_version!())
         .author(crate_authors!("\n"))
         .arg(command_arg(1));
 
-    let main_app = App::new("Cntr")
+    let main_app = Command::new("Cntr")
         .about("Enter or executed in container")
         .version(crate_version!())
         .author(crate_authors!("\n"))
-        .setting(AppSettings::SubcommandRequiredElseHelp)
+        .arg_required_else_help(true)
         .subcommand(attach_command)
         .subcommand(exec_command.clone());
 
@@ -162,10 +180,10 @@ fn main() {
             } else {
                 let matches = main_app.get_matches();
                 match matches.subcommand() {
-                    ("exec", Some(exec_matches)) => exec(exec_matches, false),
-                    ("attach", Some(attach_matches)) => attach(attach_matches),
-                    ("", None) => unreachable!(), // beause of AppSettings::SubCommandRequired
-                    _ => unreachable!(),
+                    Some(("exec", exec_matches)) => exec(exec_matches, false),
+                    Some(("attach", attach_matches)) => attach(attach_matches),
+                    Some((_, attach_matches)) => attach(attach_matches),
+                    None => unreachable!(), // beause of AppSettings::SubCommandRequired
                 };
             }
         }
