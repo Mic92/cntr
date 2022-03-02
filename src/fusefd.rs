@@ -15,7 +15,7 @@ pub fn open() -> Result<File> {
             let file = unsafe { File::from_raw_fd(fd) };
             return Ok(file);
         }
-        Err(nix::Error::Sys(errno::Errno::ENOENT)) => {}
+        Err(errno::Errno::ENOENT) => {}
         Err(err) => bail!("failed to open /dev/fuse: {}", err),
     };
 

@@ -102,16 +102,9 @@ impl Cmd {
                 .envs(self.environment)
                 .pre_exec(|| {
                     match unistd::chroot("/var/lib/cntr") {
-                        Err(nix::Error::Sys(errno)) => {
-                            warn!(
-                                "failed to chroot to /var/lib/cntr: {}",
-                                nix::Error::Sys(errno)
-                            );
-                            return Err(io::Error::from(errno));
-                        }
                         Err(e) => {
                             warn!("failed to chroot to /var/lib/cntr: {}", e);
-                            return Err(io::Error::from_raw_os_error(libc::EINVAL));
+                            return Err(io::Error::from_raw_os_error(e as i32));
                         }
                         _ => {}
                     }

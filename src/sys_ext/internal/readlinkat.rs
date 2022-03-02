@@ -21,7 +21,7 @@ fn readlinkat<'a, P: ?Sized + NixPath>(
         Err(err) => Err(err),
         Ok(len) => {
             if (len as usize) >= buffer.len() {
-                Err(nix::Error::Sys(Errno::ENAMETOOLONG))
+                Err(Errno::ENAMETOOLONG)
             } else {
                 Ok(OsStr::from_bytes(&buffer[..(len as usize)]))
             }
@@ -36,7 +36,7 @@ pub fn fuse_readlinkat(fd: RawFd) -> nix::Result<OsString> {
             Ok(target) => {
                 return Ok(OsString::from(target));
             }
-            Err(nix::Error::Sys(Errno::ENAMETOOLONG)) => {}
+            Err(Errno::ENAMETOOLONG) => {}
             Err(e) => return Err(e),
         };
         // Trigger the internal buffer resizing logic of `Vec` by requiring

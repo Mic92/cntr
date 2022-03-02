@@ -1,6 +1,6 @@
 use nix::errno::Errno;
 use nix::unistd::{Gid, Uid};
-use nix::{Error, NixPath, Result};
+use nix::{NixPath, Result};
 use std::ffi::CString;
 
 pub struct Passwd {
@@ -22,7 +22,7 @@ pub fn pwnam<P: ?Sized + NixPath>(name: &P) -> Result<Option<Passwd>> {
         if let Errno::UnknownErrno = Errno::last() {
             Ok(None)
         } else {
-            Err(Error::Sys(Errno::last()))
+            Err(Errno::last())
         }
     } else {
         Ok(Some(unsafe {

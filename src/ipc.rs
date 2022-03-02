@@ -45,9 +45,7 @@ impl Socket {
                     Some(&mut *cmsgspace),
                     MsgFlags::empty(),
                 ) {
-                    Err(nix::Error::Sys(Errno::EAGAIN)) | Err(nix::Error::Sys(Errno::EINTR)) => {
-                        continue
-                    }
+                    Err(Errno::EAGAIN) | Err(Errno::EINTR) => continue,
                     Err(e) => return try_with!(Err(e), "recvmsg failed"),
                     Ok(msg) => {
                         for cmsg in msg.cmsgs() {
