@@ -124,12 +124,7 @@ macro_rules! tryfuse {
             Ok(val) => val,
             Err(err) => {
                 debug!("return error {} on {}:{}", err, file!(), line!());
-                let rc = match err {
-                    nix::Error::Sys(errno) => errno as i32,
-                    // InvalidPath, InvalidUtf8, UnsupportedOperation
-                    _ => libc::EINVAL,
-                };
-                return $reply.error(rc);
+                return $reply.error(err as i32);
             }
         }
     };
@@ -447,7 +442,7 @@ impl CntrFs {
         } else {
             match self.inodes.find(&ino) {
                 Some(inode) => Ok(Arc::clone(inode.get())),
-                None => Err(nix::Error::Sys(Errno::ESTALE)),
+                None => Err(Errno::ESTALE),
             }
         }
     }
@@ -1098,12 +1093,7 @@ impl Filesystem for CntrFs {
                 Ok(val) => val,
                 Err(err) => {
                     debug!("return error {} on {}:{}", err, file!(), line!());
-                    let rc = match err {
-                        nix::Error::Sys(errno) => errno as i32,
-                        // InvalidPath, InvalidUtf8, UnsupportedOperation
-                        _ => libc::EINVAL,
-                    };
-                    return reply.error(rc);
+                    return reply.error(err as i32);
                 }
             };
 
@@ -1115,12 +1105,7 @@ impl Filesystem for CntrFs {
                 Ok(val) => val,
                 Err(err) => {
                     debug!("return error {} on {}:{}", err, file!(), line!());
-                    let rc = match err {
-                        nix::Error::Sys(errno) => errno as i32,
-                        // InvalidPath, InvalidUtf8, UnsupportedOperation
-                        _ => libc::EINVAL,
-                    };
-                    return reply.error(rc);
+                    return reply.error(err as i32);
                 }
             };
 

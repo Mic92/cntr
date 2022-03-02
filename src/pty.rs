@@ -157,7 +157,7 @@ fn shovel(pairs: &mut [FilePair]) {
             None,
             None,
         ) {
-            Err(nix::Error::Sys(Errno::EINTR)) => {
+            Err(Errno::EINTR) => {
                 continue;
             }
             Err(_) => {

@@ -17,6 +17,7 @@
       devShell = pkgs.mkShell {
         buildInputs = [
           pkgs.cargo
+          pkgs.cargo-watch
           pkgs.rustc
           pkgs.clippy
           pkgs.cargo-bloat

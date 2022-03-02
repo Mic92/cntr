@@ -26,7 +26,7 @@ pub fn tempdir() -> Result<TempDir> {
     bytes.push(0);
     let res = unsafe { libc::mkdtemp(bytes.as_mut_ptr().cast()) };
     if res.is_null() {
-        Err(nix::Error::Sys(Errno::last()))
+        Err(Errno::last())
     } else {
         // remove null byte
         bytes.pop();
