@@ -143,8 +143,8 @@ fn main() {
                 .short('t')
                 .long("type")
                 .takes_value(true)
-                .forbid_empty_values(true)
-                .require_value_delimiter(true)
+                .forbid_empty_values(false)
+                .use_value_delimiter(true)
                 .value_name("TYPE")
                 .help("Container types to try (sperated by ','). [default: all but command]")
                 .possible_values(ContainerType::possible_values()),
