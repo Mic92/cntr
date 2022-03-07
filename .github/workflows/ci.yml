@@ -17,7 +17,7 @@ jobs:
           - stable
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: Install rust
         uses: actions-rs/toolchain@v1
         with:
@@ -51,7 +51,7 @@ jobs:
           override: true
           components: rustfmt, clippy
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: Clippy
         uses: actions-rs/cargo@v1
         with:
