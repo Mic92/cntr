@@ -24,7 +24,7 @@ impl TempDir {
 pub fn tempdir() -> Result<TempDir> {
     let mut template = env::temp_dir();
     if !template.exists() {
-        let mut template = PathBuf::from("/dev/shm");
+        template = PathBuf::from("/dev/shm");
         if !template.exists() {
             template = PathBuf::from("/tmp");
             if !template.exists() {
