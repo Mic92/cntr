@@ -12,6 +12,7 @@ use std::{
     fs::{set_permissions, Permissions},
 };
 
+use crate::files::mkdir_p;
 use crate::fs::CntrFs;
 use crate::ipc;
 use crate::namespace;
