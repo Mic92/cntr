@@ -86,6 +86,7 @@ pub struct CntrFs {
     gid_map: IdMap,
     splice_read: bool,
     splice_write: bool,
+    fopen_keepcache: bool,
 }
 
 enum ReplyDirectory {
@@ -136,6 +137,7 @@ pub struct CntrMountOptions<'a> {
     pub prefix: &'a str,
     pub splice_read: bool,
     pub splice_write: bool,
+    pub fopen_keepcache: bool,
     pub uid_map: IdMap,
     pub gid_map: IdMap,
     pub effective_uid: Option<Uid>,
@@ -208,6 +210,7 @@ impl CntrFs {
             fuse_fd: fuse_fd.into_raw_fd(),
             splice_read: options.splice_read,
             splice_write: options.splice_write,
+            fopen_keepcache: options.fopen_keepcache,
             effective_uid: options.effective_uid,
             effective_gid: options.effective_gid,
         })
@@ -273,6 +276,7 @@ impl CntrFs {
                 gid_map: self.gid_map,
                 effective_uid: self.effective_uid,
                 effective_gid: self.effective_gid,
+                fopen_keepcache: self.fopen_keepcache,
             };
 
             let max_background = num_sessions as u16;
@@ -928,10 +932,15 @@ impl Filesystem for CntrFs {
             reply
         );
 
-        // avoid double caching
-        tryfuse!(posix_fadvise(res), reply);
         let fh = Fh::new(Fd::new(res, FdState::from(oflags)));
-        reply.opened(Box::into_raw(fh) as u64, fuse::consts::FOPEN_KEEP_CACHE); // freed by close
+        let flags = if self.fopen_keepcache {
+            // avoid double caching
+            tryfuse!(posix_fadvise(res), reply);
+            fuse::consts::FOPEN_KEEP_CACHE
+        } else {
+            0
+        };
+        reply.opened(Box::into_raw(fh) as u64, flags); // freed by close
     }
 
     fn read(

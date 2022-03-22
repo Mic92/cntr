@@ -1,6 +1,6 @@
+extern crate cntr;
 extern crate fuse;
 extern crate libc;
-extern crate cntr;
 extern crate nix;
 extern crate thread_scoped;
 
@@ -13,7 +13,7 @@ use cntr::fs::{CntrFs, CntrMountOptions};
 
 #[cfg(feature = "profiling")]
 use cpuprofiler::PROFILER;
-use nix::{unistd, mount};
+use nix::{mount, unistd};
 use std::env;
 use std::path::Path;
 use std::process;
@@ -43,28 +43,41 @@ fn main() {
         return;
     }
 
-    if cfg!(feature = "splice_read") {
-        println!("enable splice read");
+    let splice_read = env::var("SPLICE_READ").is_ok();
+    if splice_read {
+        println!("SPLICE_READ enabled")
     }
-    if cfg!(feature = "splice_write") {
-        println!("enable splice write");
+    let splice_write = env::var("SPLICE_WRITE").is_ok();
+    if splice_write {
+        println!("SPLICE_WRITE enabled")
     }
-    #[cfg(feature = "profiling")] PROFILER.lock().unwrap().start("./cntrfs.profile").unwrap();
+    let fopen_keepcache = env::var("FOPEN_KEEPCACHE").is_ok();
+    if fopen_keepcache {
+        println!("FOPEN_KEEPCACHE enabled")
+    }
+
+    #[cfg(feature = "profiling")]
+    PROFILER.lock().unwrap().start("./cntrfs.profile").unwrap();
 
     let cntr = CntrFs::new(&CntrMountOptions {
         prefix: &args[1],
-        splice_read: cfg!(feature = "splice_read"),
-        splice_write: cfg!(feature = "splice_write"),
         uid_map: cntr::DEFAULT_ID_MAP,
         gid_map: cntr::DEFAULT_ID_MAP,
         effective_uid: None,
         effective_gid: None,
-    }).unwrap();
+        splice_read,
+        splice_write,
+        fopen_keepcache
+    })
+    .unwrap();
 
     cntr.mount(Path::new(&args[2]), &None).unwrap();
-    let guard = MountGuard { mount_point: args[2].clone() };
+    let guard = MountGuard {
+        mount_point: args[2].clone(),
+    };
     cntr.spawn_sessions().unwrap();
     drop(guard);
 
-    #[cfg(feature = "profiling")] PROFILER.lock().unwrap().stop().unwrap();
+    #[cfg(feature = "profiling")]
+    PROFILER.lock().unwrap().stop().unwrap();
 }

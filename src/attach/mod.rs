@@ -55,6 +55,7 @@ pub fn attach(opts: &AttachOptions) -> Result<Void> {
             prefix: "/",
             splice_read: cfg!(feature = "splice_read"),
             splice_write: false,
+            fopen_keepcache: true,
             uid_map,
             gid_map,
             effective_uid,
