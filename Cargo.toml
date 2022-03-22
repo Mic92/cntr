@@ -14,7 +14,7 @@ libc = "0.2.*"
 parking_lot = "*"
 void = "*"
 cntr-nix = "0.10.0-pre1"
-cntr-fuse = "0.3.4"
+cntr-fuse = { git = "https://github.com/Mic92/cntr-fuse", branch = "extra-experiments" }
 thread-scoped = "1"
 
 [dependencies.concurrent-hashmap]
