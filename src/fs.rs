@@ -922,7 +922,7 @@ impl Filesystem for CntrFs {
 
         // ignore write only or append flags because we have writeback cache enabled
         // and the kernel will also read from file descriptors opened as read.
-        oflags = (oflags & !OFlag::O_NOFOLLOW & !OFlag::O_APPEND) | OFlag::O_CLOEXEC;
+        oflags = (oflags & !OFlag::O_NOFOLLOW & !OFlag::O_APPEND & !OFlag::O_DIRECT) | OFlag::O_CLOEXEC;
         if oflags & OFlag::O_WRONLY == OFlag::O_WRONLY {
             oflags = (oflags & !OFlag::O_WRONLY) | OFlag::O_RDWR;
         }
