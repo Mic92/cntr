@@ -1,4 +1,4 @@
-use libc::pid_t;
+use libc::{c_ulong, pid_t};
 use nix::unistd::Pid;
 use simple_error::{try_with, SimpleError};
 use std::env;
@@ -19,8 +19,8 @@ pub fn get_path() -> PathBuf {
 pub struct ProcStatus {
     pub global_pid: Pid,
     pub local_pid: Pid,
-    pub inherited_capabilities: u64,
-    pub effective_capabilities: u64,
+    pub inherited_capabilities: c_ulong,
+    pub effective_capabilities: c_ulong,
 }
 
 pub fn status(target_pid: Pid) -> Result<ProcStatus> {
@@ -28,8 +28,8 @@ pub fn status(target_pid: Pid) -> Result<ProcStatus> {
     let file = try_with!(File::open(&path), "failed to open {}", path.display());
 
     let mut ns_pid: Option<Pid> = None;
-    let mut inherited_caps: Option<u64> = None;
-    let mut effective_caps: Option<u64> = None;
+    let mut inherited_caps: Option<c_ulong> = None;
+    let mut effective_caps: Option<c_ulong> = None;
 
     let reader = BufReader::new(file);
     for line in reader.lines() {
@@ -48,7 +48,7 @@ pub fn status(target_pid: Pid) -> Result<ProcStatus> {
         } else if columns[0] == "CapInh:" {
             if let Some(cap_string) = columns.last() {
                 let cap = try_with!(
-                    u64::from_str_radix(cap_string, 16),
+                    c_ulong::from_str_radix(cap_string, 16),
                     "read invalid capability from proc: '{}'",
                     columns[1]
                 );
@@ -57,7 +57,7 @@ pub fn status(target_pid: Pid) -> Result<ProcStatus> {
         } else if columns[0] == "CapEff:" {
             if let Some(cap_string) = columns.last() {
                 let cap = try_with!(
-                    u64::from_str_radix(cap_string, 16),
+                    c_ulong::from_str_radix(cap_string, 16),
                     "read invalid capability from proc: '{}'",
                     columns[1]
                 );

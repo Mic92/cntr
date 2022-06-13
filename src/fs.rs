@@ -4,7 +4,7 @@ use cntr_fuse::{
     Request,
 };
 use concurrent_hashmap::ConcHashMap;
-use libc::{self, c_long, dev_t};
+use libc::{self, c_long, c_ulong, dev_t, off_t};
 use log::debug;
 use nix::errno::Errno;
 use nix::fcntl::{self, AtFlags, OFlag};
@@ -346,7 +346,7 @@ impl CntrFs {
         }
 
         if let Some(s) = size {
-            unistd::ftruncate(fd.raw(), s as i64)?;
+            unistd::ftruncate(fd.raw(), s as off_t)?;
         }
         if mtime != cntr_fuse::UtimeSpec::Omit || atime != cntr_fuse::UtimeSpec::Omit {
             let inode = self.inode(ino)?;
@@ -361,8 +361,8 @@ impl CntrFs {
         let dirp = unsafe { &mut (*(fh as *mut DirP)) };
         assert!(dirp.magic == DIRP_MAGIC);
 
-        if (offset as i64) != dirp.offset {
-            dirent::seekdir(&mut dirp.dp, offset as i64);
+        if (offset as c_long) != dirp.offset {
+            dirent::seekdir(&mut dirp.dp, offset as c_long);
             dirp.entry = None;
             dirp.offset = 0;
         }
@@ -380,7 +380,7 @@ impl CntrFs {
                     match reply {
                         ReplyDirectory::Directory(ref mut r) => r.add(
                             entry.d_ino,
-                            dirp.offset,
+                            dirp.offset as i64,
                             dtype_kind(entry.d_type),
                             OsStr::from_bytes(name.to_bytes()),
                         ),
@@ -388,7 +388,7 @@ impl CntrFs {
                             match self.lookup_inode(ino, OsStr::from_bytes(name.to_bytes())) {
                                 Ok((attr, generation)) => r.add(
                                     entry.d_ino,
-                                    dirp.offset,
+                                    dirp.offset as i64,
                                     OsStr::from_bytes(name.to_bytes()),
                                     &TTL,
                                     &attr,
@@ -416,7 +416,7 @@ impl CntrFs {
     fn attr_from_stat(&self, attr: stat::FileStat) -> FileAttr {
         let ctime = UNIX_EPOCH + Duration::new(attr.st_ctime as u64, attr.st_ctime_nsec as u32);
         FileAttr {
-            ino: attr.st_ino, // replaced by ino pointer
+            ino: attr.st_ino as u64, // replaced by ino pointer
             size: attr.st_size as u64,
             blocks: attr.st_blocks as u64,
             atime: UNIX_EPOCH + Duration::new(attr.st_atime as u64, attr.st_atime_nsec as u32),
@@ -933,7 +933,10 @@ impl Filesystem for CntrFs {
 
         let mut v = vec![0; size as usize];
         let buf = v.as_mut_slice();
-        tryfuse!(pread(get_filehandle(fh).fd.raw(), buf, offset), reply);
+        tryfuse!(
+            pread(get_filehandle(fh).fd.raw(), buf, offset as off_t),
+            reply
+        );
 
         reply.data(buf);
     }
@@ -951,7 +954,7 @@ impl Filesystem for CntrFs {
         fsuid::set_root();
         let dst_fd = get_filehandle(fh).fd.raw();
 
-        let written = tryfuse!(pwrite(dst_fd, data, offset), reply);
+        let written = tryfuse!(pwrite(dst_fd, data, offset as off_t), reply);
 
         reply.written(written as u32);
     }
@@ -1288,7 +1291,7 @@ impl Filesystem for CntrFs {
         let handle = get_filehandle(fh);
         let flags = fcntl::FallocateFlags::from_bits_truncate(mode as i32);
         tryfuse!(
-            fcntl::fallocate(handle.fd.raw(), flags, offset as i64, length as i64),
+            fcntl::fallocate(handle.fd.raw(), flags, offset as off_t, length as off_t),
             reply
         );
         reply.ok();
@@ -1315,7 +1318,7 @@ impl Filesystem for CntrFs {
             get_filehandle(fh).fd.raw()
         };
 
-        let cmd = u64::from(_cmd);
+        let cmd = c_ulong::from(_cmd);
 
         if out_size > 0 {
             let mut out = vec![0; out_size as usize];
