@@ -6,6 +6,7 @@
 makeTest {
   name = "docker";
   nodes.server = { ... }: {
+    virtualisation.oci-containers.backend = "docker";
     virtualisation.oci-containers.containers.nginx = {
       image = "nginx-container";
       imageFile = pkgs.dockerTools.examples.nginx;
