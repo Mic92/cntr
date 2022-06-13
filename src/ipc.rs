@@ -1,8 +1,9 @@
 use nix::errno::Errno;
 use nix::sys::socket::*;
-use nix::sys::uio::IoVec;
+//use nix::sys::uio::IoVec;
 use simple_error::try_with;
 use std::fs::File;
+use std::io::{IoSlice, IoSliceMut};
 use std::os::unix::prelude::*;
 
 use crate::result::Result;
@@ -11,9 +12,11 @@ pub struct Socket {
     fd: File,
 }
 
+const NONE: Option<&UnixAddr> = None;
+
 impl Socket {
     pub fn send(&self, messages: &[&[u8]], files: &[&File]) -> Result<()> {
-        let iov: Vec<IoVec<&[u8]>> = messages.iter().map(|m| IoVec::from_slice(m)).collect();
+        let iov: Vec<IoSlice> = messages.iter().map(|m| IoSlice::new(m)).collect();
         let fds: Vec<RawFd> = files.iter().map(|f| f.as_raw_fd()).collect();
         let cmsg = if files.is_empty() {
             vec![]
@@ -22,7 +25,7 @@ impl Socket {
         };
 
         try_with!(
-            sendmsg(self.fd.as_raw_fd(), &iov, &cmsg, MsgFlags::empty(), None),
+            sendmsg(self.fd.as_raw_fd(), &iov, &cmsg, MsgFlags::empty(), NONE),
             "sendmsg failed"
         );
         Ok(())
@@ -37,14 +40,15 @@ impl Socket {
         let received;
         let mut files: Vec<File> = Vec::with_capacity(1);
         {
-            let iov = [IoVec::from_mut_slice(&mut msg_buf)];
+            let mut iov = vec![IoSliceMut::new(&mut msg_buf)];
             loop {
-                match recvmsg(
+                let res = recvmsg::<UnixAddr>(
                     self.fd.as_raw_fd(),
-                    &iov,
+                    &mut iov[..],
                     Some(&mut *cmsgspace),
                     MsgFlags::empty(),
-                ) {
+                );
+                match res {
                     Err(Errno::EAGAIN) | Err(Errno::EINTR) => continue,
                     Err(e) => return try_with!(Err(e), "recvmsg failed"),
                     Ok(msg) => {
