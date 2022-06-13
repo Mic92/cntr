@@ -30,11 +30,11 @@
       system = "x86_64-linux";
       pkgs = nixpkgs.legacyPackages.${system};
     in {
-      integration-tests = import ./vm-test.nix {
+      inherit (import ./vm-test.nix {
         makeTest = import (nixpkgs + "/nixos/tests/make-test-python.nix");
         inherit pkgs;
         inherit (self.packages.${system}) cntr;
-      };
+      }) docker podman;
     };
   };
 }

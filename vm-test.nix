@@ -3,10 +3,13 @@
 , makeTest ? pkgs.callPackage (flake.inputs.nixpkgs + "/nixos/tests/make-test-python.nix")
 , cntr ? flake.defaultPackage.${builtins.currentSystem}
 }:
-makeTest {
-  name = "docker";
-  nodes.server = { ... }: {
-    virtualisation.oci-containers.backend = "docker";
+
+let
+  makeTest' = test: makeTest test {
+    inherit pkgs;
+    inherit (pkgs) system;
+  };
+  ociTest = { pkgs, ... }: {
     virtualisation.oci-containers.containers.nginx = {
       image = "nginx-container";
       imageFile = pkgs.dockerTools.examples.nginx;
@@ -17,14 +20,34 @@ makeTest {
       cntr
     ];
   };
+in
+{
+  docker = makeTest' {
+    name = "docker";
+    nodes.server = { ... }: {
+      imports = [ ociTest ];
+      virtualisation.oci-containers.backend = "docker";
+    };
 
-  testScript = ''
-    start_all()
-    server.wait_for_unit("docker-nginx.service")
-    server.wait_for_open_port(8181)
-    server.succeed("cntr attach nginx true")
-  '';
-} {
-  inherit pkgs;
-  inherit (pkgs) system;
+    testScript = ''
+      start_all()
+      server.wait_for_unit("docker-nginx.service")
+      server.wait_for_open_port(8181)
+      server.succeed("cntr attach nginx true")
+    '';
+  };
+  podman = makeTest' {
+    name = "podman";
+    nodes.server = { ... }: {
+      imports = [ ociTest ];
+      virtualisation.oci-containers.backend = "podman";
+    };
+
+    testScript = ''
+      start_all()
+      server.wait_for_unit("podman-nginx.service")
+      server.wait_for_open_port(8181)
+      server.succeed("cntr attach nginx true")
+    '';
+  };
 }
