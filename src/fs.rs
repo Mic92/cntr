@@ -1,9 +1,9 @@
+use chashmap::CHashMap;
 use cntr_fuse::{
     self, FileAttr, FileType, Filesystem, ReplyAttr, ReplyCreate, ReplyData, ReplyEmpty,
     ReplyEntry, ReplyIoctl, ReplyLseek, ReplyOpen, ReplyRead, ReplyStatfs, ReplyWrite, ReplyXattr,
     Request,
 };
-use concurrent_hashmap::ConcHashMap;
 use libc::{self, c_long, c_ulong, dev_t, off_t};
 use log::debug;
 use nix::errno::Errno;
@@ -86,7 +86,7 @@ pub struct CntrFs {
     root_inode: Arc<Inode>,
     dotcntr: Arc<Option<DotcntrDir>>,
     inode_mapping: Arc<Mutex<HashMap<InodeKey, u64>>>,
-    inodes: Arc<ConcHashMap<u64, Arc<Inode>>>,
+    inodes: Arc<CHashMap<u64, Arc<Inode>>>,
     inode_counter: Arc<RwLock<InodeCounter>>,
     effective_uid: Option<Uid>,
     effective_gid: Option<Gid>,
@@ -202,7 +202,7 @@ impl CntrFs {
             root_inode: open_static_dnode(cntr_fuse::FUSE_ROOT_ID, Path::new(options.prefix))?,
             dotcntr: Arc::new(dotcntr),
             inode_mapping: Arc::new(Mutex::new(HashMap::<InodeKey, u64>::new())),
-            inodes: Arc::new(ConcHashMap::<u64, Arc<Inode>>::new()),
+            inodes: Arc::new(CHashMap::<u64, Arc<Inode>>::new()),
             inode_counter: Arc::new(RwLock::new(InodeCounter {
                 next_number: 3,
                 generation: 0,
@@ -440,8 +440,8 @@ impl CntrFs {
         if ino == cntr_fuse::FUSE_ROOT_ID {
             Ok(Arc::clone(&self.root_inode))
         } else {
-            match self.inodes.find(&ino) {
-                Some(inode) => Ok(Arc::clone(inode.get())),
+            match self.inodes.get(&ino) {
+                Some(inode) => Ok(Arc::clone(&inode)),
                 None => Err(Errno::ESTALE),
             }
         }
@@ -478,8 +478,8 @@ impl CntrFs {
         let mut inode_mapping = self.inode_mapping.lock();
 
         if let Some(ino) = inode_mapping.get(&key) {
-            if let Some(mut inode) = self.inodes.find_mut(ino) {
-                *inode.get().nlookup.write() += 1;
+            if let Some(inode) = self.inodes.get_mut(ino) {
+                *inode.nlookup.write() += 1;
                 let counter = self.inode_counter.read();
                 attr.ino = *ino;
                 return Ok((attr, counter.generation));
@@ -624,9 +624,8 @@ impl Filesystem for CntrFs {
 
         let mut inode_mapping = self.inode_mapping.lock();
 
-        let key = match self.inodes.find_mut(&ino) {
-            Some(ref mut inode_lock) => {
-                let inode = inode_lock.get();
+        let key = match self.inodes.get_mut(&ino) {
+            Some(ref mut inode) => {
                 let mut old_nlookup = inode.nlookup.write();
                 assert!(*old_nlookup >= nlookup);
 
