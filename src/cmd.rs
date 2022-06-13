@@ -101,12 +101,9 @@ impl Cmd {
                 .args(self.arguments)
                 .envs(self.environment)
                 .pre_exec(|| {
-                    match unistd::chroot("/var/lib/cntr") {
-                        Err(e) => {
-                            warn!("failed to chroot to /var/lib/cntr: {}", e);
-                            return Err(io::Error::from_raw_os_error(e as i32));
-                        }
-                        _ => {}
+                    if let Err(e) = unistd::chroot("/var/lib/cntr") {
+                        warn!("failed to chroot to /var/lib/cntr: {}", e);
+                        return Err(io::Error::from_raw_os_error(e as i32));
                     }
 
                     if let Err(e) = env::set_current_dir("/") {
