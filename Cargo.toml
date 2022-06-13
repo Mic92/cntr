@@ -18,11 +18,7 @@ nix = "0.24.1"
 container-pid = "0.2.0"
 simple-error = "0.2.3"
 cntr-fuse = { version = "0.4.1", default-features = false }
-
-
-[dependencies.concurrent-hashmap]
-version = "0.2.2"
-default-features = false
+chashmap = "2.2.2"
 
 [[bin]]
 name = "cntr"
