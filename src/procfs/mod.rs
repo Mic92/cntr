@@ -1,4 +1,4 @@
-use libc::{pid_t, c_ulong};
+use libc::{c_ulong, pid_t};
 use nix::unistd::Pid;
 use simple_error::{try_with, SimpleError};
 use std::env;

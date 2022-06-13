@@ -933,7 +933,10 @@ impl Filesystem for CntrFs {
 
         let mut v = vec![0; size as usize];
         let buf = v.as_mut_slice();
-        tryfuse!(pread(get_filehandle(fh).fd.raw(), buf, offset as off_t), reply);
+        tryfuse!(
+            pread(get_filehandle(fh).fd.raw(), buf, offset as off_t),
+            reply
+        );
 
         reply.data(buf);
     }
