@@ -12,7 +12,7 @@ license = "MIT"
 cpuprofiler = { version = "0.0.4", optional = true }
 clap = { version = "3", default-features = false, features = ["std", "cargo", "derive"] }
 log = "0.4.17"
-libc = "0.2.127"
+libc = "0.2.134"
 parking_lot = "0.12.1"
 nix = "0.24.2"
 container-pid = "0.2.0"
