@@ -1,15 +1,13 @@
-use nix::unistd::{self, ForkResult, Pid};
-use simple_error::{bail, try_with};
-use std::fs::{create_dir_all, metadata};
-use std::os::unix::prelude::*;
-
 use crate::dotcntr;
 use crate::fs;
 use crate::ipc;
 use crate::procfs;
 use crate::result::Result;
-use crate::sys_ext::Passwd;
 use crate::user_namespace::IdMap;
+use nix::unistd::{self, ForkResult, Pid, User};
+use simple_error::{bail, try_with};
+use std::fs::{create_dir_all, metadata};
+use std::os::unix::prelude::*;
 
 mod child;
 mod parent;
@@ -19,7 +17,7 @@ pub struct AttachOptions {
     pub arguments: Vec<String>,
     pub container_name: String,
     pub container_types: Vec<Box<dyn container_pid::Container>>,
-    pub effective_user: Option<Passwd>,
+    pub effective_user: Option<User>,
 }
 
 pub fn attach(opts: &AttachOptions) -> Result<()> {
@@ -49,9 +47,9 @@ pub fn attach(opts: &AttachOptions) -> Result<()> {
     let container_gid = unistd::Gid::from_raw(gid_map.map_id_up(metadata.gid()));
 
     if let Some(ref passwd) = opts.effective_user {
-        effective_uid = Some(passwd.pw_uid);
-        effective_gid = Some(passwd.pw_gid);
-        home = Some(passwd.pw_dir.as_ref());
+        effective_uid = Some(passwd.uid);
+        effective_gid = Some(passwd.gid);
+        home = Some(passwd.dir.clone());
     }
 
     let process_status = try_with!(

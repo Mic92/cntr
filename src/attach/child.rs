@@ -5,10 +5,10 @@ use nix::unistd::{Gid, Uid};
 use simple_error::{bail, try_with};
 use std::convert::TryFrom;
 use std::env;
-use std::ffi::CStr;
 use std::fs::File;
 use std::os::unix::io::IntoRawFd;
 use std::os::unix::prelude::*;
+use std::path::PathBuf;
 use std::process;
 
 use crate::capabilities;
@@ -29,7 +29,7 @@ pub struct ChildOptions<'a> {
     pub process_status: ProcStatus,
     pub mount_ready_sock: &'a ipc::Socket,
     pub fs: fs::CntrFs,
-    pub home: Option<&'a CStr>,
+    pub home: Option<PathBuf>,
     pub uid: Uid,
     pub gid: Gid,
 }
@@ -58,7 +58,7 @@ pub fn run(options: &ChildOptions) -> Result<()> {
         options.command.clone(),
         options.arguments.clone(),
         options.process_status.global_pid,
-        options.home,
+        options.home.clone(),
     )?;
 
     let supported_namespaces = try_with!(

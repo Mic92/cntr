@@ -29,4 +29,3 @@ mod tmp;
 mod user_namespace;
 pub use attach::{attach, AttachOptions};
 pub use exec::{exec, SETCAP_EXE};
-pub use sys_ext::pwnam;
