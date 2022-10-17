@@ -5,7 +5,7 @@ use std::io;
 use std::os::unix::prelude::*;
 use std::path::Path;
 
-#[derive(PartialOrd, PartialEq)]
+#[derive(PartialOrd, Eq, PartialEq)]
 pub enum FdState {
     None,
     Readable,

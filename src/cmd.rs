@@ -71,7 +71,7 @@ impl Cmd {
             command,
             arguments,
             environment: variables,
-            home: home,
+            home,
         })
     }
     pub fn run(mut self) -> Result<ExitStatus> {
@@ -83,10 +83,8 @@ impl Cmd {
         );
 
         if let Some(path) = self.home {
-            self.environment.insert(
-                OsString::from("HOME"),
-                path.clone().into_os_string(),
-            );
+            self.environment
+                .insert(OsString::from("HOME"), path.into_os_string());
         }
 
         let cmd = Command::new(self.command)
