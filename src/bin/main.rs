@@ -1,23 +1,24 @@
 extern crate cntr;
 extern crate nix;
 
-use clap::{crate_authors, crate_version, Arg, ArgEnum, ArgMatches, Command, PossibleValue};
-use cntr::pwnam;
+use clap::builder::PossibleValue;
+use clap::{crate_authors, crate_version, Arg, ArgAction, ArgMatches, Command, ValueEnum};
+use nix::unistd::User;
 use std::path::Path;
 use std::{env, process};
 
-fn command_arg(index: usize) -> Arg<'static> {
+fn command_arg(index: usize) -> Arg {
     Arg::new("command")
         .help("Command and its arguments to execute after attach. Consider prepending it with '-- ' to prevent parsing of '-x'-like flags. [default: $SHELL]")
         .requires("command")
         .index(index)
-        .multiple_occurrences(true)
+        .action(ArgAction::Append)
 }
 
 fn parse_command_arg(args: &ArgMatches) -> (Option<String>, Vec<String>) {
-    match args.values_of("command") {
+    match args.get_many("command") {
         Some(args) => {
-            let mut values: Vec<String> = args.map(|s| s.to_string()).collect();
+            let mut values: Vec<String> = args.map(String::to_string).collect();
             let command = values.remove(0);
             let command = match command.is_empty() {
                 true => None, // indicates $SHELL default case
@@ -30,7 +31,7 @@ fn parse_command_arg(args: &ArgMatches) -> (Option<String>, Vec<String>) {
     }
 }
 
-#[derive(clap::ArgEnum, Debug, Clone, Copy)]
+#[derive(clap::ValueEnum, Debug, Clone, Copy)]
 #[allow(non_camel_case_types)]
 pub enum ContainerType {
     process_id,
@@ -45,10 +46,10 @@ pub enum ContainerType {
 }
 
 impl ContainerType {
-    pub fn possible_values() -> impl Iterator<Item = PossibleValue<'static>> {
+    pub fn possible_values() -> impl Iterator<Item = PossibleValue> {
         ContainerType::value_variants()
             .iter()
-            .filter_map(ArgEnum::to_possible_value)
+            .filter_map(ValueEnum::to_possible_value)
     }
 }
 
@@ -68,18 +69,15 @@ impl std::str::FromStr for ContainerType {
 fn attach(args: &ArgMatches) {
     let (command, arguments) = parse_command_arg(args);
 
-    let container_name = args.value_of("id").unwrap().to_string(); // safe, because container id is .required
+    let container_name = args.get_one::<String>("id").unwrap().to_string(); // safe, because container id is .required
 
-    let mut container_types = vec![];
-    if args.is_present("type") {
-        let types = args
-            .values_of_t::<ContainerType>("type")
-            .unwrap_or_else(|e| e.exit());
-        container_types = types
+    let container_types = match args.get_many("type") {
+        Some(args) => args
             .into_iter()
-            .filter_map(|t| cntr::lookup_container_type(&format!("{:?}", t)))
-            .collect();
-    }
+            .filter_map(|t: &ContainerType| cntr::lookup_container_type(&format!("{:?}", t)))
+            .collect(),
+        None => vec![],
+    };
 
     let mut options = cntr::AttachOptions {
         command,
@@ -89,9 +87,8 @@ fn attach(args: &ArgMatches) {
         container_name,
     };
 
-    let effective_username = args.value_of("effective-user").unwrap_or("");
-    if !effective_username.is_empty() {
-        match pwnam(effective_username) {
+    if let Some(effective_username) = args.get_one::<&str>("effective-user") {
+        match User::from_name(effective_username) {
             Ok(Some(passwd)) => {
                 options.effective_user = Some(passwd);
             }
@@ -107,7 +104,7 @@ fn attach(args: &ArgMatches) {
                 process::exit(1);
             }
         };
-    }
+    };
 
     if let Err(err) = cntr::attach(&options) {
         eprintln!("{}", err);
@@ -129,12 +126,13 @@ fn main() {
         .about("Enter container")
         .version(crate_version!())
         .author(crate_authors!("\n"))
+        .arg_required_else_help(true)
         .disable_version_flag(true)
         .arg(
             Arg::new("effective-user")
                 .long("effective-user")
-                .takes_value(true)
-                .forbid_empty_values(true)
+                .action(ArgAction::Set)
+                .value_parser(clap::builder::NonEmptyStringValueParser::new())
                 .value_name("EFFECTIVE_USER")
                 .help("effective username that should be owner of new created files on the host"),
         )
@@ -142,17 +140,17 @@ fn main() {
             Arg::new("type")
                 .short('t')
                 .long("type")
-                .takes_value(true)
-                .forbid_empty_values(false)
                 .use_value_delimiter(true)
+                .action(ArgAction::Append)
+                .value_parser(clap::value_parser!(ContainerType))
                 .value_name("TYPE")
-                .help("Container types to try (sperated by ','). [default: all but command]")
-                .possible_values(ContainerType::possible_values()),
+                .help("Container types to try (sperated by ','). [default: all but command]"),
         )
         .arg(
             Arg::new("id")
                 .help("container id, container name or process id")
                 .required(true)
+                .action(ArgAction::Set)
                 .index(1),
         )
         .arg(command_arg(2));
@@ -161,13 +159,16 @@ fn main() {
         .about("Execute command in container filesystem")
         .version(crate_version!())
         .author(crate_authors!("\n"))
-        .arg(command_arg(1));
+        .arg(command_arg(1))
+        .arg_required_else_help(true);
 
     let main_app = Command::new("Cntr")
         .about("Enter or executed in container")
         .version(crate_version!())
         .author(crate_authors!("\n"))
+        .subcommand_required(true)
         .arg_required_else_help(true)
+        .allow_external_subcommands(false)
         .subcommand(attach_command)
         .subcommand(exec_command.clone());
 

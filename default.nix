@@ -7,6 +7,8 @@ pkgs.rustPlatform.buildRustPackage {
   name = "cntr";
   inherit src;
   cargoLock.lockFile = ./Cargo.lock;
+
+  nativeBuildInputs = [ pkgs.clippy ];
   meta = with pkgs.lib; {
     description = "A container debugging tool based on FUSE";
     homepage = "https://github.com/Mic92/cntr";
