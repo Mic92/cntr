@@ -175,10 +175,10 @@ $ cntr attach boxbusy
 [root@55a93d71b53b:/var/lib/cntr]# cntr exec -- sh -c 'busybox | head -1'
 ```
 
-You can also use Dockerfile.example from this repo to build a docker container with cntr:
+You can also use Dockerfile from this repo to build a docker container with cntr:
 
 ``` console
-$ docker build -f Dockerfile.example . -t cntr
+$ docker build -f Dockerfile . -t cntr
 # boxbusy here is the name of the target container to attach to
 $ docker run --pid=host --privileged=true -v /var/run/docker.sock:/var/run/docker.sock -ti --rm cntr attach boxbusy /bin/sh
 ```
