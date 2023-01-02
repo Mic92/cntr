@@ -29,6 +29,8 @@ In this two minute recording you learn all the basics of cntr:
 
 ## Installation
 
+Cntr can be only supports linux.
+
 ### Pre-build static-linked binary
 
 For linux x86_64 we build static binaries for every release. More platforms can added on request.
