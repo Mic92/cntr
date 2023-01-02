@@ -1,8 +1,8 @@
 # Example for a slim/fat container setup
 
-FROM rust:1.46.0 as cntr
+FROM rust:1.66.0 as cntr
 RUN rustup target add x86_64-unknown-linux-musl
-RUN curl -sL https://github.com/Mic92/docker-pid/releases/download/1.0.0/docker-pid-linux-amd64 \
+RUN curl -sL https://github.com/Mic92/docker-pid/releases/download/1.0.2/docker-pid-linux-amd64 \
       > /usr/bin/docker-pid && \
       chmod 755 /usr/bin/docker-pid
 COPY Cargo.toml Cargo.lock ./
