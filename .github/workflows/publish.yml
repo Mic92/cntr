@@ -51,6 +51,6 @@ jobs:
       # publish-crates does not like this
       - name: Cleanup dist
         run: rm -r dist
-      - uses: katyo/publish-crates@v1
+      - uses: katyo/publish-crates@v2
         with:
           registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}
