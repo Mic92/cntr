@@ -375,6 +375,23 @@ $ ctr run --privileged --with-ns pid:/proc/1/ns/pid --tty docker.io/library/cntr
 
 To resolve containerd names one also would need to add the `ctr` binary (~12mb) to the Dockerfile.
 
+## Additional Config
+
+### ZFS
+
+`cntr` requires POSIX ACLs be enabled under ZFS. By default, Linux ZFS doesn't have POSIX ACLs enabled. This results in
+the following error when trying to `attach`:
+
+```console
+unable to move container mounts to new mountpoint: EOPNOTSUPP: Operation not supported on transport endpoint
+```
+
+To enable POSIX ACLs on the ZFS dataset:
+
+```console
+$ zfs set acltype=posixacl zpool/media
+$ zfs set xattr=sa zpool/media              #  optional, but encouraged for best perfomance
+```
 
 # How it works
 
