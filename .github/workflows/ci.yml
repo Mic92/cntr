@@ -37,9 +37,7 @@ jobs:
     strategy:
       matrix:
         rust:
-          # TODO: in 1.59.0 clippy crashes with OOM error
-          # might be fix in future rust release
-          - nightly
+          - stable
     steps:
       - name: Install rust
         uses: actions-rs/toolchain@v1
