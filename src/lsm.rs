@@ -91,7 +91,7 @@ fn check_type() -> Result<Option<LSMKind>> {
 
 fn read_proclabel(path: &Path, kind: &LSMKind) -> Result<String> {
     let mut attr = String::new();
-    let mut file = try_with!(File::open(&path), "failed to open {}", path.display());
+    let mut file = try_with!(File::open(path), "failed to open {}", path.display());
     try_with!(
         file.read_to_string(&mut attr),
         "failed to read {}",

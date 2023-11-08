@@ -1,6 +1,5 @@
 use nix::errno::Errno;
 use nix::sys::socket::*;
-//use nix::sys::uio::IoVec;
 use simple_error::try_with;
 use std::fs::File;
 use std::io::{IoSlice, IoSliceMut};
@@ -36,7 +35,7 @@ impl Socket {
         message_length: usize,
         cmsgspace: &mut Vec<u8>,
     ) -> Result<(Vec<u8>, Vec<File>)> {
-        let mut msg_buf = vec![0; (message_length) as usize];
+        let mut msg_buf = vec![0; message_length];
         let received;
         let mut files: Vec<File> = Vec::with_capacity(1);
         {
