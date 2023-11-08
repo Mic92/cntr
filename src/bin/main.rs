@@ -184,7 +184,7 @@ fn main() {
                     Some(("exec", exec_matches)) => exec(exec_matches, false),
                     Some(("attach", attach_matches)) => attach(attach_matches),
                     Some((_, attach_matches)) => attach(attach_matches),
-                    None => unreachable!(), // beause of AppSettings::SubCommandRequired
+                    None => unreachable!(), // because of AppSettings::SubCommandRequired
                 };
             }
         }
