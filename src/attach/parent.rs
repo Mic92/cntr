@@ -51,7 +51,7 @@ pub fn run(pid: Pid, mount_ready_sock: &ipc::Socket, fs: fs::CntrFs) -> Result<(
                 process::exit(status);
             }
             Ok(what) => {
-                panic!("unexpected wait event happend {:?}", what);
+                panic!("unexpected wait event happened {:?}", what);
             }
             Err(e) => {
                 drop(sessions);

@@ -367,7 +367,7 @@ $ docker save cntr > cntr.tar
 $ ctr images import --base-name cntr ./cntr.tar
 ```
 
-In this example we attach to containerd by process id. The proccess id of a task is given in `ctr tasks list`.
+In this example we attach to containerd by process id. The process id of a task is given in `ctr tasks list`.
 
 ```console
 $ ctr run --privileged --with-ns pid:/proc/1/ns/pid --tty docker.io/library/cntr:latest cntr /usr/bin/cntr attach 31523 /bin/sh
@@ -390,7 +390,7 @@ To enable POSIX ACLs on the ZFS dataset:
 
 ```console
 $ zfs set acltype=posixacl zpool/media
-$ zfs set xattr=sa zpool/media              #  optional, but encouraged for best perfomance
+$ zfs set xattr=sa zpool/media              #  optional, but encouraged for best performance
 ```
 
 # How it works
