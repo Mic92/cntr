@@ -12,7 +12,7 @@ use crate::result::Result;
 
 fn get_subsystems() -> Result<Vec<String>> {
     let path = "/proc/cgroups";
-    let f = try_with!(File::open(&path), "failed to open /proc/cgroups");
+    let f = try_with!(File::open(path), "failed to open /proc/cgroups");
     let reader = BufReader::new(f);
     let mut subsystems: Vec<String> = Vec::new();
     for l in reader.lines() {
@@ -35,7 +35,7 @@ fn get_mounts() -> Result<HashMap<String, String>> {
     //
     // 36 35 98:0 /mnt1 /mnt2 rw,noatime master:1 - ext3 /dev/root rw,errors=continue
     // (1)(2)(3)   (4)   (5)      (6)      (7)   (8) (9)   (10)         (11)
-    let f = try_with!(File::open(&path), "failed to read /proc/self/mountinfo");
+    let f = try_with!(File::open(path), "failed to read /proc/self/mountinfo");
     let reader = BufReader::new(f);
     let mut mountpoints: HashMap<String, String> = HashMap::new();
     for l in reader.lines() {
