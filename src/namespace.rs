@@ -3,7 +3,6 @@ use nix::unistd;
 use simple_error::try_with;
 use std::collections::HashSet;
 use std::fs::{self, File};
-use std::os::unix::prelude::*;
 use std::path::PathBuf;
 
 use crate::procfs;
@@ -80,7 +79,7 @@ pub struct Namespace {
 impl Namespace {
     pub fn apply(&self) -> Result<()> {
         try_with!(
-            sched::setns(self.file.as_raw_fd(), sched::CloneFlags::empty()),
+            sched::setns(&self.file, sched::CloneFlags::empty()),
             "setns"
         );
         Ok(())

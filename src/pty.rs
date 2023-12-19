@@ -72,13 +72,13 @@ impl<'a> FilePair<'a> {
     }
 }
 
-struct RawTty {
-    fd: RawFd,
+struct RawTty<'a> {
+    fd: &'a File,
     attr: Termios,
 }
 
-impl RawTty {
-    fn new(stdin: RawFd) -> Result<RawTty> {
+impl<'a> RawTty<'a> {
+    fn new(stdin: &'a File) -> Result<RawTty> {
         let orig_attr = try_with!(tcgetattr(stdin), "failed to get termios attributes");
 
         let mut attr = orig_attr.clone();
@@ -117,7 +117,7 @@ impl RawTty {
     }
 }
 
-impl Drop for RawTty {
+impl<'a> Drop for RawTty<'a> {
     fn drop(&mut self) {
         let _ = tcsetattr(self.fd, SetArg::TCSANOW, &self.attr);
     }
@@ -135,14 +135,12 @@ fn shovel(pairs: &mut [FilePair]) {
         for pair in pairs.iter_mut() {
             let fd = match pair.state {
                 FilePairState::Read => {
-                    let raw_fd = pair.from.as_raw_fd();
-                    read_set.insert(raw_fd);
-                    raw_fd
+                    read_set.insert(pair.from);
+                    pair.from.as_raw_fd()
                 }
                 FilePairState::Write => {
-                    let raw_fd = pair.to.as_raw_fd();
-                    write_set.insert(raw_fd);
-                    raw_fd
+                    write_set.insert(pair.to);
+                    pair.to.as_raw_fd()
                 }
             };
             if highest < fd {
@@ -169,12 +167,12 @@ fn shovel(pairs: &mut [FilePair]) {
         for pair in pairs.iter_mut() {
             match pair.state {
                 FilePairState::Read => {
-                    if read_set.contains(pair.from.as_raw_fd()) && !pair.read() {
+                    if read_set.contains(pair.from) && !pair.read() {
                         return;
                     }
                 }
                 FilePairState::Write => {
-                    if write_set.contains(pair.to.as_raw_fd()) && !pair.write() {
+                    if write_set.contains(pair.to) && !pair.write() {
                         return;
                     }
                 }
@@ -193,44 +191,43 @@ extern "C" fn handle_sigwinch(_: i32) {
 static mut PTY_MASTER_FD: i32 = -1;
 
 pub fn forward(pty: &File) -> Result<()> {
-    let mut raw_tty = None;
-
-    if unsafe { libc::isatty(libc::STDIN_FILENO as i32) } != 0 {
-        resize_pty(pty.as_raw_fd());
-
-        raw_tty = Some(try_with!(
-            RawTty::new(libc::STDIN_FILENO),
-            "failed to set stdin tty into raw mode"
-        ))
-    };
-
-    unsafe { PTY_MASTER_FD = pty.as_raw_fd() };
-    let sig_action = SigAction::new(
-        SigHandler::Handler(handle_sigwinch),
-        SaFlags::empty(),
-        SigSet::empty(),
-    );
-    try_with!(
-        unsafe { sigaction(SIGWINCH, &sig_action) },
-        "failed to install SIGWINCH handler"
-    );
-
     let stdin: File = unsafe { File::from_raw_fd(libc::STDIN_FILENO) };
     let stdout: File = unsafe { File::from_raw_fd(libc::STDOUT_FILENO) };
     let pty_file: File = unsafe { File::from_raw_fd(pty.as_raw_fd()) };
-    shovel(&mut [
-        FilePair::new(&stdin, &pty_file),
-        FilePair::new(&pty_file, &stdout),
-    ]);
+    {
+        let raw_tty = if unsafe { libc::isatty(libc::STDIN_FILENO as i32) } != 0 {
+            resize_pty(pty.as_raw_fd());
+
+            Some(try_with!(
+                RawTty::new(&stdin),
+                "failed to set stdin tty into raw mode"
+            ))
+        } else {
+            None
+        };
+
+        unsafe { PTY_MASTER_FD = pty.as_raw_fd() };
+        let sig_action = SigAction::new(
+            SigHandler::Handler(handle_sigwinch),
+            SaFlags::empty(),
+            SigSet::empty(),
+        );
+        try_with!(
+            unsafe { sigaction(SIGWINCH, &sig_action) },
+            "failed to install SIGWINCH handler"
+        );
+
+        shovel(&mut [
+            FilePair::new(&stdin, &pty_file),
+            FilePair::new(&pty_file, &stdout),
+        ]);
+
+        unsafe { PTY_MASTER_FD = -1 };
+        drop(raw_tty);
+    }
     stdin.into_raw_fd();
     stdout.into_raw_fd();
     pty_file.into_raw_fd();
-
-    unsafe { PTY_MASTER_FD = -1 };
-
-    if let Some(_raw_tty) = raw_tty {
-        drop(_raw_tty)
-    }
 
     Ok(())
 }

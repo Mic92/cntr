@@ -8,7 +8,7 @@ use std::os::unix::prelude::*;
 use crate::result::Result;
 
 pub struct Socket {
-    fd: File,
+    fd: OwnedFd,
 }
 
 const NONE: Option<&UnixAddr> = None;
@@ -78,12 +78,5 @@ pub fn socket_pair() -> Result<(Socket, Socket)> {
     );
 
     let (parent_fd, child_fd) = try_with!(res, "failed to create socketpair");
-    Ok((
-        Socket {
-            fd: unsafe { File::from_raw_fd(parent_fd) },
-        },
-        Socket {
-            fd: unsafe { File::from_raw_fd(child_fd) },
-        },
-    ))
+    Ok((Socket { fd: parent_fd }, Socket { fd: child_fd }))
 }

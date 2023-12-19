@@ -10,11 +10,26 @@ license = "MIT"
 
 [dependencies]
 cpuprofiler = { version = "0.0.4", optional = true }
-clap = { version = "4", default-features = false, features = ["std", "cargo", "derive", "help"] }
+clap = { version = "4", default-features = false, features = [
+  "std",
+  "cargo",
+  "derive",
+  "help",
+] }
 log = "0.4.20"
 libc = "0.2.151"
 parking_lot = "0.12.1"
-nix = "0.27.1"
+nix = { version = "0.27.1", features = [
+  "fs",
+  "mount",
+  "poll",
+  "process",
+  "sched",
+  "signal",
+  "socket",
+  "user",
+  "term",
+] }
 container-pid = "0.2.0"
 simple-error = "0.3.0"
 cntr-fuse = { version = "0.4.2", default-features = false }

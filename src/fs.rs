@@ -346,7 +346,7 @@ impl CntrFs {
         }
 
         if let Some(s) = size {
-            unistd::ftruncate(fd.raw(), s as off_t)?;
+            unistd::ftruncate(&fd.file, s as off_t)?;
         }
         if mtime != cntr_fuse::UtimeSpec::Omit || atime != cntr_fuse::UtimeSpec::Omit {
             let inode = self.inode(ino)?;
@@ -933,7 +933,7 @@ impl Filesystem for CntrFs {
         let mut v = vec![0; size as usize];
         let buf = v.as_mut_slice();
         tryfuse!(
-            pread(get_filehandle(fh).fd.raw(), buf, offset as off_t),
+            pread(&get_filehandle(fh).fd.file, buf, offset as off_t),
             reply
         );
 
@@ -951,9 +951,10 @@ impl Filesystem for CntrFs {
         reply: ReplyWrite,
     ) {
         fsuid::set_root();
-        let dst_fd = get_filehandle(fh).fd.raw();
-
-        let written = tryfuse!(pwrite(dst_fd, data, offset as off_t), reply);
+        let written = tryfuse!(
+            pwrite(&get_filehandle(fh).fd.file, data, offset as off_t),
+            reply
+        );
 
         reply.written(written as u32);
     }
