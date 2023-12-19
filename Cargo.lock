@@ -132,9 +132,9 @@ dependencies = [
 
 [[package]]
 name = "cntr-fuse"
-version = "0.4.1"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b6086675ec972930e5db2402db5456691f1023253c3e18c9a13440fc4c16a39d"
+checksum = "410f62ca0589beaac5b106ae38765273b5aabc5bb23cc0bc553ed24e1c4d66ae"
 dependencies = [
  "cntr-fuse-abi",
  "cntr-fuse-sys",
