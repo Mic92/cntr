@@ -1,12 +1,7 @@
 queue_rules:
   - name: default
     merge_conditions:
-      - check-success=Evaluate flake.nix
-      - check-success=check docker [x86_64-linux]
-      - check-success=check podman [x86_64-linux]
-      - check-success=default devShell [x86_64-linux]
-      - check-success=default package [x86_64-linux]
-      - check-success=package cntr [x86_64-linux]
+      - check-success=buildbot/nix-eval
 defaults:
   actions:
     queue:
