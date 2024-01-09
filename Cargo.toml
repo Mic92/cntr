@@ -1,6 +1,6 @@
 [package]
 name = "cntr"
-edition = "2018"
+edition = "2021"
 description = "A container debugging tool based on FUSE"
 version = "1.5.3"
 authors = ["Jörg Thalheim <joerg@thalheim.io>"]
