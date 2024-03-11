@@ -14,7 +14,7 @@ clap = { version = "4", default-features = false, features = ["std", "cargo", "d
 log = "0.4.20"
 libc = "0.2.152"
 parking_lot = "0.12.1"
-nix = "0.26.2"
+nix = "0.27.1"
 container-pid = "0.2.0"
 simple-error = "0.3.0"
 cntr-fuse = { version = "0.4.2", default-features = false }
