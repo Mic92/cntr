@@ -13,7 +13,7 @@ cpuprofiler = { version = "0.0.4", optional = true }
 clap = { version = "4", default-features = false, features = ["std", "cargo", "derive", "help"] }
 log = "0.4.20"
 libc = "0.2.152"
-parking_lot = "0.12.1"
+parking_lot = "0.12.2"
 nix = "0.26.2"
 container-pid = "0.2.0"
 simple-error = "0.3.0"
