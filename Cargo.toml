@@ -32,4 +32,4 @@ verbose_fuse_test_log = []
 profiling = []
 
 [dev-dependencies]
-lazy_static = "1.4"
+lazy_static = "1.5"
