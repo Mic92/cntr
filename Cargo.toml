@@ -11,7 +11,7 @@ license = "MIT"
 [dependencies]
 cpuprofiler = { version = "0.0.4", optional = true }
 clap = { version = "4", default-features = false, features = ["std", "cargo", "derive", "help"] }
-log = "0.4.21"
+log = "0.4.22"
 libc = "0.2.155"
 parking_lot = "0.12.3"
 nix = "0.26.2"
