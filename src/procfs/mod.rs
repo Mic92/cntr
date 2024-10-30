@@ -19,6 +19,7 @@ pub fn get_path() -> PathBuf {
 pub struct ProcStatus {
     pub global_pid: Pid,
     pub local_pid: Pid,
+    #[allow(dead_code)]
     pub inherited_capabilities: c_ulong,
     pub effective_capabilities: c_ulong,
 }

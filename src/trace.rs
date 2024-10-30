@@ -1,13 +1,13 @@
-use simple_error::{bail,try_with};
 use libc;
 use nix;
 use nix::errno;
-use nix::sys::ptrace::*;
 use nix::sys::ptrace::ptrace::*;
-use nix::sys::wait::{WaitStatus, wait, waitpid};
+use nix::sys::ptrace::*;
+use nix::sys::wait::{wait, waitpid, WaitStatus};
 use sigstr;
+use simple_error::{bail, try_with};
 use std::ptr;
-use types::{Result};
+use types::Result;
 
 pub fn install(pid: libc::pid_t) -> Result<()> {
     let status = try_with!(waitpid(pid, None), "process died prematurely");
@@ -30,9 +30,14 @@ pub fn install(pid: libc::pid_t) -> Result<()> {
         WaitStatus::Stopped(_, _) => {}
     }
 
-    let opts = PTRACE_O_TRACESECCOMP | PTRACE_O_TRACESYSGOOD | PTRACE_O_TRACEFORK |
-        PTRACE_O_TRACEVFORK | PTRACE_O_TRACECLONE | PTRACE_O_TRACEEXEC |
-        PTRACE_O_TRACEVFORKDONE | PTRACE_O_TRACEEXIT;
+    let opts = PTRACE_O_TRACESECCOMP
+        | PTRACE_O_TRACESYSGOOD
+        | PTRACE_O_TRACEFORK
+        | PTRACE_O_TRACEVFORK
+        | PTRACE_O_TRACECLONE
+        | PTRACE_O_TRACEEXEC
+        | PTRACE_O_TRACEVFORKDONE
+        | PTRACE_O_TRACEEXIT;
     try_with!(ptrace_setoptions(pid, opts), "failed to ptrace process");
     try_with!(
         ptrace(PTRACE_CONT, pid, ptr::null_mut(), ptr::null_mut()),

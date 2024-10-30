@@ -66,7 +66,7 @@ pub fn set_chroot_capability(path: &Path) -> Result<()> {
         libc::syscall(
             libc::SYS_capget,
             &header,
-            ptr::null() as *const cap_user_data_t,
+            ptr::null::<*const cap_user_data_t>(),
         )
     };
     let header: cap_user_header_t = unsafe { header.assume_init() };

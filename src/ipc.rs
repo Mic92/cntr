@@ -39,7 +39,7 @@ impl Socket {
         let received;
         let mut files: Vec<File> = Vec::with_capacity(1);
         {
-            let mut iov = vec![IoSliceMut::new(&mut msg_buf)];
+            let mut iov = [IoSliceMut::new(&mut msg_buf)];
             loop {
                 let res = recvmsg::<UnixAddr>(
                     self.fd.as_raw_fd(),
@@ -51,10 +51,10 @@ impl Socket {
                     Err(Errno::EAGAIN) | Err(Errno::EINTR) => continue,
                     Err(e) => return try_with!(Err(e), "recvmsg failed"),
                     Ok(msg) => {
-                        for cmsg in msg.cmsgs() {
+                        for cmsg in try_with!(msg.cmsgs(), "failed to get cmsgs") {
                             if let ControlMessageOwned::ScmRights(fds) = cmsg {
                                 for fd in fds {
-                                    files.push(unsafe { File::from_raw_fd(fd) })
+                                    files.push(unsafe { File::from_raw_fd(fd) });
                                 }
                             }
                         }
@@ -80,10 +80,10 @@ pub fn socket_pair() -> Result<(Socket, Socket)> {
     let (parent_fd, child_fd) = try_with!(res, "failed to create socketpair");
     Ok((
         Socket {
-            fd: unsafe { File::from_raw_fd(parent_fd) },
+            fd: File::from(parent_fd),
         },
         Socket {
-            fd: unsafe { File::from_raw_fd(child_fd) },
+            fd: File::from(child_fd),
         },
     ))
 }

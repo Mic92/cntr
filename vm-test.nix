@@ -1,33 +1,32 @@
-{ flake ? builtins.getFlake (toString ./.)
-, pkgs ? flake.inputs.nixpkgs.legacyPackages.${builtins.currentSystem}
-, makeTest ? pkgs.callPackage (flake.inputs.nixpkgs + "/nixos/tests/make-test-python.nix")
-, cntr ? flake.defaultPackage.${builtins.currentSystem}
+{
+  testers,
+  cntr,
 }:
 
 let
-  makeTest' = test: makeTest test {
-    inherit pkgs;
-    inherit (pkgs) system;
-  };
-  ociTest = { pkgs, ... }: {
-    virtualisation.oci-containers.containers.nginx = {
-      image = "nginx-container";
-      imageFile = pkgs.dockerTools.examples.nginx;
-      ports = ["8181:80"];
-    };
+  ociTest =
+    { pkgs, ... }:
+    {
+      virtualisation.oci-containers.containers.nginx = {
+        image = "nginx-container";
+        imageFile = pkgs.dockerTools.examples.nginx;
+        ports = [ "8181:80" ];
+      };
 
-    environment.systemPackages = [
-      cntr
-    ];
-  };
+      environment.systemPackages = [
+        cntr
+      ];
+    };
 in
 {
-  docker = makeTest' {
+  docker = testers.nixosTest {
     name = "docker";
-    nodes.server = { ... }: {
-      imports = [ ociTest ];
-      virtualisation.oci-containers.backend = "docker";
-    };
+    nodes.server =
+      { ... }:
+      {
+        imports = [ ociTest ];
+        virtualisation.oci-containers.backend = "docker";
+      };
 
     testScript = ''
       start_all()
@@ -36,12 +35,14 @@ in
       server.succeed("cntr attach nginx true")
     '';
   };
-  podman = makeTest' {
+  podman = testers.nixosTest {
     name = "podman";
-    nodes.server = { ... }: {
-      imports = [ ociTest ];
-      virtualisation.oci-containers.backend = "podman";
-    };
+    nodes.server =
+      { ... }:
+      {
+        imports = [ ociTest ];
+        virtualisation.oci-containers.backend = "podman";
+      };
 
     testScript = ''
       start_all()

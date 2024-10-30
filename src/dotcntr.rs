@@ -4,12 +4,15 @@ use nix::sys::stat;
 use nix::unistd::Pid;
 use simple_error::try_with;
 use std::fs::{self, File};
-use std::io::prelude::*;
+use std::io::Write;
 use std::os::unix::prelude::*;
 use std::{
     fs::{set_permissions, Permissions},
     os::unix::fs::PermissionsExt,
 };
+
+use std::fs::OpenOptions;
+use std::os::unix::fs::OpenOptionsExt;
 
 use crate::capabilities;
 use crate::procfs::ProcStatus;
@@ -25,7 +28,15 @@ pub struct DotcntrDir {
 impl DotcntrDir {
     pub fn write_pid_file(&self, target_pid: Pid) -> Result<()> {
         let path = self.dir.path().join("pid");
-        let mut file = try_with!(File::create(&path), "failed to create {}", path.display());
+        let mut file = try_with!(
+            OpenOptions::new()
+                .create_new(true)
+                .mode(0o600)
+                .write(true)
+                .open(&path),
+            "failed to create {}",
+            path.display()
+        );
 
         let raw_pid: pid_t = target_pid.into();
         try_with!(

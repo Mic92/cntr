@@ -3,7 +3,6 @@ use nix::sys::signal::{self, Signal};
 use nix::unistd;
 use nix::unistd::{Gid, Uid};
 use simple_error::{bail, try_with};
-use std::convert::TryFrom;
 use std::env;
 use std::fs::File;
 use std::os::unix::io::IntoRawFd;

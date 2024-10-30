@@ -80,7 +80,7 @@ pub struct Namespace {
 impl Namespace {
     pub fn apply(&self) -> Result<()> {
         try_with!(
-            sched::setns(self.file.as_raw_fd(), sched::CloneFlags::empty()),
+            sched::setns(self.file.as_fd(), sched::CloneFlags::empty()),
             "setns"
         );
         Ok(())

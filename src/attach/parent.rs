@@ -3,7 +3,7 @@ use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
 use nix::unistd::Pid;
 use nix::{cmsg_space, unistd};
 use simple_error::try_with;
-use std::os::unix::io::RawFd;
+use std::os::fd::RawFd;
 use std::process;
 
 use crate::fs;

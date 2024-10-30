@@ -1,5 +1,6 @@
-{ pkgs ? import <nixpkgs> {}
-, src ? ./.
+{
+  pkgs ? import <nixpkgs> { },
+  src ? ./.,
 }:
 with pkgs;
 
