@@ -3,38 +3,52 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
-    utils.url = "github:numtide/flake-utils";
+    flake-parts.url = "github:hercules-ci/flake-parts";
+    flake-parts.inputs.nixpkgs-lib.follows = "nixpkgs";
+
+    treefmt-nix.url = "github:numtide/treefmt-nix";
+    treefmt-nix.inputs.nixpkgs.follows = "nixpkgs";
   };
 
-  outputs = { self, nixpkgs, utils }:
-    (utils.lib.eachDefaultSystem (system: let
-      pkgs = import nixpkgs { inherit system; };
-    in {
-      packages.cntr = pkgs.callPackage ./. {
-        src = self;
-      };
-      defaultPackage = self.packages.${system}.cntr;
-      devShell = pkgs.mkShell {
-        buildInputs = [
-          pkgs.cargo
-          pkgs.cargo-watch
-          pkgs.rustc
-          pkgs.clippy
-          pkgs.cargo-bloat
-          pkgs.rust-analyzer
-        ];
-        #buildInputs = [ pkgs.pkgsMusl.cargo pkgs.pkgsMusl.rustc ];
-      };
-    })) // {
-    checks.x86_64-linux = let
-      system = "x86_64-linux";
-      pkgs = nixpkgs.legacyPackages.${system};
-    in {
-      inherit (import ./vm-test.nix {
-        makeTest = import (nixpkgs + "/nixos/tests/make-test-python.nix");
-        inherit pkgs;
-        inherit (self.packages.${system}) cntr;
-      }) docker podman;
+  outputs =
+    inputs@{ flake-parts, self, ... }:
+    flake-parts.lib.mkFlake { inherit inputs; } {
+      imports = [ ./treefmt.nix ];
+      systems = [
+        "x86_64-linux"
+        "aarch64-linux"
+        "riscv64-linux"
+      ];
+      perSystem =
+        {
+          pkgs,
+          config,
+          ...
+        }:
+        {
+          packages.cntr = pkgs.callPackage ./. {
+            src = self;
+          };
+          packages.default = config.packages.cntr;
+          devShells.default = pkgs.mkShell {
+            buildInputs = [
+              pkgs.cargo
+              pkgs.cargo-watch
+              pkgs.rustc
+              pkgs.clippy
+              pkgs.cargo-bloat
+              pkgs.rust-analyzer
+            ];
+          };
+          checks = {
+            inherit
+              (pkgs.callPackages ./vm-test.nix {
+                inherit (config.packages) cntr;
+              })
+              docker
+              podman
+              ;
+          };
+        };
     };
-  };
 }
