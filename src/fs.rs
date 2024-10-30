@@ -426,7 +426,7 @@ impl CntrFs {
             gid: self.gid_map.map_id_down(attr.st_gid),
             perm: attr.st_mode as u16,
             kind: inode_kind(stat::SFlag::from_bits_truncate(attr.st_mode)),
-            nlink: attr.st_nlink as u32,
+            nlink: attr.st_nlink,
             rdev: attr.st_rdev as u32,
             // Flags (OS X only, see chflags(2))
             flags: 0,
