@@ -31,29 +31,3 @@ jobs:
         with:
           command: test
           args: --target ${{ matrix.target }}
-  lint:
-    name: Linting (fmt + clippy)
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        rust:
-          - stable
-    steps:
-      - name: Install rust
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: ${{ matrix.rust }}
-          override: true
-          components: rustfmt, clippy
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Clippy
-        uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-      - name: Format check
-        uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: -- --check

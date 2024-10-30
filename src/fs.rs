@@ -426,6 +426,7 @@ impl CntrFs {
             gid: self.gid_map.map_id_down(attr.st_gid),
             perm: attr.st_mode as u16,
             kind: inode_kind(stat::SFlag::from_bits_truncate(attr.st_mode)),
+            #[allow(clippy::unnecessary_cast)]
             nlink: attr.st_nlink as u32,
             rdev: attr.st_rdev as u32,
             // Flags (OS X only, see chflags(2))
