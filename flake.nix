@@ -23,6 +23,7 @@
         {
           pkgs,
           config,
+          lib,
           ...
         }:
         {
@@ -40,7 +41,7 @@
               pkgs.rust-analyzer
             ];
           };
-          checks = {
+          checks = lib.optionalAttrs (!pkgs.hostPlatform.isRiscV64) {
             inherit
               (pkgs.callPackages ./vm-test.nix {
                 inherit (config.packages) cntr;
