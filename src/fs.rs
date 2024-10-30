@@ -1350,7 +1350,9 @@ impl Filesystem for CntrFs {
 
         let fd = get_filehandle(fh).fd.raw();
         let new_offset = tryfuse!(
-            unistd::lseek64(fd, offset, unsafe { mem::transmute::<i32, nix::unistd::Whence>(whence as i32) }),
+            unistd::lseek64(fd, offset, unsafe {
+                mem::transmute::<i32, nix::unistd::Whence>(whence as i32)
+            }),
             reply
         );
         reply.offset(new_offset);

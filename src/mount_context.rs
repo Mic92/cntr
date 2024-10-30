@@ -16,9 +16,7 @@ fn find_mount_options(p: Pid) -> Result<String> {
     for line in reader.lines() {
         let line = try_with!(line, "failed to read {}", path.display());
         let line = line.trim();
-        let mut tokens = line
-            .split_terminator([' ', '\t'])
-            .filter(|s| s != &"");
+        let mut tokens = line.split_terminator([' ', '\t']).filter(|s| s != &"");
 
         if let Some(mountpoint) = tokens.nth(1) {
             if let Some(options) = tokens.nth(1) {

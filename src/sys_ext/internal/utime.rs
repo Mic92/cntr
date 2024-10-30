@@ -41,12 +41,7 @@ pub fn utimensat<P: ?Sized + nix::NixPath>(
 ) -> nix::Result<()> {
     let time = [atime.into(), mtime.into()];
     let res = pathname.with_nix_path(|cstr| unsafe {
-        libc::utimensat(
-            dirfd,
-            cstr.as_ptr(),
-            time.as_ptr(),
-            flags.bits(),
-        )
+        libc::utimensat(dirfd, cstr.as_ptr(), time.as_ptr(), flags.bits())
     })?;
 
     Errno::result(res).map(drop)

@@ -1,12 +1,11 @@
-use simple_error::{bail,try_with};
 use fs::Cntr;
 use fuse;
 use libc;
 use namespace;
-use std::io::{Write, Read};
+use simple_error::{bail, try_with};
+use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
-
 
 const user: &'static namespace::Kind = &namespace::USER;
 
