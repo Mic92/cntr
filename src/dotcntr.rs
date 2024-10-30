@@ -29,7 +29,7 @@ impl DotcntrDir {
     pub fn write_pid_file(&self, target_pid: Pid) -> Result<()> {
         let path = self.dir.path().join("pid");
         let mut file = try_with!(
-            OpenOptions::new().create(true).mode(0o600).open(&path),
+            OpenOptions::new().create(true).truncate(true).mode(0o600).open(&path),
             "failed to create {}",
             path.display()
         );

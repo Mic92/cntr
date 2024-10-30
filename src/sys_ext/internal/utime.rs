@@ -44,7 +44,7 @@ pub fn utimensat<P: ?Sized + nix::NixPath>(
         libc::utimensat(
             dirfd,
             cstr.as_ptr(),
-            time.as_ptr() as *const libc::timespec,
+            time.as_ptr(),
             flags.bits(),
         )
     })?;
@@ -56,7 +56,7 @@ pub fn utimensat<P: ?Sized + nix::NixPath>(
 /// (see [futimens(2)](http://man7.org/linux/man-pages/man2/futimens.2.html)).
 pub fn futimens(fd: RawFd, atime: &UtimeSpec, mtime: &UtimeSpec) -> nix::Result<()> {
     let time = [atime.into(), mtime.into()];
-    let res = unsafe { libc::futimens(fd, time.as_ptr() as *const libc::timespec) };
+    let res = unsafe { libc::futimens(fd, time.as_ptr()) };
 
     Errno::result(res).map(drop)
 }

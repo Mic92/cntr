@@ -28,7 +28,6 @@ use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::vec::Vec;
-use std::{u32, u64};
 
 use crate::dirent;
 use crate::dotcntr::DotcntrDir;
@@ -258,7 +257,7 @@ impl CntrFs {
         let mut sessions = Vec::new();
 
         // numbers of sessions is optimized for cached read
-        let num_sessions = cmp::max(num_cpus::get() / 2, 1) as usize;
+        let num_sessions = cmp::max(num_cpus::get() / 2, 1);
 
         for _ in 0..num_sessions {
             debug!("spawn worker");
@@ -380,7 +379,7 @@ impl CntrFs {
                     match reply {
                         ReplyDirectory::Directory(ref mut r) => r.add(
                             entry.d_ino,
-                            dirp.offset as i64,
+                            dirp.offset,
                             dtype_kind(entry.d_type),
                             OsStr::from_bytes(name.to_bytes()),
                         ),
@@ -388,7 +387,7 @@ impl CntrFs {
                             match self.lookup_inode(ino, OsStr::from_bytes(name.to_bytes())) {
                                 Ok((attr, generation)) => r.add(
                                     entry.d_ino,
-                                    dirp.offset as i64,
+                                    dirp.offset,
                                     OsStr::from_bytes(name.to_bytes()),
                                     &TTL,
                                     &attr,
@@ -416,7 +415,7 @@ impl CntrFs {
     fn attr_from_stat(&self, attr: stat::FileStat) -> FileAttr {
         let ctime = UNIX_EPOCH + Duration::new(attr.st_ctime as u64, attr.st_ctime_nsec as u32);
         FileAttr {
-            ino: attr.st_ino as u64, // replaced by ino pointer
+            ino: attr.st_ino, // replaced by ino pointer
             size: attr.st_size as u64,
             blocks: attr.st_blocks as u64,
             atime: UNIX_EPOCH + Duration::new(attr.st_atime as u64, attr.st_atime_nsec as u32),
@@ -1351,7 +1350,7 @@ impl Filesystem for CntrFs {
 
         let fd = get_filehandle(fh).fd.raw();
         let new_offset = tryfuse!(
-            unistd::lseek64(fd, offset, unsafe { mem::transmute(whence as i32) }),
+            unistd::lseek64(fd, offset, unsafe { mem::transmute::<i32, nix::unistd::Whence>(whence as i32) }),
             reply
         );
         reply.offset(new_offset);

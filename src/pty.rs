@@ -207,7 +207,7 @@ static mut PTY_MASTER_FD: i32 = -1;
 pub fn forward(pty: &File) -> Result<()> {
     let mut raw_tty = None;
 
-    if unsafe { libc::isatty(libc::STDIN_FILENO as i32) } != 0 {
+    if unsafe { libc::isatty(libc::STDIN_FILENO) } != 0 {
         resize_pty(pty.as_raw_fd());
 
         raw_tty = Some(try_with!(
