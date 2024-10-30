@@ -72,13 +72,13 @@ impl<'a> FilePair<'a> {
     }
 }
 
-struct RawTty {
-    fd: RawFd,
+struct RawTty<'a> {
+    fd: BorrowedFd<'a>,
     attr: Termios,
 }
 
-impl RawTty {
-    fn new(stdin: RawFd) -> Result<RawTty> {
+impl<'a> RawTty<'a> {
+    fn new(stdin: BorrowedFd<'a>) -> Result<RawTty<'a>> {
         let orig_attr = try_with!(tcgetattr(stdin), "failed to get termios attributes");
 
         let mut attr = orig_attr.clone();
@@ -117,7 +117,7 @@ impl RawTty {
     }
 }
 
-impl Drop for RawTty {
+impl<'a> Drop for RawTty<'a> {
     fn drop(&mut self) {
         let _ = tcsetattr(self.fd, SetArg::TCSANOW, &self.attr);
     }
@@ -130,28 +130,40 @@ fn shovel(pairs: &mut [FilePair]) {
     loop {
         read_set.clear();
         write_set.clear();
-        let mut highest = 0;
+        let mut highest: Option<BorrowedFd> = None;
 
         for pair in pairs.iter_mut() {
             let fd = match pair.state {
                 FilePairState::Read => {
-                    let raw_fd = pair.from.as_raw_fd();
+                    let raw_fd = pair.from.as_fd();
                     read_set.insert(raw_fd);
                     raw_fd
                 }
                 FilePairState::Write => {
-                    let raw_fd = pair.to.as_raw_fd();
+                    let raw_fd = pair.to.as_fd();
                     write_set.insert(raw_fd);
                     raw_fd
                 }
             };
-            if highest < fd {
-                highest = fd;
+            match highest {
+                Some(highest_fd) => {
+                    if highest_fd.as_raw_fd() < fd.as_raw_fd() {
+                        highest = Some(fd);
+                    }
+                }
+                None => {
+                    highest = Some(fd);
+                }
             }
         }
 
+        let highest = match highest {
+            Some(fd) => fd,
+            None => return,
+        };
+
         match select::select(
-            highest + 1,
+            highest.as_raw_fd() + 1,
             Some(&mut read_set),
             Some(&mut write_set),
             None,
@@ -169,12 +181,12 @@ fn shovel(pairs: &mut [FilePair]) {
         for pair in pairs.iter_mut() {
             match pair.state {
                 FilePairState::Read => {
-                    if read_set.contains(pair.from.as_raw_fd()) && !pair.read() {
+                    if read_set.contains(pair.from.as_fd()) && !pair.read() {
                         return;
                     }
                 }
                 FilePairState::Write => {
-                    if write_set.contains(pair.to.as_raw_fd()) && !pair.write() {
+                    if write_set.contains(pair.to.as_fd()) && !pair.write() {
                         return;
                     }
                 }
@@ -199,7 +211,7 @@ pub fn forward(pty: &File) -> Result<()> {
         resize_pty(pty.as_raw_fd());
 
         raw_tty = Some(try_with!(
-            RawTty::new(libc::STDIN_FILENO),
+            RawTty::new(unsafe { BorrowedFd::borrow_raw(libc::STDIN_FILENO) }),
             "failed to set stdin tty into raw mode"
         ))
     };

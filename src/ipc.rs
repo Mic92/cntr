@@ -52,9 +52,11 @@ impl Socket {
                     Err(e) => return try_with!(Err(e), "recvmsg failed"),
                     Ok(msg) => {
                         for cmsg in msg.cmsgs() {
-                            if let ControlMessageOwned::ScmRights(fds) = cmsg {
-                                for fd in fds {
-                                    files.push(unsafe { File::from_raw_fd(fd) })
+                            for cmsg in cmsg {
+                                if let ControlMessageOwned::ScmRights(fds) = cmsg {
+                                    for fd in fds {
+                                        files.push(unsafe { File::from_raw_fd(fd) });
+                                    }
                                 }
                             }
                         }
@@ -80,10 +82,10 @@ pub fn socket_pair() -> Result<(Socket, Socket)> {
     let (parent_fd, child_fd) = try_with!(res, "failed to create socketpair");
     Ok((
         Socket {
-            fd: unsafe { File::from_raw_fd(parent_fd) },
+            fd: File::from(parent_fd),
         },
         Socket {
-            fd: unsafe { File::from_raw_fd(child_fd) },
+            fd: File::from(child_fd),
         },
     ))
 }

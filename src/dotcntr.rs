@@ -11,6 +11,9 @@ use std::{
     os::unix::fs::PermissionsExt,
 };
 
+use std::fs::OpenOptions;
+use std::os::unix::fs::OpenOptionsExt;
+
 use crate::capabilities;
 use crate::procfs::ProcStatus;
 use crate::result::Result;
@@ -25,7 +28,11 @@ pub struct DotcntrDir {
 impl DotcntrDir {
     pub fn write_pid_file(&self, target_pid: Pid) -> Result<()> {
         let path = self.dir.path().join("pid");
-        let mut file = try_with!(File::create(&path), "failed to create {}", path.display());
+        let mut file = try_with!(
+            OpenOptions::new().create(true).mode(0o600).open(&path),
+            "failed to create {}",
+            path.display()
+        );
 
         let raw_pid: pid_t = target_pid.into();
         try_with!(

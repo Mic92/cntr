@@ -246,7 +246,7 @@ impl CntrFs {
 
         let create_mode = stat::Mode::from_bits_truncate(mode);
         let fd = fcntl::openat(
-            parent_fd.raw(),
+            Some(parent_fd.raw()),
             name,
             oflag | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
             create_mode,
@@ -346,7 +346,7 @@ impl CntrFs {
         }
 
         if let Some(s) = size {
-            unistd::ftruncate(fd.raw(), s as off_t)?;
+            unistd::ftruncate(fd.as_fd(), s as off_t)?;
         }
         if mtime != cntr_fuse::UtimeSpec::Omit || atime != cntr_fuse::UtimeSpec::Omit {
             let inode = self.inode(ino)?;
@@ -528,7 +528,7 @@ impl CntrFs {
         let parent_inode = self.inode(parent)?;
         let parent_fd = parent_inode.fd.read();
         let fd = fcntl::openat(
-            parent_fd.raw(),
+            Some(parent_fd.as_fd().as_raw_fd()),
             name,
             OFlag::O_PATH | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
             stat::Mode::empty(),
@@ -768,7 +768,10 @@ impl Filesystem for CntrFs {
 
             let perm = stat::Mode::from_bits_truncate(mode);
             let fd = inode.fd.read();
-            tryfuse!(stat::mkdirat(fd.raw(), name, perm), reply);
+            tryfuse!(
+                stat::mkdirat(Some(fd.as_fd().as_raw_fd()), name, perm),
+                reply
+            );
         }
         self.lookup(req, parent, name, reply);
     }
@@ -933,7 +936,7 @@ impl Filesystem for CntrFs {
         let mut v = vec![0; size as usize];
         let buf = v.as_mut_slice();
         tryfuse!(
-            pread(get_filehandle(fh).fd.raw(), buf, offset as off_t),
+            pread(get_filehandle(fh).fd.as_fd(), buf, offset as off_t),
             reply
         );
 
@@ -951,7 +954,7 @@ impl Filesystem for CntrFs {
         reply: ReplyWrite,
     ) {
         fsuid::set_root();
-        let dst_fd = get_filehandle(fh).fd.raw();
+        let dst_fd = get_filehandle(fh).fd.as_fd();
 
         let written = tryfuse!(pwrite(dst_fd, data, offset as off_t), reply);
 
