@@ -2,7 +2,7 @@
 name = "cntr"
 edition = "2021"
 description = "A container debugging tool based on FUSE"
-version = "1.5.3"
+version = "1.5.4"
 authors = ["Jörg Thalheim <joerg@thalheim.io>"]
 categories = ["development-tools::debugging", "os::unix-apis"]
 repository = "https://github.com/Mic92/cntr"
