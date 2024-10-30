@@ -1,20 +1,35 @@
 {
-  pkgs ? import <nixpkgs> { },
-  src ? ./.,
+  rustPlatform,
+  lib,
+  clippy,
+  self,
+  withClippy ? false,
 }:
-with pkgs;
 
-pkgs.rustPlatform.buildRustPackage {
-  name = "cntr";
-  inherit src;
-  cargoLock.lockFile = ./Cargo.lock;
+let
+  package = rustPlatform.buildRustPackage {
+    name = "cntr";
+    src = self;
+    cargoLock.lockFile = ./Cargo.lock;
 
-  nativeBuildInputs = [ pkgs.clippy ];
-  meta = with pkgs.lib; {
-    description = "A container debugging tool based on FUSE";
-    homepage = "https://github.com/Mic92/cntr";
-    license = licenses.mit;
-    maintainers = with maintainers; [ mic92 ];
-    platforms = platforms.unix;
+    nativeBuildInputs = [ clippy ];
+    meta = with lib; {
+      description = "A container debugging tool based on FUSE";
+      homepage = "https://github.com/Mic92/cntr";
+      license = licenses.mit;
+      maintainers = with maintainers; [ mic92 ];
+      platforms = platforms.unix;
+    };
   };
-}
+in
+if withClippy then
+  package.overrideAttrs (oldAttrs: {
+    buildPhase = ''
+      cargo clippy --release --locked -- -D warnings
+    '';
+    installPhase = ''
+      touch $out
+    '';
+  })
+else
+  package

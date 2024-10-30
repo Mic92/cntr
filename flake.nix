@@ -27,8 +27,8 @@
           ...
         }:
         {
-          packages.cntr = pkgs.callPackage ./. {
-            src = self;
+          packages.cntr = pkgs.callPackage ./default.nix {
+            inherit self;
           };
           packages.default = config.packages.cntr;
           devShells.default = pkgs.mkShell {
@@ -42,7 +42,14 @@
             ];
           };
           checks =
-            lib.optionalAttrs (!pkgs.hostPlatform.isRiscV64) {
+            {
+              clippy = (
+                config.packages.cntr.override {
+                  withClippy = true;
+                }
+              );
+            }
+            // lib.optionalAttrs (!pkgs.hostPlatform.isRiscV64) {
               inherit
                 (pkgs.callPackages ./vm-test.nix {
                   inherit (config.packages) cntr;
