@@ -41,15 +41,17 @@
               pkgs.rust-analyzer
             ];
           };
-          checks = lib.optionalAttrs (!pkgs.hostPlatform.isRiscV64) {
-            inherit
-              (pkgs.callPackages ./vm-test.nix {
-                inherit (config.packages) cntr;
-              })
-              docker
-              podman
-              ;
-          };
+          checks =
+            lib.optionalAttrs (!pkgs.hostPlatform.isRiscV64) {
+              inherit
+                (pkgs.callPackages ./vm-test.nix {
+                  inherit (config.packages) cntr;
+                })
+                docker
+                podman
+                ;
+            }
+            // lib.mapAttrs' (n: lib.nameValuePair "package-${n}") config.packages;
         };
     };
 }
