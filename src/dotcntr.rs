@@ -4,7 +4,7 @@ use nix::sys::stat;
 use nix::unistd::Pid;
 use simple_error::try_with;
 use std::fs::{self, File};
-use std::io::prelude::*;
+use std::io::Write;
 use std::os::unix::prelude::*;
 use std::{
     fs::{set_permissions, Permissions},
@@ -30,9 +30,9 @@ impl DotcntrDir {
         let path = self.dir.path().join("pid");
         let mut file = try_with!(
             OpenOptions::new()
-                .create(true)
-                .truncate(true)
+                .create_new(true)
                 .mode(0o600)
+                .write(true)
                 .open(&path),
             "failed to create {}",
             path.display()
