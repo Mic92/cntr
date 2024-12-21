@@ -31,7 +31,7 @@ impl DotcntrDir {
         let mut file = try_with!(
             OpenOptions::new()
                 .create_new(true)
-                .mode(0o600)
+                .mode(0o644)
                 .write(true)
                 .open(&path),
             "failed to create {}",
