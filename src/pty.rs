@@ -117,7 +117,7 @@ impl<'a> RawTty<'a> {
     }
 }
 
-impl<'a> Drop for RawTty<'a> {
+impl Drop for RawTty<'_> {
     fn drop(&mut self) {
         let _ = tcsetattr(self.fd, SetArg::TCSANOW, &self.attr);
     }
@@ -234,9 +234,10 @@ pub fn forward(pty: &File) -> Result<()> {
         FilePair::new(&stdin, &pty_file),
         FilePair::new(&pty_file, &stdout),
     ]);
-    stdin.into_raw_fd();
-    stdout.into_raw_fd();
-    pty_file.into_raw_fd();
+    // Drop the files to avoid closing them
+    _ = stdin.into_raw_fd();
+    _ = stdout.into_raw_fd();
+    _ = pty_file.into_raw_fd();
 
     unsafe { PTY_MASTER_FD = -1 };
 

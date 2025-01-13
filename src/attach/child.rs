@@ -138,7 +138,7 @@ pub fn run(options: &ChildOptions) -> Result<()> {
     // we have to destroy f manually, since we only borrow fd here.
     let f = unsafe { File::from_raw_fd(pty_master.as_raw_fd()) };
     let res = options.mount_ready_sock.send(&[], &[&f]);
-    f.into_raw_fd();
+    let _ = f.into_raw_fd();
     try_with!(res, "failed to send pty file descriptor to parent process");
 
     if let Err(e) = env::set_current_dir("/var/lib/cntr") {
