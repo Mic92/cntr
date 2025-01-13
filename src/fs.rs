@@ -148,7 +148,7 @@ pub enum LookupFile<'a> {
     Borrow(&'a File),
 }
 
-impl<'a> AsRawFd for LookupFile<'a> {
+impl AsRawFd for LookupFile<'_> {
     fn as_raw_fd(&self) -> RawFd {
         match *self {
             LookupFile::Donate(ref f) => f.as_raw_fd(),
@@ -157,7 +157,7 @@ impl<'a> AsRawFd for LookupFile<'a> {
     }
 }
 
-impl<'a> LookupFile<'a> {
+impl LookupFile<'_> {
     fn into_raw_fd(self) -> nix::Result<RawFd> {
         match self {
             LookupFile::Donate(f) => Ok(f.into_raw_fd()),

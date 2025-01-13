@@ -47,7 +47,7 @@ impl Drop for DirectoryStream {
 #[allow(missing_debug_implementations)]
 pub struct DirectoryEntry<'a>(&'a dirent64);
 
-impl<'a> AsRef<dirent64> for DirectoryEntry<'a> {
+impl AsRef<dirent64> for DirectoryEntry<'_> {
     fn as_ref(&self) -> &dirent64 {
         self.0
     }
