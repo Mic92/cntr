@@ -2,7 +2,7 @@
   description = "A container debugging tool based on FUSE";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+    nixpkgs.url = "git+https://github.com/NixOS/nixpkgs?shallow=1";
     flake-parts.url = "github:hercules-ci/flake-parts";
     flake-parts.inputs.nixpkgs-lib.follows = "nixpkgs";
 
