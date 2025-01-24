@@ -379,7 +379,8 @@ impl CntrFs {
                     match reply {
                         ReplyDirectory::Directory(ref mut r) => r.add(
                             entry.d_ino,
-                            dirp.offset,
+                            #[allow(clippy::useless_conversion)] // needed for 32bit
+                            dirp.offset.into(),
                             dtype_kind(entry.d_type),
                             OsStr::from_bytes(name.to_bytes()),
                         ),
@@ -387,7 +388,8 @@ impl CntrFs {
                             match self.lookup_inode(ino, OsStr::from_bytes(name.to_bytes())) {
                                 Ok((attr, generation)) => r.add(
                                     entry.d_ino,
-                                    dirp.offset,
+                                    #[allow(clippy::useless_conversion)] // needed for 32bit
+                                    dirp.offset.into(),
                                     OsStr::from_bytes(name.to_bytes()),
                                     &TTL,
                                     &attr,
@@ -415,7 +417,8 @@ impl CntrFs {
     fn attr_from_stat(&self, attr: stat::FileStat) -> FileAttr {
         let ctime = UNIX_EPOCH + Duration::new(attr.st_ctime as u64, attr.st_ctime_nsec as u32);
         FileAttr {
-            ino: attr.st_ino, // replaced by ino pointer
+            #[allow(clippy::useless_conversion)] // needed for 32bit
+            ino: attr.st_ino.into(), // replaced by ino pointer
             size: attr.st_size as u64,
             blocks: attr.st_blocks as u64,
             atime: UNIX_EPOCH + Duration::new(attr.st_atime as u64, attr.st_atime_nsec as u32),
