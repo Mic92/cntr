@@ -122,7 +122,7 @@ fn last_capability() -> Result<c_ulong> {
 
 pub fn drop(inheritable_capabilities: c_ulong) -> Result<()> {
     // we need chroot at the moment for `exec` command
-    let inheritable = inheritable_capabilities | 1 << CAP_SYS_CHROOT | 1 << CAP_SYS_PTRACE;
+    let inheritable = inheritable_capabilities | (1 << CAP_SYS_CHROOT) | (1 << CAP_SYS_PTRACE);
     let last_capability = try_with!(last_capability(), "failed to read capability limit");
 
     for cap in 0..last_capability {
