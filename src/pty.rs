@@ -3,11 +3,11 @@ use nix::errno::Errno;
 use nix::fcntl::OFlag;
 use nix::pty::*;
 use nix::sys::select;
-use nix::sys::signal::{sigaction, SaFlags, SigAction, SigHandler, SigSet, SIGWINCH};
+use nix::sys::signal::{SIGWINCH, SaFlags, SigAction, SigHandler, SigSet, sigaction};
 use nix::sys::stat;
 use nix::sys::termios::SpecialCharacterIndices::*;
 use nix::sys::termios::{
-    tcgetattr, tcsetattr, ControlFlags, InputFlags, LocalFlags, OutputFlags, SetArg, Termios,
+    ControlFlags, InputFlags, LocalFlags, OutputFlags, SetArg, Termios, tcgetattr, tcsetattr,
 };
 use nix::{self, fcntl, unistd};
 use simple_error::try_with;

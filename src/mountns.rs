@@ -9,7 +9,7 @@ use std::os::unix::prelude::*;
 use std::path::PathBuf;
 use std::{
     ffi::OsStr,
-    fs::{set_permissions, Permissions},
+    fs::{Permissions, set_permissions},
 };
 
 use crate::files::mkdir_p;

@@ -1,8 +1,8 @@
 use nix::unistd::Pid;
 use simple_error::{bail, try_with};
 use std::fs::File;
-use std::io::prelude::*;
 use std::io::BufReader;
+use std::io::prelude::*;
 
 use crate::procfs;
 use crate::result::Result;
