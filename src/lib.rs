@@ -1,4 +1,4 @@
-pub use container_pid::{lookup_container_type, AVAILABLE_CONTAINER_TYPES};
+pub use container_pid::{AVAILABLE_CONTAINER_TYPES, lookup_container_type};
 pub use logging::enable_debug_log;
 pub use user_namespace::DEFAULT_ID_MAP;
 
@@ -27,5 +27,5 @@ mod result;
 mod sys_ext;
 mod tmp;
 mod user_namespace;
-pub use attach::{attach, AttachOptions};
-pub use exec::{exec, SETCAP_EXE};
+pub use attach::{AttachOptions, attach};
+pub use exec::{SETCAP_EXE, exec};

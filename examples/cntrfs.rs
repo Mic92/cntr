@@ -6,12 +6,12 @@ use lazy_static::lazy_static;
 use log::{error, info};
 use nix::sys::signal;
 use nix::{mount, unistd};
-use simple_error::{try_with, SimpleError};
+use simple_error::{SimpleError, try_with};
 use std::env;
 use std::path::Path;
 use std::process;
-use std::sync::mpsc::{sync_channel, SyncSender};
 use std::sync::Mutex;
+use std::sync::mpsc::{SyncSender, sync_channel};
 
 struct MountGuard {
     mount_point: String,

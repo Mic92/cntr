@@ -1,11 +1,11 @@
 use libc::{c_ulong, pid_t};
 use nix::unistd::Pid;
-use simple_error::{try_with, SimpleError};
+use simple_error::{SimpleError, try_with};
 use std::env;
 use std::ffi::OsString;
 use std::fs::File;
-use std::io::prelude::*;
 use std::io::BufReader;
+use std::io::prelude::*;
 use std::path::PathBuf;
 
 use crate::result::Result;
