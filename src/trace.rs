@@ -3,7 +3,7 @@ use nix;
 use nix::errno;
 use nix::sys::ptrace::ptrace::*;
 use nix::sys::ptrace::*;
-use nix::sys::wait::{wait, waitpid, WaitStatus};
+use nix::sys::wait::{WaitStatus, wait, waitpid};
 use sigstr;
 use simple_error::{bail, try_with};
 use std::ptr;
