@@ -29,7 +29,7 @@ In this two minute recording you learn all the basics of cntr:
 
 ## Installation
 
-Cntr can be only supports linux.
+Cntr by design is only able to run on Linux.
 
 ### Pre-build static-linked binary
 
