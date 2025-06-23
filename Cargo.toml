@@ -17,7 +17,7 @@ clap = { version = "4", default-features = false, features = [
   "help",
 ] }
 log = "0.4.26"
-libc = "0.2.171"
+libc = "0.2.174"
 parking_lot = "0.12.3"
 nix = { version = "0.29.0", features = [
   "fs",
