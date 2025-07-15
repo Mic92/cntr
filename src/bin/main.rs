@@ -2,7 +2,7 @@ extern crate cntr;
 extern crate nix;
 
 use clap::builder::PossibleValue;
-use clap::{crate_authors, crate_version, Arg, ArgAction, ArgMatches, Command, ValueEnum};
+use clap::{Arg, ArgAction, ArgMatches, Command, ValueEnum, crate_authors, crate_version};
 use nix::unistd::User;
 use std::path::Path;
 use std::{env, process};

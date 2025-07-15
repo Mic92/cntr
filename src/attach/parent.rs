@@ -1,5 +1,5 @@
 use nix::sys::signal::{self, Signal};
-use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
+use nix::sys::wait::{WaitPidFlag, WaitStatus, waitpid};
 use nix::unistd::Pid;
 use nix::{cmsg_space, unistd};
 use simple_error::try_with;
