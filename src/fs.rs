@@ -306,7 +306,7 @@ impl CntrFs {
     }
 
     pub fn mount(&self, mountpoint: &Path, selinux_context: &Option<String>) -> Result<()> {
-        let context = if let Some(ref context) = selinux_context {
+        let context = if let Some(context) = selinux_context {
             format!("context=\"{}\"", context)
         } else {
             "".to_owned()

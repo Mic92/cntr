@@ -10,7 +10,10 @@
         projectRootFile = "flake.lock";
 
         programs.nixfmt.enable = !pkgs.hostPlatform.isRiscV64;
-        programs.rustfmt.enable = true;
+        programs.rustfmt = {
+          enable = true;
+          edition = "2024";
+        };
       };
     };
 }
