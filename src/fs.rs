@@ -31,16 +31,16 @@ use std::vec::Vec;
 
 use crate::dirent;
 use crate::dotcntr::DotcntrDir;
-use crate::files::{fd_path, Fd, FdState};
+use crate::files::{Fd, FdState, fd_path};
 use crate::fsuid;
 use crate::fusefd;
 use crate::inode::Inode;
 use crate::num_cpus;
 use crate::result::Result;
 use crate::sys_ext::{
-    fchownat, fstatvfs, fuse_getxattr, fuse_listxattr, fuse_readlinkat, fuse_removexattr,
-    fuse_setxattr, futimens, ioctl, ioctl_read, ioctl_write, linkat, mknodat, renameat2, setrlimit,
-    utimensat, Rlimit, UtimeSpec,
+    Rlimit, UtimeSpec, fchownat, fstatvfs, fuse_getxattr, fuse_listxattr, fuse_readlinkat,
+    fuse_removexattr, fuse_setxattr, futimens, ioctl, ioctl_read, ioctl_write, linkat, mknodat,
+    renameat2, setrlimit, utimensat,
 };
 use crate::user_namespace::IdMap;
 
@@ -157,11 +157,20 @@ impl AsRawFd for LookupFile<'_> {
     }
 }
 
+impl AsFd for LookupFile<'_> {
+    fn as_fd(&self) -> BorrowedFd {
+        match *self {
+            LookupFile::Donate(ref f) => f.as_fd(),
+            LookupFile::Borrow(f) => f.as_fd(),
+        }
+    }
+}
+
 impl LookupFile<'_> {
     fn into_raw_fd(self) -> nix::Result<RawFd> {
         match self {
             LookupFile::Donate(f) => Ok(f.into_raw_fd()),
-            LookupFile::Borrow(f) => unistd::dup(f.as_raw_fd()),
+            LookupFile::Borrow(f) => unistd::dup(f).map(IntoRawFd::into_raw_fd),
         }
     }
 }
@@ -174,7 +183,7 @@ fn open_static_dnode(static_ino: u64, path: &Path) -> Result<Arc<Inode>> {
     );
 
     Ok(Arc::new(Inode {
-        fd: RwLock::new(Fd::new(fd, FdState::Readable)),
+        fd: RwLock::new(Fd::new(fd.into_raw_fd(), FdState::Readable)),
         kind: FileType::Directory,
         ino: static_ino,
         dev: static_ino,
@@ -245,12 +254,12 @@ impl CntrFs {
 
         let create_mode = stat::Mode::from_bits_truncate(mode);
         let fd = fcntl::openat(
-            Some(parent_fd.raw()),
+            parent_fd.as_fd(),
             name,
             oflag | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
             create_mode,
         )?;
-        Ok(fd)
+        Ok(fd.into_raw_fd())
     }
 
     pub fn spawn_sessions(self) -> Result<Vec<JoinHandle<io::Result<()>>>> {
@@ -334,7 +343,7 @@ impl CntrFs {
     ) -> nix::Result<()> {
         if let Some(bits) = mode {
             let mode = stat::Mode::from_bits_truncate(bits);
-            stat::fchmod(fd.raw(), mode)?;
+            stat::fchmod(fd.as_fd(), mode)?;
         }
 
         if uid.is_some() || gid.is_some() {
@@ -470,7 +479,7 @@ impl CntrFs {
     }
 
     fn lookup_from_fd(&mut self, new_file: LookupFile) -> nix::Result<(FileAttr, u64)> {
-        let _stat = stat::fstat(new_file.as_raw_fd())?;
+        let _stat = stat::fstat(&new_file)?;
         let mut attr = self.attr_from_stat(_stat);
 
         let key = InodeKey {
@@ -531,12 +540,12 @@ impl CntrFs {
         let parent_inode = self.inode(parent)?;
         let parent_fd = parent_inode.fd.read();
         let fd = fcntl::openat(
-            Some(parent_fd.as_fd().as_raw_fd()),
+            parent_fd.as_fd(),
             name,
             OFlag::O_PATH | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
             stat::Mode::empty(),
         )?;
-        let file = unsafe { File::from_raw_fd(fd) };
+        let file = File::from(fd);
 
         self.lookup_from_fd(LookupFile::Donate(file))
     }
@@ -661,7 +670,7 @@ impl Filesystem for CntrFs {
         let inode = tryfuse!(self.inode(ino), reply);
         let fd = inode.fd.read();
 
-        let mut attr = self.attr_from_stat(tryfuse!(stat::fstat(fd.raw()), reply));
+        let mut attr = self.attr_from_stat(tryfuse!(stat::fstat(fd.as_fd()), reply));
         attr.ino = ino;
         reply.attr(&TTL, &attr);
     }
@@ -771,10 +780,7 @@ impl Filesystem for CntrFs {
 
             let perm = stat::Mode::from_bits_truncate(mode);
             let fd = inode.fd.read();
-            tryfuse!(
-                stat::mkdirat(Some(fd.as_fd().as_raw_fd()), name, perm),
-                reply
-            );
+            tryfuse!(stat::mkdirat(fd.as_fd(), name, perm), reply);
         }
         self.lookup(req, parent, name, reply);
     }
@@ -785,7 +791,7 @@ impl Filesystem for CntrFs {
         let inode = tryfuse!(self.inode(parent), reply);
         let fd = inode.fd.read();
 
-        let res = unistd::unlinkat(Some(fd.raw()), name, unistd::UnlinkatFlags::NoRemoveDir);
+        let res = unistd::unlinkat(fd.as_fd(), name, unistd::UnlinkatFlags::NoRemoveDir);
         tryfuse!(res, reply);
         reply.ok();
     }
@@ -797,7 +803,7 @@ impl Filesystem for CntrFs {
         let fd = inode.fd.read();
 
         tryfuse!(
-            unistd::unlinkat(Some(fd.raw()), name, unistd::UnlinkatFlags::RemoveDir),
+            unistd::unlinkat(fd.as_fd(), name, unistd::UnlinkatFlags::RemoveDir),
             reply
         );
         reply.ok();
@@ -816,7 +822,7 @@ impl Filesystem for CntrFs {
         {
             let inode = tryfuse!(self.inode(parent), reply);
             let fd = inode.fd.read();
-            let res = unistd::symlinkat(link, Some(fd.raw()), name);
+            let res = unistd::symlinkat(link, fd.as_fd(), name);
             tryfuse!(res, reply);
         }
         self.lookup(req, parent, name, reply);
@@ -838,7 +844,7 @@ impl Filesystem for CntrFs {
         let new_inode = tryfuse!(self.inode(newparent), reply);
         let new_fd = new_inode.fd.read();
         tryfuse!(
-            fcntl::renameat(Some(parent_fd.raw()), name, Some(new_fd.raw()), newname),
+            fcntl::renameat(parent_fd.as_fd(), name, new_fd.as_fd(), newname),
             reply
         );
 
@@ -917,8 +923,8 @@ impl Filesystem for CntrFs {
         );
 
         // avoid double caching
-        tryfuse!(posix_fadvise(res), reply);
-        let fh = Fh::new(Fd::new(res, FdState::from(oflags)));
+        tryfuse!(posix_fadvise(res.as_raw_fd()), reply);
+        let fh = Fh::new(Fd::new(res.into_raw_fd(), FdState::from(oflags)));
         reply.opened(
             Box::into_raw(fh) as u64,
             cntr_fuse::consts::FOPEN_KEEP_CACHE,
@@ -969,7 +975,7 @@ impl Filesystem for CntrFs {
 
         let handle = get_filehandle(fh);
 
-        match unistd::dup(handle.fd.raw()) {
+        match unistd::dup(handle.fd.as_fd()) {
             Ok(fd) => {
                 tryfuse!(unistd::close(fd), reply);
                 reply.ok();
@@ -998,7 +1004,7 @@ impl Filesystem for CntrFs {
 
         let handle = get_filehandle(fh);
 
-        let fd = handle.fd.raw();
+        let fd = handle.fd.as_fd();
         if datasync {
             tryfuse!(unistd::fsync(fd), reply);
         } else {
@@ -1061,7 +1067,7 @@ impl Filesystem for CntrFs {
 
         let dirp = unsafe { &mut (*(fh as *mut DirP)) };
         assert!(dirp.magic == DIRP_MAGIC);
-        let fd = tryfuse!(dirent::dirfd(&mut dirp.dp), reply);
+        let fd = unsafe { BorrowedFd::borrow_raw(tryfuse!(dirent::dirfd(&mut dirp.dp), reply)) };
         if datasync {
             tryfuse!(unistd::fsync(fd), reply);
         } else {
@@ -1296,7 +1302,7 @@ impl Filesystem for CntrFs {
         let handle = get_filehandle(fh);
         let flags = fcntl::FallocateFlags::from_bits_truncate(mode as i32);
         tryfuse!(
-            fcntl::fallocate(handle.fd.raw(), flags, offset as off_t, length as off_t),
+            fcntl::fallocate(handle.fd.as_fd(), flags, offset as off_t, length as off_t),
             reply
         );
         reply.ok();
@@ -1352,7 +1358,7 @@ impl Filesystem for CntrFs {
     ) {
         fsuid::set_root();
 
-        let fd = get_filehandle(fh).fd.raw();
+        let fd = get_filehandle(fh).fd.as_fd();
         let new_offset = tryfuse!(
             unistd::lseek64(fd, offset, unsafe {
                 mem::transmute::<i32, nix::unistd::Whence>(whence as i32)

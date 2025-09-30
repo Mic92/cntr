@@ -3,7 +3,6 @@ use nix::sys::stat::{self, Mode, SFlag};
 use nix::{self, errno, fcntl};
 use simple_error::{bail, try_with};
 use std::fs::File;
-use std::os::unix::prelude::*;
 
 use crate::result::Result;
 
@@ -12,7 +11,7 @@ pub fn open() -> Result<File> {
 
     match res {
         Ok(fd) => {
-            let file = unsafe { File::from_raw_fd(fd) };
+            let file = File::from(fd);
             return Ok(file);
         }
         Err(errno::Errno::ENOENT) => {}
@@ -29,11 +28,9 @@ pub fn open() -> Result<File> {
         "failed to create temporary fuse character device"
     );
 
-    let file = unsafe {
-        File::from_raw_fd(try_with!(
-            fcntl::open("/dev/fuse", OFlag::O_RDWR, stat::Mode::empty()),
-            "failed to open fuse device"
-        ))
-    };
+    let file = File::from(try_with!(
+        fcntl::open("/dev/fuse", OFlag::O_RDWR, stat::Mode::empty()),
+        "failed to open fuse device"
+    ));
     Ok(file)
 }

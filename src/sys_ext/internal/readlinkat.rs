@@ -1,5 +1,5 @@
-use nix::errno::Errno;
 use nix::NixPath;
+use nix::errno::Errno;
 use std::ffi::{OsStr, OsString};
 use std::os::unix::prelude::*;
 

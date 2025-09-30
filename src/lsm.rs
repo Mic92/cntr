@@ -1,9 +1,9 @@
 use nix::unistd::Pid;
 use simple_error::try_with;
 use std::fs::{File, OpenOptions};
-use std::io::prelude::*;
 use std::io::BufReader;
 use std::io::ErrorKind;
+use std::io::prelude::*;
 use std::path::{Path, PathBuf};
 
 use crate::mount_context;
