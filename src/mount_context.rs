@@ -18,12 +18,11 @@ fn find_mount_options(p: Pid) -> Result<String> {
         let line = line.trim();
         let mut tokens = line.split_terminator([' ', '\t']).filter(|s| s != &"");
 
-        if let Some(mountpoint) = tokens.nth(1) {
-            if let Some(options) = tokens.nth(1) {
-                if mountpoint == "/" {
-                    return Ok(String::from(options));
-                }
-            }
+        if let Some(mountpoint) = tokens.nth(1)
+            && let Some(options) = tokens.nth(1)
+            && mountpoint == "/"
+        {
+            return Ok(String::from(options));
         }
     }
     bail!("did not find / in {}", path.display())

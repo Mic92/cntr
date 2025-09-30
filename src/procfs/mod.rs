@@ -55,15 +55,15 @@ pub fn status(target_pid: Pid) -> Result<ProcStatus> {
                 );
                 inherited_caps = Some(cap);
             }
-        } else if columns[0] == "CapEff:" {
-            if let Some(cap_string) = columns.last() {
-                let cap = try_with!(
-                    c_ulong::from_str_radix(cap_string, 16),
-                    "read invalid capability from proc: '{}'",
-                    columns[1]
-                );
-                effective_caps = Some(cap);
-            }
+        } else if columns[0] == "CapEff:"
+            && let Some(cap_string) = columns.last()
+        {
+            let cap = try_with!(
+                c_ulong::from_str_radix(cap_string, 16),
+                "read invalid capability from proc: '{}'",
+                columns[1]
+            );
+            effective_caps = Some(cap);
         }
     }
 

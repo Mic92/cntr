@@ -17,10 +17,10 @@ pub fn fd_path(fd: &Fd) -> String {
 }
 
 pub fn mkdir_p<P: AsRef<Path>>(path: &P) -> io::Result<()> {
-    if let Err(e) = create_dir_all(path) {
-        if e.kind() != io::ErrorKind::AlreadyExists {
-            return Err(e);
-        }
+    if let Err(e) = create_dir_all(path)
+        && e.kind() != io::ErrorKind::AlreadyExists
+    {
+        return Err(e);
     }
     Ok(())
 }
