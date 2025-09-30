@@ -7,7 +7,7 @@ use std::fs::{self, File};
 use std::io::Write;
 use std::os::unix::prelude::*;
 use std::{
-    fs::{Permissions, set_permissions},
+    fs::{set_permissions, Permissions},
     os::unix::fs::PermissionsExt,
 };
 
