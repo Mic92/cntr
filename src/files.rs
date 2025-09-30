@@ -52,7 +52,7 @@ impl Fd {
     pub fn raw(&self) -> RawFd {
         self.file.as_raw_fd()
     }
-    pub fn as_fd(&self) -> BorrowedFd {
+    pub fn as_fd(&self) -> BorrowedFd<'_> {
         self.file.as_fd()
     }
     pub fn path(&self) -> String {
