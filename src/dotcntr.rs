@@ -5,9 +5,8 @@ use nix::unistd::Pid;
 use simple_error::try_with;
 use std::fs::{self, File};
 use std::io::Write;
-use std::os::unix::prelude::*;
 use std::{
-    fs::{set_permissions, Permissions},
+    fs::{Permissions, set_permissions},
     os::unix::fs::PermissionsExt,
 };
 
@@ -81,7 +80,7 @@ pub fn create(process_status: &ProcStatus) -> Result<DotcntrDir> {
         "failed to open '{}' directory",
         dotcntr_dir.path().display()
     );
-    let dotcntr_file = unsafe { File::from_raw_fd(dotcntr_fd) };
+    let dotcntr_file = File::from(dotcntr_fd);
     let d = DotcntrDir {
         file: dotcntr_file,
         dir: dotcntr_dir,

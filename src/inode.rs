@@ -4,9 +4,10 @@ use nix::fcntl::OFlag;
 use nix::sys::stat;
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use std::ffi::OsStr;
+use std::os::fd::IntoRawFd;
 use std::path::Path;
 
-use crate::files::{fd_path, Fd, FdState};
+use crate::files::{Fd, FdState, fd_path};
 use crate::fs::POSIX_ACL_DEFAULT_XATTR;
 use crate::fsuid;
 use crate::sys_ext::fuse_getxattr;
@@ -38,7 +39,7 @@ impl Inode {
 
         let path = fd_path(&fd);
         let new_fd = Fd::new(
-            fcntl::open(Path::new(&path), flags, stat::Mode::empty())?,
+            fcntl::open(Path::new(&path), flags, stat::Mode::empty())?.into_raw_fd(),
             FdState::from(flags),
         );
         *fd = new_fd;
