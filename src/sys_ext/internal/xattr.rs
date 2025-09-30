@@ -1,9 +1,9 @@
 use super::readlinkat::fuse_readlinkat;
 use cntr_fuse::FileType;
 use libc::c_int;
+use nix::errno::Errno;
 use nix::NixPath;
 use nix::Result;
-use nix::errno::Errno;
 use std::ffi::OsStr;
 
 use crate::files::Fd;

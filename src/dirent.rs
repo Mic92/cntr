@@ -2,7 +2,7 @@
 //!
 //! [Further reading and details on the C API](http://man7.org/linux/man-pages/man3/opendir.3.html)
 
-use libc::{DIR, c_long};
+use libc::{c_long, DIR};
 use nix::errno::Errno;
 use std::convert::AsRef;
 use std::mem;

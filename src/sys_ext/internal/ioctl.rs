@@ -1,5 +1,4 @@
 use libc::{self, c_ulong};
-use nix::Result;
 use nix::errno::Errno;
 use std::os::unix::io::RawFd;
 

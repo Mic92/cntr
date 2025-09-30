@@ -8,8 +8,8 @@ pub use self::internal::mknodat::mknodat;
 pub use self::internal::prctl::prctl;
 pub use self::internal::readlinkat::fuse_readlinkat;
 pub use self::internal::renameat2::renameat2;
-pub use self::internal::setrlimit::{Rlimit, setrlimit};
-pub use self::internal::utime::{UtimeSpec, futimens, utimensat};
+pub use self::internal::setrlimit::{setrlimit, Rlimit};
+pub use self::internal::utime::{futimens, utimensat, UtimeSpec};
 pub use self::internal::xattr::{
     fuse_getxattr, fuse_listxattr, fuse_removexattr, fuse_setxattr, setxattr,
 };

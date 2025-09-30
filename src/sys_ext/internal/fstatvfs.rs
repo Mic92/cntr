@@ -1,5 +1,5 @@
-use nix::Result;
 use nix::errno::Errno;
+use nix::Result;
 use std::mem;
 use std::os::unix::io::RawFd;
 
