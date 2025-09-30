@@ -16,17 +16,20 @@ pub enum UtimeSpec {
 
 impl<'a> From<&'a UtimeSpec> for libc::timespec {
     fn from(time: &'a UtimeSpec) -> libc::timespec {
+        // Debian: In Debian packaged rust-libc 0.2.153-2, a private pad field
+        // was added to libc::timespec for specific architectures, failing the
+        // original struct literal syntax.
+        let mut spec: libc::timespec = unsafe { std::mem::zeroed() };
         match time {
-            UtimeSpec::Now => libc::timespec {
-                tv_sec: 0,
-                tv_nsec: libc::UTIME_NOW,
-            },
-            UtimeSpec::Omit => libc::timespec {
-                tv_sec: 0,
-                tv_nsec: libc::UTIME_OMIT,
-            },
-            UtimeSpec::Time(spec) => *spec.as_ref(),
+            UtimeSpec::Now => {
+                spec.tv_nsec = libc::UTIME_NOW;
+            }
+            UtimeSpec::Omit => {
+                spec.tv_nsec = libc::UTIME_OMIT;
+            }
+            UtimeSpec::Time(timespec) => return *timespec.as_ref(),
         }
+        spec
     }
 }
 
