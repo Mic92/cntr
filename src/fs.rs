@@ -158,7 +158,7 @@ impl AsRawFd for LookupFile<'_> {
 }
 
 impl AsFd for LookupFile<'_> {
-    fn as_fd(&self) -> BorrowedFd {
+    fn as_fd(&self) -> BorrowedFd<'_> {
         match *self {
             LookupFile::Donate(ref f) => f.as_fd(),
             LookupFile::Borrow(f) => f.as_fd(),

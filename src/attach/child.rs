@@ -118,10 +118,10 @@ pub fn run(options: &ChildOptions) -> Result<()> {
     }
 
     if supported_namespaces.contains(namespace::USER.name) {
-        if let Err(e) = unistd::setgroups(&[]) {
-            if !dropped_groups {
-                try_with!(Err(e), "could not set groups");
-            }
+        if let Err(e) = unistd::setgroups(&[])
+            && !dropped_groups
+        {
+            try_with!(Err(e), "could not set groups");
         }
         try_with!(unistd::setgid(options.gid), "could not set group id");
         try_with!(unistd::setuid(options.uid), "could not set user id");

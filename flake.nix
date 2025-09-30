@@ -41,24 +41,23 @@
               pkgs.rust-analyzer
             ];
           };
-          checks =
-            {
-              clippy = (
-                config.packages.cntr.override {
-                  withClippy = true;
-                }
-              );
-            }
-            // lib.optionalAttrs (!pkgs.hostPlatform.isRiscV64) {
-              inherit
-                (pkgs.callPackages ./vm-test.nix {
-                  inherit (config.packages) cntr;
-                })
-                docker
-                podman
-                ;
-            }
-            // lib.mapAttrs' (n: lib.nameValuePair "package-${n}") config.packages;
+          checks = {
+            clippy = (
+              config.packages.cntr.override {
+                withClippy = true;
+              }
+            );
+          }
+          // lib.optionalAttrs (!pkgs.hostPlatform.isRiscV64) {
+            inherit
+              (pkgs.callPackages ./vm-test.nix {
+                inherit (config.packages) cntr;
+              })
+              docker
+              podman
+              ;
+          }
+          // lib.mapAttrs' (n: lib.nameValuePair "package-${n}") config.packages;
         };
     };
 }

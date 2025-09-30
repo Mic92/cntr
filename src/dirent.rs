@@ -68,7 +68,7 @@ pub fn opendir<P: ?Sized + nix::NixPath>(name: &P) -> nix::Result<DirectoryStrea
 /// Returns the next directory entry in the directory stream.
 ///
 /// It returns `Some(None)` on reaching the end of the directory stream.
-pub fn readdir(dir: &mut DirectoryStream) -> nix::Result<Option<DirectoryEntry>> {
+pub fn readdir(dir: &mut DirectoryStream) -> nix::Result<Option<DirectoryEntry<'_>>> {
     let dirent = unsafe {
         Errno::clear();
         readdir64(dir.0)
