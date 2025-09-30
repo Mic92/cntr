@@ -9,7 +9,11 @@
 let
   package = rustPlatform.buildRustPackage {
     name = "cntr";
-    src = self;
+    src = lib.sources.sourceFilesBySuffices self [
+      ".rs"
+      ".toml"
+      ".lock"
+    ];
     cargoLock.lockFile = ./Cargo.lock;
 
     nativeBuildInputs = [ clippy ];
