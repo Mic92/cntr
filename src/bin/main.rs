@@ -10,7 +10,6 @@ use std::{env, process};
 fn command_arg(index: usize) -> Arg {
     Arg::new("command")
         .help("Command and its arguments to execute after attach. Consider prepending it with '-- ' to prevent parsing of '-x'-like flags. [default: $SHELL]")
-        .requires("command")
         .index(index)
         .action(ArgAction::Append)
 }
