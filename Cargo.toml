@@ -31,7 +31,7 @@ nix = { version = "0.30.1", features = [
   "term",
 ] }
 container-pid = "0.2.0"
-simple-error = "0.3.1"
+simple-error = "0.3.2"
 cntr-fuse = { version = "0.4.2", default-features = false }
 chashmap = "2.2.2"
 
