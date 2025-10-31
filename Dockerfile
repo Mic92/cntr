@@ -1,6 +1,6 @@
 # Example for a slim/fat container setup
 
-FROM rust:1.90.0 as cntr
+FROM rust:1.91.0 as cntr
 RUN rustup target add x86_64-unknown-linux-musl
 RUN curl -sL https://github.com/Mic92/docker-pid/releases/download/1.0.2/docker-pid-linux-amd64 \
       > /usr/bin/docker-pid && \
