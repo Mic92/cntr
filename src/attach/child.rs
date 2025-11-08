@@ -357,8 +357,11 @@ pub(crate) fn run(options: &ChildOptions) -> Result<()> {
     }
 
     // Step 8: Drop capabilities
-    capabilities::drop(options.process_status.effective_capabilities)
-        .context("failed to apply capabilities")?;
+    capabilities::drop(
+        options.process_status.effective_capabilities,
+        options.process_status.last_cap,
+    )
+    .context("failed to apply capabilities")?;
 
     // Step 9: Create daemon socket in the tmpfs overlay
     // The socket lives at {base_dir}/.exec.sock on the tmpfs (writable)
