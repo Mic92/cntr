@@ -35,7 +35,7 @@ pub(crate) struct ChildOptions<'a> {
     pub(crate) gid: Gid,
 }
 
-/// Child process logic for mount API attach (T018)
+/// Child process logic for mount API attach
 ///
 /// The child assembles a mount hierarchy where:
 /// - / = host filesystem (with all host mounts)

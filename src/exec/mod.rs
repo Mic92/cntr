@@ -15,7 +15,7 @@ use crate::pty;
 use crate::result::Result;
 use crate::syscalls::capability;
 
-/// Execute a command in a container via the daemon socket (T033)
+/// Execute a command in a container via the daemon socket
 ///
 /// Daemon mode: Must be run from inside 'cntr attach' session.
 /// Connects to daemon socket at {base_dir}/.exec.sock
@@ -144,7 +144,7 @@ pub(crate) fn exec_daemon(exe: Option<String>, args: Vec<String>) -> Result<()> 
     }
 }
 
-/// Execute a command directly in a container (T034)
+/// Execute a command directly in a container
 ///
 /// Direct mode: Directly access container by ID/name with PTY.
 /// This provides similar functionality to attach but without the mount overlay or daemon.
