@@ -1,2 +1,22 @@
 /target/
 /book
+
+# Rust
+*.rs.bk
+*.rlib
+*.prof*
+debug/
+release/
+
+# IDEs
+.idea/
+.vscode/
+
+# Logs and temp files
+*.log
+*.tmp
+*.swp
+
+# Environment files
+.env*
+!.env.example
