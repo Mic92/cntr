@@ -27,7 +27,7 @@ fn print_attach_help() {
     eprintln!("OPTIONS:");
     eprintln!("    -t, --type <TYPES>           Container types to try (comma-separated)");
     eprintln!(
-        "                                 [possible: process-id,rkt,podman,docker,nspawn,lxc,lxd,containerd,command]"
+        "                                 [possible: process-id,podman,docker,nspawn,lxc,lxd,containerd,command,kubernetes]"
     );
     eprintln!("                                 [default: all but command]");
     eprintln!("    --effective-user <USER>      Effective username for new files on host");
@@ -54,7 +54,7 @@ fn print_exec_help() {
     eprintln!("OPTIONS:");
     eprintln!("    -t, --type <TYPES>           Container types to try (comma-separated)");
     eprintln!(
-        "                                 [possible: process-id,rkt,podman,docker,nspawn,lxc,lxd,containerd,command]"
+        "                                 [possible: process-id,podman,docker,nspawn,lxc,lxd,containerd,command,kubernetes]"
     );
     eprintln!("                                 [default: all but command]");
     eprintln!("    -h, --help                   Print help");
