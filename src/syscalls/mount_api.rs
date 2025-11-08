@@ -15,7 +15,6 @@ use std::os::unix::io::{AsRawFd, BorrowedFd, FromRawFd, OwnedFd, RawFd};
 mod syscall_numbers {
     pub(crate) const SYS_OPEN_TREE: libc::c_long = 428;
     pub(crate) const SYS_MOVE_MOUNT: libc::c_long = 429;
-    pub(crate) const SYS_FSOPEN: libc::c_long = 430;
     pub(crate) const SYS_MOUNT_SETATTR: libc::c_long = 442;
 }
 
@@ -23,7 +22,6 @@ mod syscall_numbers {
 mod syscall_numbers {
     pub(crate) const SYS_OPEN_TREE: libc::c_long = 428;
     pub(crate) const SYS_MOVE_MOUNT: libc::c_long = 429;
-    pub(crate) const SYS_FSOPEN: libc::c_long = 430;
     pub(crate) const SYS_MOUNT_SETATTR: libc::c_long = 442;
 }
 
@@ -52,18 +50,6 @@ pub(crate) struct MountAttr {
     pub attr_clr: u64,
     pub propagation: u64,
     pub userns_fd: u64,
-}
-
-/// Open a filesystem configuration context (raw syscall)
-///
-/// # Arguments
-/// * `fs_name` - Filesystem type (e.g., "tmpfs", "ext4")
-/// * `flags` - Flags for the operation
-///
-/// # Returns
-/// File descriptor for the filesystem context on success, or -1 on error
-unsafe fn fsopen(fs_name: &CStr, flags: u32) -> RawFd {
-    unsafe { libc::syscall(SYS_FSOPEN, fs_name.as_ptr(), flags) as RawFd }
 }
 
 /// Move a mount from one place to another (raw syscall)
@@ -108,39 +94,6 @@ unsafe fn mount_setattr(
 }
 
 // Safe wrapper types with RAII semantics
-
-/// RAII wrapper for filesystem configuration context
-///
-/// Represents an open filesystem configuration created by fsopen().
-/// The fd is automatically closed when this struct is dropped.
-pub(crate) struct FsContext {
-    fd: OwnedFd,
-}
-
-impl FsContext {
-    /// Open a filesystem configuration context
-    ///
-    /// # Arguments
-    /// * `fs_name` - Filesystem type (e.g., "tmpfs")
-    /// * `flags` - Flags
-    pub(crate) fn open(fs_name: &CStr, flags: u32) -> Result<Self, std::io::Error> {
-        unsafe {
-            let fd = fsopen(fs_name, flags);
-            if fd < 0 {
-                return Err(std::io::Error::last_os_error());
-            }
-            Ok(FsContext {
-                fd: OwnedFd::from_raw_fd(fd),
-            })
-        }
-    }
-}
-
-impl AsRawFd for FsContext {
-    fn as_raw_fd(&self) -> RawFd {
-        self.fd.as_raw_fd()
-    }
-}
 
 /// RAII wrapper for mount file descriptor
 ///
@@ -202,21 +155,22 @@ impl MountFd {
     /// Move this mount to a target location
     ///
     /// # Arguments
-    /// * `to_dfd` - Destination directory fd (or AT_FDCWD)
+    /// * `to_dfd` - Optional destination directory fd (None = current working directory)
     /// * `to_path` - Destination path
     /// * `flags` - Movement flags
     pub(crate) fn attach_to(
         self,
-        to_dfd: RawFd,
+        to_dfd: Option<BorrowedFd>,
         to_path: &CStr,
         flags: u32,
     ) -> Result<(), std::io::Error> {
         unsafe {
             let empty_path = c"";
+            let dfd = to_dfd.map(|fd| fd.as_raw_fd()).unwrap_or(AT_FDCWD);
             let ret = move_mount(
                 self.fd.as_raw_fd(),
                 empty_path.as_ptr(),
-                to_dfd,
+                dfd,
                 to_path.as_ptr(),
                 flags | MOVE_MOUNT_F_EMPTY_PATH,
             );
@@ -225,11 +179,5 @@ impl MountFd {
             }
             Ok(())
         }
-    }
-}
-
-impl AsRawFd for MountFd {
-    fn as_raw_fd(&self) -> RawFd {
-        self.fd.as_raw_fd()
     }
 }

@@ -5,8 +5,7 @@ use nix::unistd;
 use nix::unistd::{Gid, Uid};
 use std::env;
 use std::ffi::CString;
-use std::fs::File;
-use std::os::unix::io::{AsRawFd, BorrowedFd, FromRawFd, IntoRawFd, RawFd};
+use std::os::unix::io::{BorrowedFd, RawFd};
 use std::os::unix::prelude::*;
 use std::path::PathBuf;
 use std::process;
@@ -21,7 +20,7 @@ use crate::paths;
 use crate::procfs::ProcStatus;
 use crate::pty;
 use crate::result::Result;
-use crate::syscalls::mount_api::{AT_FDCWD, AT_RECURSIVE, MountFd, OPEN_TREE_CLONE};
+use crate::syscalls::mount_api::{AT_RECURSIVE, MountFd, OPEN_TREE_CLONE};
 use nix::sched::{CloneFlags, unshare};
 
 /// Options for child process
@@ -228,7 +227,7 @@ pub(crate) fn run(options: &ChildOptions) -> Result<()> {
             }
 
             // Move back to original location
-            if let Err(e) = tree.attach_to(AT_FDCWD, &mount_cstr, 0) {
+            if let Err(e) = tree.attach_to(None, &mount_cstr, 0) {
                 warn!("Failed to attach idmapped {} back: {}", mount_point, e);
                 continue;
             }
@@ -315,7 +314,7 @@ pub(crate) fn run(options: &ChildOptions) -> Result<()> {
         let target_cstr = CString::new(target.to_str().unwrap())
             .with_context(|| format!("failed to create CString for {}", target.display()))?;
 
-        if let Err(e) = tree_fd.attach_to(AT_FDCWD, &target_cstr, 0) {
+        if let Err(e) = tree_fd.attach_to(None, &target_cstr, 0) {
             warn!("Failed to attach tree to {:?}: {}", target, e);
         }
     }
@@ -372,14 +371,12 @@ pub(crate) fn run(options: &ChildOptions) -> Result<()> {
 
     // Send ready signal + PTY fd + daemon socket fd to parent
     let ready_msg = b"R";
-    let pty_file = unsafe { File::from_raw_fd(pty_master.as_raw_fd()) };
-    let daemon_file = unsafe { File::from_raw_fd(daemon_sock.as_raw_fd()) };
-    let res = options
+    let pty_fd = pty_master.as_fd();
+    let daemon_fd = daemon_sock.as_fd();
+    options
         .socket
-        .send(&[ready_msg], &[&pty_file, &daemon_file]);
-    let _ = pty_file.into_raw_fd();
-    let _ = daemon_file.into_raw_fd();
-    res.context("failed to send ready signal, pty fd, and daemon socket fd to parent")?;
+        .send(&[ready_msg], &[&pty_fd, &daemon_fd])
+        .context("failed to send ready signal, pty fd, and daemon socket fd to parent")?;
 
     // Step 11: Change to base_dir
     if let Err(e) = env::set_current_dir(&base_dir) {

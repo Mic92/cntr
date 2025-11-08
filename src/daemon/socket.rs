@@ -155,12 +155,6 @@ impl AsFd for DaemonSocket {
     }
 }
 
-impl AsRawFd for DaemonSocket {
-    fn as_raw_fd(&self) -> RawFd {
-        self.fd.as_raw_fd()
-    }
-}
-
 impl Drop for DaemonSocket {
     fn drop(&mut self) {
         if self.socket_path.exists() {
