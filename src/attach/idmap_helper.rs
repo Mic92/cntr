@@ -34,7 +34,14 @@ impl IdmapHelper {
 
                 // Wait for child to be ready
                 let mut buf = [0u8; 1];
-                nix::unistd::read(&read_fd, &mut buf).context("failed to read from helper")?;
+                let bytes_read =
+                    nix::unistd::read(&read_fd, &mut buf).context("failed to read from helper")?;
+                if bytes_read != 1 {
+                    anyhow::bail!(
+                        "helper failed during setup (read {} bytes, expected 1)",
+                        bytes_read
+                    );
+                }
                 drop(read_fd);
 
                 // Open child's user namespace
