@@ -28,6 +28,3 @@ anyhow = "1.0"
 [[bin]]
 name = "cntr"
 path = "src/bin/main.rs"
-
-[profile.release]
-lto = true
