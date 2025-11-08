@@ -9,7 +9,7 @@
         # Used to find the project root
         projectRootFile = "flake.lock";
 
-        programs.nixfmt.enable = !pkgs.hostPlatform.isRiscV64;
+        programs.nixfmt.enable = !pkgs.stdenv.hostPlatform.isRiscV64;
         programs.rustfmt = {
           enable = true;
           edition = "2024";

@@ -49,7 +49,7 @@
               }
             );
           }
-          // lib.optionalAttrs (!pkgs.hostPlatform.isRiscV64) {
+          // lib.optionalAttrs (!pkgs.stdenv.hostPlatform.isRiscV64) {
             inherit
               (pkgs.callPackages ./vm-test.nix {
                 inherit (config.packages) cntr;
