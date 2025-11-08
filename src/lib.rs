@@ -14,6 +14,7 @@ mod ipc;
 mod lsm;
 mod mount_context;
 pub(crate) mod namespace;
+pub(crate) mod paths;
 mod procfs;
 mod pty;
 mod result;

@@ -1,6 +1,6 @@
 mod common;
 
-use common::{run_in_userns, start_fake_container};
+use common::{TempDir, run_in_userns, start_fake_container};
 use nix::sys::signal::{Signal, kill};
 use nix::sys::wait::waitpid;
 use std::{env, path::Path};
@@ -8,8 +8,8 @@ use std::{env, path::Path};
 /// Integration test for attach flow
 ///
 /// This test creates a fake container process with a chroot and tests that:
-/// 1. cntr attach mounts the container filesystem at /var/lib/cntr
-/// 2. The container's files are accessible via /var/lib/cntr/*
+/// 1. cntr attach mounts the container filesystem at the configured base directory
+/// 2. The container's files are accessible via the base directory
 /// 3. Namespace isolation works correctly
 #[test]
 fn test_attach_integration() {
@@ -39,21 +39,29 @@ fn test_attach_integration() {
     run_in_userns(|| {
         let container = start_fake_container();
 
+        // Use a temporary directory for the test
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
+        let base_dir = temp_dir.path().to_str().expect("Invalid temp path");
+
         // Run cntr attach with a verification command
         let cntr_bin = env!("CARGO_BIN_EXE_cntr");
         let pid_str = container.pid.to_string();
 
         let status = std::process::Command::new(cntr_bin)
+            .env("CNTR_BASE_DIR", base_dir)
             .args(&["attach", "-t", "process-id", &pid_str, "--"])
             .args(&[
                 &static_shell,
                 "-c",
-                "set -x && \
-                 test -d /var/lib/cntr && \
-                 test -f /var/lib/cntr/tmp/container-marker && \
-                 test -x /var/lib/cntr/bin/sh && \
-                 grep -q fake-container /var/lib/cntr/tmp/container-marker && \
-                 echo 'All checks passed'",
+                &format!(
+                    "set -x && \
+                     test -d {} && \
+                     test -f {}/tmp/container-marker && \
+                     test -x {}/bin/sh && \
+                     grep -q fake-container {}/tmp/container-marker && \
+                     echo 'All checks passed'",
+                    base_dir, base_dir, base_dir, base_dir
+                ),
             ])
             .status()
             .expect("Failed to execute cntr attach");
@@ -164,18 +172,24 @@ fn test_exec_daemon() {
 
     run_in_userns(|| {
         let container = start_fake_container();
+
+        // Use a temporary directory for the test
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
+        let base_dir = temp_dir.path().to_str().expect("Invalid temp path");
+
         let cntr_bin = env!("CARGO_BIN_EXE_cntr");
         let pid_str = container.pid.to_string();
 
         // Run cntr attach, which within it calls cntr exec to test daemon mode
         let status = std::process::Command::new(cntr_bin)
+            .env("CNTR_BASE_DIR", base_dir)
             .args(&["attach", "-t", "process-id", &pid_str, "--"])
             .args(&[
                 &static_shell,
                 "-c",
                 &format!(
-                    "{} exec -- /bin/sh -c 'test -f /tmp/container-marker && echo Exec daemon test passed'",
-                    cntr_bin
+                    "CNTR_BASE_DIR={} {} exec -- /bin/sh -c 'test -f /tmp/container-marker && echo Exec daemon test passed'",
+                    base_dir, cntr_bin
                 ),
             ])
             .status()

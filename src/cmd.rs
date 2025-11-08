@@ -12,6 +12,7 @@ use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::{Command, ExitStatus};
 
+use crate::paths;
 use crate::procfs;
 use crate::result::Result;
 
@@ -94,13 +95,14 @@ impl Cmd {
     }
 
     pub(crate) fn exec_chroot(self) -> Result<()> {
+        let base_dir = paths::get_base_dir();
         let err = unsafe {
             Command::new(&self.command)
                 .args(self.arguments)
                 .envs(self.environment)
-                .pre_exec(|| {
-                    if let Err(e) = unistd::chroot("/var/lib/cntr") {
-                        warn!("failed to chroot to /var/lib/cntr: {}", e);
+                .pre_exec(move || {
+                    if let Err(e) = unistd::chroot(&base_dir) {
+                        warn!("failed to chroot to {}: {}", base_dir.display(), e);
                         return Err(io::Error::from_raw_os_error(e as i32));
                     }
 

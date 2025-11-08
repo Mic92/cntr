@@ -17,6 +17,7 @@ use crate::cmd::Cmd;
 use crate::ipc;
 use crate::lsm;
 use crate::namespace;
+use crate::paths;
 use crate::procfs::ProcStatus;
 use crate::pty;
 use crate::result::Result;
@@ -38,8 +39,8 @@ pub(crate) struct ChildOptions<'a> {
 ///
 /// The child assembles a mount hierarchy where:
 /// - / = host filesystem (with all host mounts)
-/// - /var/lib/cntr = tmpfs overlay with container entries bind-mounted
-/// - /var/lib/cntr/.exec.sock = daemon socket (on tmpfs)
+/// - {base_dir} = tmpfs overlay with container entries bind-mounted
+/// - {base_dir}/.exec.sock = daemon socket (on tmpfs)
 ///
 /// Steps:
 /// 1. Read LSM profile and move to container's cgroup
@@ -48,11 +49,11 @@ pub(crate) struct ChildOptions<'a> {
 /// 4. Assemble mount hierarchy:
 ///    - Resolve container's root path via /proc/<pid>/root (handles chroot)
 ///    - Create private mount namespace
-///    - Create tmpfs at /var/lib/cntr
+///    - Create tmpfs at {base_dir}
 ///    - Enter container's mount namespace
 ///    - Capture each container entry with open_tree() (includes submounts)
 ///    - Return to parent namespace
-///    - Attach captured trees to /var/lib/cntr/*
+///    - Attach captured trees to {base_dir}/*
 /// 5. Enter other container namespaces (USER, NET, PID, IPC, UTS, CGROUP)
 /// 6. Set UID/GID and drop capabilities
 /// 7. Create daemon socket and setup PTY
@@ -114,10 +115,12 @@ pub(crate) fn run(options: &ChildOptions) -> Result<()> {
     }
 
     // Step 5: Assemble mount hierarchy
-    // Goal: / = host filesystem, /var/lib/cntr = tmpfs with container entries mounted
+    // Goal: / = host filesystem, {base_dir} = tmpfs with container entries mounted
     //
-    // Strategy: Create tmpfs at /var/lib/cntr, use open_tree() to capture container
+    // Strategy: Create tmpfs at {base_dir}, use open_tree() to capture container
     // entries (with their submounts) from container namespace, attach to tmpfs
+
+    let base_dir = paths::get_base_dir();
 
     // Resolve container's root path (handles chroot containers)
     // For chrooted processes, /proc/<pid>/root links to the chroot directory
@@ -133,16 +136,17 @@ pub(crate) fn run(options: &ChildOptions) -> Result<()> {
         .open(unistd::getpid())
         .context("failed to open our own mount namespace")?;
 
-    // Create tmpfs at /var/lib/cntr (for socket and mount points)
-    std::fs::create_dir_all("/var/lib/cntr").context("failed to create /var/lib/cntr")?;
+    // Create tmpfs at base_dir (for socket and mount points)
+    std::fs::create_dir_all(&base_dir)
+        .with_context(|| format!("failed to create {}", base_dir.display()))?;
     nix::mount::mount(
         Some("tmpfs"),
-        "/var/lib/cntr",
+        base_dir.as_path(),
         Some("tmpfs"),
         nix::mount::MsFlags::empty(),
         None::<&str>,
     )
-    .context("failed to mount tmpfs at /var/lib/cntr")?;
+    .with_context(|| format!("failed to mount tmpfs at {}", base_dir.display()))?;
 
     // Enter container's mount namespace to capture trees with submounts
     let container_mount_namespace = namespace::MOUNT
@@ -189,9 +193,9 @@ pub(crate) fn run(options: &ChildOptions) -> Result<()> {
         .apply()
         .context("failed to return to our mount namespace")?;
 
-    // Attach each captured tree to /var/lib/cntr
+    // Attach each captured tree to base_dir
     for (file_name, tree_fd) in captured_trees {
-        let target = PathBuf::from("/var/lib/cntr").join(&file_name);
+        let target = base_dir.join(&file_name);
 
         // Create mount point
         let is_dir = file_name.to_string_lossy() != ".exec.sock"; // Assume directories
@@ -251,7 +255,7 @@ pub(crate) fn run(options: &ChildOptions) -> Result<()> {
         .context("failed to apply capabilities")?;
 
     // Step 9: Create daemon socket in the tmpfs overlay
-    // The socket lives at /var/lib/cntr/.exec.sock on the tmpfs (writable)
+    // The socket lives at {base_dir}/.exec.sock on the tmpfs (writable)
     let daemon_sock = crate::daemon::DaemonSocket::bind(options.process_status.clone())
         .context("failed to create daemon socket")?;
 
@@ -270,9 +274,13 @@ pub(crate) fn run(options: &ChildOptions) -> Result<()> {
     let _ = daemon_file.into_raw_fd();
     res.context("failed to send ready signal, pty fd, and daemon socket fd to parent")?;
 
-    // Step 11: Change to /var/lib/cntr
-    if let Err(e) = env::set_current_dir("/var/lib/cntr") {
-        warn!("failed to change directory to /var/lib/cntr: {}", e);
+    // Step 11: Change to base_dir
+    if let Err(e) = env::set_current_dir(&base_dir) {
+        warn!(
+            "failed to change directory to {}: {}",
+            base_dir.display(),
+            e
+        );
     }
 
     // Step 12: Inherit LSM profile

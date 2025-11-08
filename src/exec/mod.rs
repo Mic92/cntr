@@ -9,8 +9,8 @@ use std::process;
 use crate::cmd::Cmd;
 use crate::container::ContainerContext;
 use crate::container_setup;
-use crate::daemon;
 use crate::daemon::protocol::{ExecRequest, ExecResponse};
+use crate::paths;
 use crate::pty;
 use crate::result::Result;
 use crate::syscalls::capability;
@@ -18,14 +18,14 @@ use crate::syscalls::capability;
 /// Execute a command in a container via the daemon socket (T033)
 ///
 /// Daemon mode: Must be run from inside 'cntr attach' session.
-/// Connects to daemon socket at /var/lib/cntr/.exec.sock
+/// Connects to daemon socket at {base_dir}/.exec.sock
 ///
 /// Arguments:
 /// - exe: Optional command to execute (None = default shell)
 /// - args: Arguments to pass to the command
 pub(crate) fn exec_daemon(exe: Option<String>, args: Vec<String>) -> Result<()> {
-    // Get daemon socket path (fixed location)
-    let socket_path = daemon::get_socket_path();
+    // Get daemon socket path
+    let socket_path = paths::get_socket_path();
 
     if !socket_path.exists() {
         bail!(

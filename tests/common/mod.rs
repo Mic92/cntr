@@ -7,13 +7,13 @@ use std::{env, ffi::OsString, os::unix::ffi::OsStringExt, path::Path, path::Path
 pub(crate) use cntr::test_utils::run_in_userns;
 
 /// Simple temporary directory that cleans up on drop
-struct TempDir {
+pub(crate) struct TempDir {
     path: Option<PathBuf>,
 }
 
 impl TempDir {
     /// Create a new temporary directory using mkdtemp
-    fn new() -> std::io::Result<Self> {
+    pub(crate) fn new() -> std::io::Result<Self> {
         let mut template = env::temp_dir();
         template.push("cntr-test.XXXXXX");
         let mut bytes = template.into_os_string().into_vec();
@@ -31,7 +31,7 @@ impl TempDir {
     }
 
     /// Get the path to the temporary directory
-    fn path(&self) -> &Path {
+    pub(crate) fn path(&self) -> &Path {
         self.path.as_ref().unwrap()
     }
 }

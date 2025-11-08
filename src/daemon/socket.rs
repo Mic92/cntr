@@ -8,18 +8,9 @@ use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd, RawFd};
 use std::path::PathBuf;
 
 use crate::daemon::protocol::{ExecRequest, ExecResponse};
+use crate::paths;
 use crate::procfs::ProcStatus;
 use crate::result::Result;
-
-pub(crate) const DAEMON_SOCKET_PATH: &str = "/var/lib/cntr/.exec.sock";
-
-/// Get the fixed socket path
-///
-/// The socket is always at /var/lib/cntr/.exec.sock within the staging tmpfs.
-/// Since the tmpfs is private to each container, there's no conflict between containers.
-pub(crate) fn get_socket_path() -> PathBuf {
-    PathBuf::from(DAEMON_SOCKET_PATH)
-}
 
 /// RAII wrapper for daemon socket that ensures cleanup on drop
 ///
@@ -34,8 +25,8 @@ pub(crate) struct DaemonSocket {
 impl DaemonSocket {
     /// Create and bind a new daemon socket
     ///
-    /// The socket is created at /var/lib/cntr/.exec.sock within the staging tmpfs.
-    /// This tmpfs must already be mounted at /var/lib/cntr before calling this function.
+    /// The socket is created at {base_dir}/.exec.sock within the staging tmpfs.
+    /// This tmpfs must already be mounted at {base_dir} before calling this function.
     ///
     /// # Arguments
     ///
@@ -45,7 +36,7 @@ impl DaemonSocket {
     ///
     /// A new DaemonSocket that will be automatically cleaned up on drop
     pub(crate) fn bind(process_status: ProcStatus) -> Result<Self> {
-        let socket_path = get_socket_path();
+        let socket_path = paths::get_socket_path();
         Self::bind_internal(socket_path, process_status)
     }
 
@@ -55,7 +46,7 @@ impl DaemonSocket {
     ///
     /// The caller must ensure the FD is a valid, listening Unix domain socket
     pub(crate) unsafe fn from_raw_fd(fd: RawFd, process_status: ProcStatus) -> Self {
-        let socket_path = get_socket_path();
+        let socket_path = paths::get_socket_path();
 
         DaemonSocket {
             fd: unsafe { OwnedFd::from_raw_fd(fd) },
