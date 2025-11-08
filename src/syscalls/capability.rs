@@ -39,31 +39,64 @@ pub fn has_mount_api() -> bool {
 /// - ENODEV = device not found → mount API available, just bad fs name
 /// - Any other error = assume mount API is available
 fn probe_mount_api() -> bool {
-    use std::ffi::CString;
+    // fsopen is syscall 430 on all supported Linux architectures
+    // For unsupported architectures, assume mount API is not available
+    #[cfg(any(
+        target_arch = "x86_64",
+        target_arch = "x86",
+        target_arch = "aarch64",
+        target_arch = "arm",
+        target_arch = "riscv64",
+        target_arch = "powerpc64",
+        target_arch = "powerpc",
+        target_arch = "s390x",
+        target_arch = "mips64",
+        target_arch = "sparc64",
+        target_arch = "loongarch64"
+    ))]
+    {
+        use std::ffi::CString;
 
-    // Use a deliberately non-existent filesystem type to probe
-    let probe_fs = CString::new("__cntr_probe__").expect("CString::new failed");
+        // Use a deliberately non-existent filesystem type to probe
+        let probe_fs = CString::new("__cntr_probe__").expect("CString::new failed");
 
-    unsafe {
-        #[cfg(target_arch = "x86_64")]
+        // fsopen syscall number is 430 on all Linux architectures
         const SYS_FSOPEN: libc::c_long = 430;
-        #[cfg(target_arch = "aarch64")]
-        const SYS_FSOPEN: libc::c_long = 430;
 
-        let fd = libc::syscall(SYS_FSOPEN, probe_fs.as_ptr(), 0) as libc::c_int;
+        unsafe {
+            let fd = libc::syscall(SYS_FSOPEN, probe_fs.as_ptr(), 0) as libc::c_int;
 
-        if fd >= 0 {
-            libc::close(fd);
-            return true;
+            if fd >= 0 {
+                libc::close(fd);
+                return true;
+            }
+
+            // Check errno to determine if syscall exists
+            let errno = *libc::__errno_location();
+            match errno {
+                libc::ENOSYS => false,              // Syscall not implemented
+                libc::ENODEV => true,               // Device/fs not found - syscall exists!
+                libc::EPERM | libc::EACCES => true, // Permission denied - syscall exists
+                _ => true,                          // Any other error - assume syscall exists
+            }
         }
+    }
 
-        // Check errno to determine if syscall exists
-        let errno = *libc::__errno_location();
-        match errno {
-            libc::ENOSYS => false,              // Syscall not implemented
-            libc::ENODEV => true,               // Device/fs not found - syscall exists!
-            libc::EPERM | libc::EACCES => true, // Permission denied - syscall exists
-            _ => true,                          // Any other error - assume syscall exists
-        }
+    #[cfg(not(any(
+        target_arch = "x86_64",
+        target_arch = "x86",
+        target_arch = "aarch64",
+        target_arch = "arm",
+        target_arch = "riscv64",
+        target_arch = "powerpc64",
+        target_arch = "powerpc",
+        target_arch = "s390x",
+        target_arch = "mips64",
+        target_arch = "sparc64",
+        target_arch = "loongarch64"
+    )))]
+    {
+        // For unsupported architectures, conservatively assume mount API is not available
+        false
     }
 }

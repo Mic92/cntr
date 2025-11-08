@@ -9,21 +9,43 @@
 use std::ffi::CStr;
 use std::os::unix::io::{AsRawFd, BorrowedFd, FromRawFd, OwnedFd, RawFd};
 
-// Syscall numbers for x86_64 (asm-generic would be the same for most architectures)
+// Syscall numbers are consistent across all Linux architectures
 // See: include/uapi/asm-generic/unistd.h in kernel source
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(
+    target_arch = "x86_64",
+    target_arch = "x86",
+    target_arch = "aarch64",
+    target_arch = "arm",
+    target_arch = "riscv64",
+    target_arch = "powerpc64",
+    target_arch = "powerpc",
+    target_arch = "s390x",
+    target_arch = "mips64",
+    target_arch = "sparc64",
+    target_arch = "loongarch64"
+))]
 mod syscall_numbers {
     pub(crate) const SYS_OPEN_TREE: libc::c_long = 428;
     pub(crate) const SYS_MOVE_MOUNT: libc::c_long = 429;
     pub(crate) const SYS_MOUNT_SETATTR: libc::c_long = 442;
 }
 
-#[cfg(target_arch = "aarch64")]
-mod syscall_numbers {
-    pub(crate) const SYS_OPEN_TREE: libc::c_long = 428;
-    pub(crate) const SYS_MOVE_MOUNT: libc::c_long = 429;
-    pub(crate) const SYS_MOUNT_SETATTR: libc::c_long = 442;
-}
+#[cfg(not(any(
+    target_arch = "x86_64",
+    target_arch = "x86",
+    target_arch = "aarch64",
+    target_arch = "arm",
+    target_arch = "riscv64",
+    target_arch = "powerpc64",
+    target_arch = "powerpc",
+    target_arch = "s390x",
+    target_arch = "mips64",
+    target_arch = "sparc64",
+    target_arch = "loongarch64"
+)))]
+compile_error!(
+    "Mount API syscalls are not supported on this architecture. Please report this issue."
+);
 
 use syscall_numbers::*;
 
