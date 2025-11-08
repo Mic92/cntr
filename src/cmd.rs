@@ -82,9 +82,10 @@ impl Cmd {
             env::var_os("PATH").unwrap_or(default_path),
         );
 
-        if let Some(path) = self.home {
+        // Set HOME if effective user was specified
+        if let Some(home_path) = self.home {
             self.environment
-                .insert(OsString::from("HOME"), path.into_os_string());
+                .insert(OsString::from("HOME"), home_path.into_os_string());
         }
 
         let cmd = Command::new(&self.command)

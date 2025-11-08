@@ -80,7 +80,7 @@ fn exec_in_child(request: &ExecRequest, process_status: &ProcStatus) -> Result<(
         request.command.clone(),
         request.arguments.clone(),
         container_pid,
-        None, // home directory - let Cmd read from environment
+        None,
     )
     .context("failed to create command for exec request")?;
 

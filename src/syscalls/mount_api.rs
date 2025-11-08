@@ -7,7 +7,7 @@
 //! These syscalls enable FUSE-free filesystem operations across namespaces.
 
 use std::ffi::CStr;
-use std::os::unix::io::{AsRawFd, FromRawFd, OwnedFd, RawFd};
+use std::os::unix::io::{AsRawFd, BorrowedFd, FromRawFd, OwnedFd, RawFd};
 
 // Syscall numbers for x86_64 (asm-generic would be the same for most architectures)
 // See: include/uapi/asm-generic/unistd.h in kernel source
@@ -16,6 +16,7 @@ mod syscall_numbers {
     pub(crate) const SYS_OPEN_TREE: libc::c_long = 428;
     pub(crate) const SYS_MOVE_MOUNT: libc::c_long = 429;
     pub(crate) const SYS_FSOPEN: libc::c_long = 430;
+    pub(crate) const SYS_MOUNT_SETATTR: libc::c_long = 442;
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -23,6 +24,7 @@ mod syscall_numbers {
     pub(crate) const SYS_OPEN_TREE: libc::c_long = 428;
     pub(crate) const SYS_MOVE_MOUNT: libc::c_long = 429;
     pub(crate) const SYS_FSOPEN: libc::c_long = 430;
+    pub(crate) const SYS_MOUNT_SETATTR: libc::c_long = 442;
 }
 
 use syscall_numbers::*;
@@ -36,8 +38,21 @@ pub(crate) const AT_RECURSIVE: u32 = 0x00008000;
 // move_mount() flags
 pub(crate) const MOVE_MOUNT_F_EMPTY_PATH: u32 = 0x00000004;
 
+// mount_setattr() flags
+pub(crate) const AT_EMPTY_PATH: u32 = 0x00001000;
+pub(crate) const MOUNT_ATTR_IDMAP: u64 = 0x00100000;
+
 // Directory file descriptor constants
 pub(crate) const AT_FDCWD: libc::c_int = -100;
+
+/// Kernel struct for mount_setattr
+#[repr(C)]
+pub(crate) struct MountAttr {
+    pub attr_set: u64,
+    pub attr_clr: u64,
+    pub propagation: u64,
+    pub userns_fd: u64,
+}
 
 /// Open a filesystem configuration context (raw syscall)
 ///
@@ -72,6 +87,24 @@ unsafe fn move_mount(
 /// * `flags` - Flags (e.g., OPEN_TREE_CLONE | AT_RECURSIVE)
 unsafe fn open_tree(dfd: RawFd, filename: *const libc::c_char, flags: u32) -> RawFd {
     unsafe { libc::syscall(SYS_OPEN_TREE, dfd, filename, flags) as RawFd }
+}
+
+/// Set mount attributes (raw syscall)
+///
+/// # Arguments
+/// * `dfd` - Directory file descriptor (or a mount FD with AT_EMPTY_PATH)
+/// * `path` - Path to apply attributes to (or empty string with AT_EMPTY_PATH)
+/// * `flags` - Flags (e.g., AT_EMPTY_PATH | AT_RECURSIVE)
+/// * `attr` - Mount attributes to set
+/// * `size` - Size of attr struct
+unsafe fn mount_setattr(
+    dfd: RawFd,
+    path: *const libc::c_char,
+    flags: u32,
+    attr: *const MountAttr,
+    size: libc::size_t,
+) -> libc::c_int {
+    unsafe { libc::syscall(SYS_MOUNT_SETATTR, dfd, path, flags, attr, size) as libc::c_int }
 }
 
 // Safe wrapper types with RAII semantics
@@ -132,6 +165,37 @@ impl MountFd {
             Ok(MountFd {
                 fd: OwnedFd::from_raw_fd(mount_fd),
             })
+        }
+    }
+
+    /// Apply an idmapped mount to this mount tree
+    ///
+    /// # Arguments
+    /// * `userns_fd` - File descriptor to user namespace with the desired UID/GID mapping
+    ///
+    /// This makes files in the mount appear with different ownership based on the
+    /// user namespace mapping. Requires kernel 5.12+.
+    pub(crate) fn apply_idmap(&self, userns_fd: BorrowedFd) -> Result<(), std::io::Error> {
+        let attr = MountAttr {
+            attr_set: MOUNT_ATTR_IDMAP,
+            attr_clr: 0,
+            propagation: 0,
+            userns_fd: userns_fd.as_raw_fd() as u64,
+        };
+
+        unsafe {
+            let empty_path = c"";
+            let ret = mount_setattr(
+                self.fd.as_raw_fd(),
+                empty_path.as_ptr(),
+                AT_EMPTY_PATH | AT_RECURSIVE,
+                &attr,
+                std::mem::size_of::<MountAttr>(),
+            );
+            if ret < 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
         }
     }
 
