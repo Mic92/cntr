@@ -20,6 +20,7 @@ pub(crate) struct DaemonSocket {
     fd: OwnedFd,
     socket_path: PathBuf,
     process_status: ProcStatus,
+    pty_master_fd: Option<RawFd>,
 }
 
 impl DaemonSocket {
@@ -35,9 +36,9 @@ impl DaemonSocket {
     /// # Returns
     ///
     /// A new DaemonSocket that will be automatically cleaned up on drop
-    pub(crate) fn bind(process_status: ProcStatus) -> Result<Self> {
+    pub(crate) fn bind(process_status: ProcStatus, pty_master_fd: RawFd) -> Result<Self> {
         let socket_path = paths::get_socket_path();
-        Self::bind_internal(socket_path, process_status)
+        Self::bind_internal(socket_path, process_status, Some(pty_master_fd))
     }
 
     /// Create a DaemonSocket from a raw FD (received via SCM_RIGHTS)
@@ -45,23 +46,32 @@ impl DaemonSocket {
     /// # Safety
     ///
     /// The caller must ensure the FD is a valid, listening Unix domain socket
-    pub(crate) unsafe fn from_raw_fd(fd: RawFd, process_status: ProcStatus) -> Self {
+    pub(crate) unsafe fn from_raw_fd(
+        fd: RawFd,
+        process_status: ProcStatus,
+        pty_master_fd: RawFd,
+    ) -> Self {
         let socket_path = paths::get_socket_path();
 
         DaemonSocket {
             fd: unsafe { OwnedFd::from_raw_fd(fd) },
             socket_path,
             process_status,
+            pty_master_fd: Some(pty_master_fd),
         }
     }
 
     /// Internal helper to create and bind the socket
-    fn bind_internal(socket_path: PathBuf, process_status: ProcStatus) -> Result<Self> {
-        // Create Unix domain socket
+    fn bind_internal(
+        socket_path: PathBuf,
+        process_status: ProcStatus,
+        pty_master_fd: Option<RawFd>,
+    ) -> Result<Self> {
+        // Create Unix domain socket (non-blocking for try_accept to work)
         let fd = socket(
             AddressFamily::Unix,
             SockType::Stream,
-            SockFlag::SOCK_CLOEXEC,
+            SockFlag::SOCK_CLOEXEC | SockFlag::SOCK_NONBLOCK,
             None,
         )
         .context("failed to create daemon socket")?;
@@ -88,6 +98,7 @@ impl DaemonSocket {
             fd,
             socket_path,
             process_status,
+            pty_master_fd,
         })
     }
 
@@ -106,8 +117,8 @@ impl DaemonSocket {
                 let client_owned = unsafe { OwnedFd::from_raw_fd(client_fd) };
 
                 // Handle the request in the same thread
-                if let Err(e) = self.handle_request(&client_owned) {
-                    warn!("Failed to handle exec request: {}", e);
+                if let Err(e) = self.handle_request(&client_owned, self.pty_master_fd) {
+                    warn!("Failed to handle exec request: {:#}", e);
                 }
 
                 Ok(true)
@@ -129,7 +140,7 @@ impl DaemonSocket {
     /// 1. Reads the ExecRequest from the client socket
     /// 2. Delegates to the executor to perform the exec
     /// 3. Sends back ExecResponse
-    fn handle_request(&self, client_fd: &OwnedFd) -> Result<()> {
+    fn handle_request(&self, client_fd: &OwnedFd, pty_master_fd: Option<RawFd>) -> Result<()> {
         // Read exec request from client
         let mut client_file = std::fs::File::from(client_fd.try_clone().unwrap());
         let request = ExecRequest::deserialize(&mut client_file)
@@ -142,7 +153,7 @@ impl DaemonSocket {
             .context("failed to send response to client")?;
 
         // Execute the command in the container
-        crate::daemon::execute_in_container(&request, &self.process_status)
+        crate::daemon::execute_in_container(&request, &self.process_status, pty_master_fd)
             .context("failed to execute command in container")?;
 
         Ok(())

@@ -1,6 +1,5 @@
 use anyhow::{Context, bail};
 use log::{debug, warn};
-use nix::sys::signal::{self, Signal};
 use nix::unistd;
 use nix::unistd::{Gid, Uid};
 use std::env;
@@ -8,7 +7,6 @@ use std::ffi::CString;
 use std::os::unix::io::{BorrowedFd, RawFd};
 use std::os::unix::prelude::*;
 use std::path::PathBuf;
-use std::process;
 
 use crate::capabilities;
 use crate::cgroup;
@@ -367,14 +365,16 @@ pub(crate) fn run(options: &ChildOptions) -> Result<()> {
     )
     .context("failed to apply capabilities")?;
 
-    // Step 9: Create daemon socket in the tmpfs overlay
-    // The socket lives at {base_dir}/.exec.sock on the tmpfs (writable)
-    let daemon_sock = crate::daemon::DaemonSocket::bind(options.process_status.clone())
-        .context("failed to create daemon socket")?;
-
-    // Step 10: Setup PTY
+    // Step 9: Setup PTY
     let pty_master = pty::open_ptm().context("failed to open pty master")?;
     pty::attach_pts(&pty_master).context("failed to setup pty slave")?;
+
+    // Step 10: Create daemon socket in the tmpfs overlay
+    // The socket lives at {base_dir}/.exec.sock on the tmpfs (writable)
+    // Pass the PTY master FD so daemon-executed commands can attach to it
+    let daemon_sock =
+        crate::daemon::DaemonSocket::bind(options.process_status.clone(), pty_master.as_raw_fd())
+            .context("failed to create daemon socket")?;
 
     // Send ready signal + PTY fd + daemon socket fd to parent
     let ready_msg = b"R";
@@ -402,19 +402,13 @@ pub(crate) fn run(options: &ChildOptions) -> Result<()> {
     }
 
     // Step 13: Execute the command
-    let status = cmd.run()?;
-    if let Some(signum) = status.signal() {
-        let signal = Signal::try_from(signum)
-            .with_context(|| format!("invalid signal received: {}", signum))?;
-        signal::kill(unistd::getpid(), signal)
-            .with_context(|| format!("failed to send signal {:?} to own pid", signal))?;
-    }
-    if let Some(code) = status.code() {
-        process::exit(code);
-    }
-    eprintln!(
-        "BUG! command exited successfully, \
-         but was neither terminated by a signal nor has an exit code"
-    );
-    process::exit(1);
+    // This will replace the current process (attach child) with the shell
+    // When the shell exits, the parent will see it and exit accordingly
+    // Use exec_in_overlay() since we're in the overlay environment with access
+    // to both host binaries and container filesystem
+    cmd.exec_in_overlay()
+        .context("failed to execute command in overlay")?;
+
+    // Should not reach here - exec replaces process
+    unreachable!()
 }

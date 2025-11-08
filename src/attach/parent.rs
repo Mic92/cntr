@@ -4,8 +4,10 @@ use nix::sys::signal::{self, Signal};
 use nix::sys::wait::{WaitPidFlag, WaitStatus, waitpid};
 use nix::unistd::Pid;
 use nix::{cmsg_space, unistd};
-use std::os::fd::{AsFd, IntoRawFd, RawFd};
+use std::fs::File;
+use std::os::fd::{AsFd, AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use std::process;
+use std::thread;
 
 use crate::procfs::ProcStatus;
 
@@ -47,88 +49,103 @@ pub(crate) fn run(child_pid: Pid, process_status: &ProcStatus, socket: &ipc::Soc
     // Step 4.5: Wrap daemon socket FD received from child
     // The child created this socket at /var/lib/cntr/.exec.sock in the staging tmpfs
     // We receive the FD here and will use it to accept exec requests
+    // Also pass the PTY master FD so daemon-executed commands can attach to the PTY slave
     let daemon_sock = unsafe {
-        daemon::DaemonSocket::from_raw_fd(daemon_fd.into_raw_fd(), process_status.clone())
+        daemon::DaemonSocket::from_raw_fd(
+            daemon_fd.into_raw_fd(),
+            process_status.clone(),
+            pty_fd.as_raw_fd(),
+        )
     };
 
-    // Step 5: Main event loop - forward PTY and handle exec requests
-    // This handles:
-    // - Terminal I/O forwarding
-    // - Daemon socket connections (exec requests)
-    // - Signal propagation (SIGSTOP, SIGCONT)
-    // - Child exit status
-    //
-    // We use poll() to wait for activity on either the PTY or the daemon socket
+    // Step 5: Forward PTY I/O in a thread and handle daemon socket connections
+
+    // Duplicate the PTY FD for the forwarding thread
+    let pty_fd_dup = unsafe { libc::dup(pty_fd.as_raw_fd()) };
+    if pty_fd_dup < 0 {
+        bail!("failed to duplicate PTY file descriptor");
+    }
+
+    // Spawn thread to handle PTY forwarding
+    // This thread will exit naturally when the PTY closes (child exits)
+    // or when the process exits
+    let _pty_thread = thread::spawn(move || {
+        let pty_file: File = unsafe { File::from_raw_fd(pty_fd_dup) };
+        if let Err(e) = pty::forward(&pty_file) {
+            eprintln!("PTY forwarding error: {}", e);
+        }
+    });
+
+    // Main thread: handle daemon socket connections and monitor child
+    // Use pidfd to efficiently wait for both daemon socket and child process
+    let pidfd = unsafe {
+        let fd = libc::syscall(libc::SYS_pidfd_open, child_pid.as_raw(), 0);
+        if fd < 0 {
+            bail!("failed to open pidfd for child process");
+        }
+        std::os::fd::OwnedFd::from_raw_fd(fd as RawFd)
+    };
 
     loop {
-        // Set up poll file descriptors
+        // Poll both daemon socket and child pidfd
         let mut poll_fds = [
-            PollFd::new(pty_fd.as_fd(), PollFlags::POLLIN),
             PollFd::new(daemon_sock.as_fd(), PollFlags::POLLIN),
+            PollFd::new(pidfd.as_fd(), PollFlags::POLLIN),
         ];
 
-        // Poll with a timeout to periodically check child status
-        // Timeout of 100ms allows responsive child monitoring
-        let timeout = PollTimeout::try_from(100).unwrap();
-        let poll_result = nix::poll::poll(&mut poll_fds, timeout);
-
-        match poll_result {
+        match nix::poll::poll(&mut poll_fds, PollTimeout::NONE) {
             Ok(_) => {
-                // Check if PTY has data
+                // Check if daemon socket has activity
                 if let Some(revents) = poll_fds[0].revents()
                     && revents.contains(PollFlags::POLLIN)
                 {
-                    // Forward PTY output
-                    pty::forward(&pty_fd).context("failed to forward terminal output")?;
+                    let _ = daemon_sock.try_accept();
                 }
 
-                // Check if daemon socket has incoming connection
+                // Check if child has exited or signaled
                 if let Some(revents) = poll_fds[1].revents()
-                    && revents.contains(PollFlags::POLLIN)
+                    && (revents.contains(PollFlags::POLLIN) || revents.contains(PollFlags::POLLHUP))
                 {
-                    // Try to accept and handle exec request
-                    let _ = daemon_sock.try_accept();
+                    // Child has changed state - check with waitpid
+                    match waitpid(
+                        child_pid,
+                        Some(WaitPidFlag::WUNTRACED | WaitPidFlag::WNOHANG),
+                    ) {
+                        Ok(WaitStatus::StillAlive) => {
+                            // False alarm or spurious wakeup, continue
+                            continue;
+                        }
+                        Ok(WaitStatus::Signaled(child, Signal::SIGSTOP, _)) => {
+                            // Child was stopped - stop ourselves and resume child when we resume
+                            let _ = signal::kill(unistd::getpid(), Signal::SIGSTOP);
+                            let _ = signal::kill(child, Signal::SIGCONT);
+                        }
+                        Ok(WaitStatus::Signaled(_, sig, _)) => {
+                            // Child received a signal - propagate it to ourselves
+                            signal::kill(unistd::getpid(), sig).with_context(|| {
+                                format!("failed to send signal {:?} to own process", sig)
+                            })?;
+                        }
+                        Ok(WaitStatus::Exited(_, status)) => {
+                            // Child exited normally - exit immediately
+                            // PTY thread will be cleaned up automatically when process exits
+                            process::exit(status);
+                        }
+                        Ok(what) => {
+                            bail!("unexpected wait event: {:?}", what);
+                        }
+                        Err(e) => {
+                            return Err(e).context("waitpid failed");
+                        }
+                    }
                 }
             }
             Err(nix::errno::Errno::EINTR) => {
-                // Interrupted by signal, continue to check child status
+                // Interrupted by signal, continue
+                continue;
             }
             Err(e) => {
                 return Err(e).context("poll failed");
-            }
-        }
-
-        // Check child status (non-blocking)
-        match waitpid(
-            child_pid,
-            Some(WaitPidFlag::WUNTRACED | WaitPidFlag::WNOHANG),
-        ) {
-            Ok(WaitStatus::StillAlive) => {
-                // Child still running, continue loop
-                continue;
-            }
-            Ok(WaitStatus::Signaled(child, Signal::SIGSTOP, _)) => {
-                // Child was stopped - stop ourselves and resume child when we resume
-                let _ = signal::kill(unistd::getpid(), Signal::SIGSTOP);
-                let _ = signal::kill(child, Signal::SIGCONT);
-            }
-            Ok(WaitStatus::Signaled(_, signal, _)) => {
-                // Child received a signal - propagate it to ourselves
-                signal::kill(unistd::getpid(), signal).with_context(|| {
-                    format!("failed to send signal {:?} to our own process", signal)
-                })?;
-            }
-            Ok(WaitStatus::Exited(_, status)) => {
-                // Child exited normally - exit with same status
-                process::exit(status);
-            }
-            Ok(what) => {
-                // Unexpected wait event
-                bail!("unexpected wait event: {:?}", what);
-            }
-            Err(e) => {
-                // waitpid failed
-                return Err(e).context("waitpid failed");
             }
         }
     }
