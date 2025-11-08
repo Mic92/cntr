@@ -4,7 +4,6 @@ use crate::result::Result;
 use crate::syscalls::capability;
 use anyhow::{Context, bail};
 use nix::unistd::{self, ForkResult, User};
-use simple_error::{bail, try_with};
 
 mod child;
 mod parent;
@@ -36,10 +35,10 @@ pub fn attach(opts: &AttachOptions) -> Result<()> {
 
     // Two-process dance for cross-namespace mount operations
     // Parent stays in host namespace, child assembles mount hierarchy
-    let (parent_sock, child_sock) = try_with!(ipc::socket_pair(), "failed to set up ipc");
+    let (parent_sock, child_sock) = ipc::socket_pair().context("failed to set up ipc")?;
 
     let res = unsafe { unistd::fork() };
-    match try_with!(res, "failed to fork") {
+    match res.context("failed to fork")? {
         ForkResult::Parent { child } => parent::run(child, &ctx.process_status, &parent_sock),
         ForkResult::Child => {
             let child_opts = child::ChildOptions {

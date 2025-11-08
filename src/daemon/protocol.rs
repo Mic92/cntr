@@ -1,4 +1,4 @@
-use simple_error::{bail, try_with};
+use anyhow::{Context, bail};
 use std::io::{Read, Write};
 
 use crate::result::Result;
@@ -41,37 +41,42 @@ impl ExecRequest {
     pub fn serialize<W: Write>(&self, writer: &mut W) -> Result<()> {
         // Write command (Option<String>)
         if let Some(ref cmd) = self.command {
-            try_with!(writer.write_all(&[1u8]), "failed to write has_command flag");
+            writer
+                .write_all(&[1u8])
+                .context("failed to write has_command flag")?;
             let cmd_bytes = cmd.as_bytes();
             let len_bytes = (cmd_bytes.len() as u32).to_le_bytes();
-            try_with!(
-                writer.write_all(&len_bytes),
-                "failed to write command length"
-            );
-            try_with!(writer.write_all(cmd_bytes), "failed to write command");
+            writer
+                .write_all(&len_bytes)
+                .context("failed to write command length")?;
+            writer
+                .write_all(cmd_bytes)
+                .context("failed to write command")?;
         } else {
-            try_with!(writer.write_all(&[0u8]), "failed to write has_command flag");
+            writer
+                .write_all(&[0u8])
+                .context("failed to write has_command flag")?;
         }
 
         // Write argument count
         let arg_count_bytes = (self.arguments.len() as u32).to_le_bytes();
-        try_with!(
-            writer.write_all(&arg_count_bytes),
-            "failed to write argument count"
-        );
+        writer
+            .write_all(&arg_count_bytes)
+            .context("failed to write argument count")?;
 
         // Write arguments
         for arg in &self.arguments {
             let arg_bytes = arg.as_bytes();
             let len_bytes = (arg_bytes.len() as u32).to_le_bytes();
-            try_with!(
-                writer.write_all(&len_bytes),
-                "failed to write argument length"
-            );
-            try_with!(writer.write_all(arg_bytes), "failed to write argument");
+            writer
+                .write_all(&len_bytes)
+                .context("failed to write argument length")?;
+            writer
+                .write_all(arg_bytes)
+                .context("failed to write argument")?;
         }
 
-        try_with!(writer.flush(), "failed to flush writer");
+        writer.flush().context("failed to flush writer")?;
         Ok(())
     }
 
@@ -79,27 +84,24 @@ impl ExecRequest {
     pub fn deserialize<R: Read>(reader: &mut R) -> Result<Self> {
         // Read has_command flag
         let mut has_command = [0u8; 1];
-        try_with!(
-            reader.read_exact(&mut has_command),
-            "failed to read has_command flag"
-        );
+        reader
+            .read_exact(&mut has_command)
+            .context("failed to read has_command flag")?;
 
         // Read command if present
         let command = if has_command[0] == 1 {
             let mut len_bytes = [0u8; 4];
-            try_with!(
-                reader.read_exact(&mut len_bytes),
-                "failed to read command length"
-            );
+            reader
+                .read_exact(&mut len_bytes)
+                .context("failed to read command length")?;
             let len = u32::from_le_bytes(len_bytes) as usize;
 
             let mut cmd_bytes = vec![0u8; len];
-            try_with!(reader.read_exact(&mut cmd_bytes), "failed to read command");
+            reader
+                .read_exact(&mut cmd_bytes)
+                .context("failed to read command")?;
 
-            Some(try_with!(
-                String::from_utf8(cmd_bytes),
-                "invalid UTF-8 in command"
-            ))
+            Some(String::from_utf8(cmd_bytes).context("invalid UTF-8 in command")?)
         } else if has_command[0] == 0 {
             None
         } else {
@@ -108,29 +110,26 @@ impl ExecRequest {
 
         // Read argument count
         let mut arg_count_bytes = [0u8; 4];
-        try_with!(
-            reader.read_exact(&mut arg_count_bytes),
-            "failed to read argument count"
-        );
+        reader
+            .read_exact(&mut arg_count_bytes)
+            .context("failed to read argument count")?;
         let arg_count = u32::from_le_bytes(arg_count_bytes) as usize;
 
         // Read arguments
         let mut arguments = Vec::with_capacity(arg_count);
         for _ in 0..arg_count {
             let mut len_bytes = [0u8; 4];
-            try_with!(
-                reader.read_exact(&mut len_bytes),
-                "failed to read argument length"
-            );
+            reader
+                .read_exact(&mut len_bytes)
+                .context("failed to read argument length")?;
             let len = u32::from_le_bytes(len_bytes) as usize;
 
             let mut arg_bytes = vec![0u8; len];
-            try_with!(reader.read_exact(&mut arg_bytes), "failed to read argument");
+            reader
+                .read_exact(&mut arg_bytes)
+                .context("failed to read argument")?;
 
-            arguments.push(try_with!(
-                String::from_utf8(arg_bytes),
-                "invalid UTF-8 in argument"
-            ));
+            arguments.push(String::from_utf8(arg_bytes).context("invalid UTF-8 in argument")?);
         }
 
         Ok(ExecRequest { command, arguments })
@@ -148,21 +147,26 @@ impl ExecResponse {
     pub fn serialize<W: Write>(&self, writer: &mut W) -> Result<()> {
         match self {
             ExecResponse::Ok => {
-                try_with!(writer.write_all(&[0u8]), "failed to write response type");
+                writer
+                    .write_all(&[0u8])
+                    .context("failed to write response type")?;
             }
             ExecResponse::Error(msg) => {
-                try_with!(writer.write_all(&[1u8]), "failed to write response type");
+                writer
+                    .write_all(&[1u8])
+                    .context("failed to write response type")?;
                 let msg_bytes = msg.as_bytes();
                 let len_bytes = (msg_bytes.len() as u32).to_le_bytes();
-                try_with!(
-                    writer.write_all(&len_bytes),
-                    "failed to write error message length"
-                );
-                try_with!(writer.write_all(msg_bytes), "failed to write error message");
+                writer
+                    .write_all(&len_bytes)
+                    .context("failed to write error message length")?;
+                writer
+                    .write_all(msg_bytes)
+                    .context("failed to write error message")?;
             }
         }
 
-        try_with!(writer.flush(), "failed to flush writer");
+        writer.flush().context("failed to flush writer")?;
         Ok(())
     }
 
@@ -170,32 +174,26 @@ impl ExecResponse {
     pub fn deserialize<R: Read>(reader: &mut R) -> Result<Self> {
         // Read response type
         let mut response_type = [0u8; 1];
-        try_with!(
-            reader.read_exact(&mut response_type),
-            "failed to read response type"
-        );
+        reader
+            .read_exact(&mut response_type)
+            .context("failed to read response type")?;
 
         match response_type[0] {
             0 => Ok(ExecResponse::Ok),
             1 => {
                 // Read error message
                 let mut len_bytes = [0u8; 4];
-                try_with!(
-                    reader.read_exact(&mut len_bytes),
-                    "failed to read error message length"
-                );
+                reader
+                    .read_exact(&mut len_bytes)
+                    .context("failed to read error message length")?;
                 let len = u32::from_le_bytes(len_bytes) as usize;
 
                 let mut msg_bytes = vec![0u8; len];
-                try_with!(
-                    reader.read_exact(&mut msg_bytes),
-                    "failed to read error message"
-                );
+                reader
+                    .read_exact(&mut msg_bytes)
+                    .context("failed to read error message")?;
 
-                let msg = try_with!(
-                    String::from_utf8(msg_bytes),
-                    "invalid UTF-8 in error message"
-                );
+                let msg = String::from_utf8(msg_bytes).context("invalid UTF-8 in error message")?;
                 Ok(ExecResponse::Error(msg))
             }
             t => bail!("invalid response type: {}", t),

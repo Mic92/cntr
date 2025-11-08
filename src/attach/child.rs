@@ -1,8 +1,8 @@
+use anyhow::{Context, bail};
 use log::warn;
 use nix::sys::signal::{self, Signal};
 use nix::unistd;
 use nix::unistd::{Gid, Uid};
-use simple_error::{bail, try_with};
 use std::env;
 use std::ffi::CString;
 use std::fs::File;
@@ -59,25 +59,19 @@ pub(crate) struct ChildOptions<'a> {
 /// 8. Execute the command
 pub(crate) fn run(options: &ChildOptions) -> Result<()> {
     // Step 1: Read LSM profile before entering namespaces
-    let lsm_profile = try_with!(
-        lsm::read_profile(options.process_status.global_pid),
-        "failed to get lsm profile"
-    );
+    let lsm_profile = lsm::read_profile(options.process_status.global_pid)
+        .context("failed to get lsm profile")?;
 
     let mount_label = if let Some(ref p) = lsm_profile {
-        try_with!(
-            p.mount_label(options.process_status.global_pid),
-            "failed to read mount options"
-        )
+        p.mount_label(options.process_status.global_pid)
+            .context("failed to read mount options")?
     } else {
         None
     };
 
     // Step 2: Move to container's cgroup
-    try_with!(
-        cgroup::move_to(unistd::getpid(), options.process_status.global_pid),
-        "failed to change cgroup"
-    );
+    cgroup::move_to(unistd::getpid(), options.process_status.global_pid)
+        .context("failed to change cgroup")?;
 
     // Step 3: Prepare command to execute
     let cmd = Cmd::new(
@@ -88,10 +82,8 @@ pub(crate) fn run(options: &ChildOptions) -> Result<()> {
     )?;
 
     // Step 4: Detect and open namespaces
-    let supported_namespaces = try_with!(
-        namespace::supported_namespaces(),
-        "failed to list namespaces"
-    );
+    let supported_namespaces =
+        namespace::supported_namespaces().context("failed to list namespaces")?;
 
     if !supported_namespaces.contains(namespace::MOUNT.name) {
         bail!("the system has no support for mount namespaces")
@@ -115,11 +107,10 @@ pub(crate) fn run(options: &ChildOptions) -> Result<()> {
             continue;
         }
 
-        other_namespaces.push(try_with!(
-            kind.open(options.process_status.global_pid),
-            "failed to open {} namespace",
-            kind.name
-        ));
+        other_namespaces.push(
+            kind.open(options.process_status.global_pid)
+                .with_context(|| format!("failed to open {} namespace", kind.name))?,
+        );
     }
 
     // Step 5: Assemble mount hierarchy
@@ -131,58 +122,45 @@ pub(crate) fn run(options: &ChildOptions) -> Result<()> {
     // Resolve container's root path (handles chroot containers)
     // For chrooted processes, /proc/<pid>/root links to the chroot directory
     let proc_root_path = format!("/proc/{}/root", options.process_status.global_pid);
-    let container_root_path = try_with!(
-        std::fs::read_link(&proc_root_path),
-        "failed to read container root path from {}",
-        proc_root_path
-    );
+    let container_root_path = std::fs::read_link(&proc_root_path)
+        .with_context(|| format!("failed to read container root path from {}", proc_root_path))?;
 
     // Create private mount namespace in parent
-    try_with!(
-        unshare(CloneFlags::CLONE_NEWNS),
-        "failed to unshare mount namespace"
-    );
+    unshare(CloneFlags::CLONE_NEWNS).context("failed to unshare mount namespace")?;
 
     // Save our own mount namespace FD (with tmpfs)
-    let our_mount_ns = try_with!(
-        namespace::MOUNT.open(unistd::getpid()),
-        "failed to open our own mount namespace"
-    );
+    let our_mount_ns = namespace::MOUNT
+        .open(unistd::getpid())
+        .context("failed to open our own mount namespace")?;
 
     // Create tmpfs at /var/lib/cntr (for socket and mount points)
-    try_with!(
-        std::fs::create_dir_all("/var/lib/cntr"),
-        "failed to create /var/lib/cntr"
-    );
-    try_with!(
-        nix::mount::mount(
-            Some("tmpfs"),
-            "/var/lib/cntr",
-            Some("tmpfs"),
-            nix::mount::MsFlags::empty(),
-            None::<&str>
-        ),
-        "failed to mount tmpfs at /var/lib/cntr"
-    );
+    std::fs::create_dir_all("/var/lib/cntr").context("failed to create /var/lib/cntr")?;
+    nix::mount::mount(
+        Some("tmpfs"),
+        "/var/lib/cntr",
+        Some("tmpfs"),
+        nix::mount::MsFlags::empty(),
+        None::<&str>,
+    )
+    .context("failed to mount tmpfs at /var/lib/cntr")?;
 
     // Enter container's mount namespace to capture trees with submounts
-    let container_mount_namespace = try_with!(
-        namespace::MOUNT.open(options.process_status.global_pid),
-        "could not access container mount namespace"
-    );
-    try_with!(
-        container_mount_namespace.apply(),
-        "failed to enter container mount namespace"
-    );
+    let container_mount_namespace = namespace::MOUNT
+        .open(options.process_status.global_pid)
+        .context("could not access container mount namespace")?;
+    container_mount_namespace
+        .apply()
+        .context("failed to enter container mount namespace")?;
 
     // Capture each container root entry with open_tree()
     let mut captured_trees = Vec::new();
-    for entry in try_with!(
-        std::fs::read_dir(&container_root_path),
-        "failed to read container root at {}",
-        container_root_path.display()
-    ) {
-        let entry = try_with!(entry, "failed to read directory entry");
+    for entry in std::fs::read_dir(&container_root_path).with_context(|| {
+        format!(
+            "failed to read container root at {}",
+            container_root_path.display()
+        )
+    })? {
+        let entry = entry.context("failed to read directory entry")?;
         let file_name = entry.file_name();
         let file_name_str = file_name.to_string_lossy();
 
@@ -192,11 +170,8 @@ pub(crate) fn run(options: &ChildOptions) -> Result<()> {
         }
 
         let source = entry.path();
-        let source_cstr = try_with!(
-            CString::new(source.to_str().unwrap()),
-            "failed to create CString for {}",
-            source.display()
-        );
+        let source_cstr = CString::new(source.to_str().unwrap())
+            .with_context(|| format!("failed to create CString for {}", source.display()))?;
 
         // Capture this entry's tree (includes all submounts)
         match MountFd::open_tree_at(&source_cstr, OPEN_TREE_CLONE | AT_RECURSIVE) {
@@ -210,10 +185,9 @@ pub(crate) fn run(options: &ChildOptions) -> Result<()> {
     }
 
     // Return to our own mount namespace (with tmpfs)
-    try_with!(
-        our_mount_ns.apply(),
-        "failed to return to our mount namespace"
-    );
+    our_mount_ns
+        .apply()
+        .context("failed to return to our mount namespace")?;
 
     // Attach each captured tree to /var/lib/cntr
     for (file_name, tree_fd) in captured_trees {
@@ -227,11 +201,8 @@ pub(crate) fn run(options: &ChildOptions) -> Result<()> {
             let _ = std::fs::File::create(&target);
         }
 
-        let target_cstr = try_with!(
-            CString::new(target.to_str().unwrap()),
-            "failed to create CString for {}",
-            target.display()
-        );
+        let target_cstr = CString::new(target.to_str().unwrap())
+            .with_context(|| format!("failed to create CString for {}", target.display()))?;
 
         if let Err(e) = tree_fd.attach_to(AT_FDCWD, &target_cstr, 0) {
             warn!("Failed to attach tree to {:?}: {}", target, e);
@@ -259,7 +230,7 @@ pub(crate) fn run(options: &ChildOptions) -> Result<()> {
     };
 
     for ns in other_namespaces {
-        try_with!(ns.apply(), "failed to apply namespace");
+        ns.apply().context("failed to apply namespace")?;
     }
 
     // Step 7: Set UID/GID
@@ -269,28 +240,24 @@ pub(crate) fn run(options: &ChildOptions) -> Result<()> {
             && let Err(e) = unistd::setgroups(&[])
             && !dropped_groups
         {
-            try_with!(Err(e), "could not set groups");
+            Err(e).context("could not set groups")?;
         }
-        try_with!(unistd::setgid(options.gid), "could not set group id");
-        try_with!(unistd::setuid(options.uid), "could not set user id");
+        unistd::setgid(options.gid).context("could not set group id")?;
+        unistd::setuid(options.uid).context("could not set user id")?;
     }
 
     // Step 8: Drop capabilities
-    try_with!(
-        capabilities::drop(options.process_status.effective_capabilities),
-        "failed to apply capabilities"
-    );
+    capabilities::drop(options.process_status.effective_capabilities)
+        .context("failed to apply capabilities")?;
 
     // Step 9: Create daemon socket in the tmpfs overlay
     // The socket lives at /var/lib/cntr/.exec.sock on the tmpfs (writable)
-    let daemon_sock = try_with!(
-        crate::daemon::DaemonSocket::bind(options.process_status.clone()),
-        "failed to create daemon socket"
-    );
+    let daemon_sock = crate::daemon::DaemonSocket::bind(options.process_status.clone())
+        .context("failed to create daemon socket")?;
 
     // Step 10: Setup PTY
-    let pty_master = try_with!(pty::open_ptm(), "open pty master");
-    try_with!(pty::attach_pts(&pty_master), "failed to setup pty master");
+    let pty_master = pty::open_ptm().context("failed to open pty master")?;
+    pty::attach_pts(&pty_master).context("failed to setup pty slave")?;
 
     // Send ready signal + PTY fd + daemon socket fd to parent
     let ready_msg = b"R";
@@ -301,10 +268,7 @@ pub(crate) fn run(options: &ChildOptions) -> Result<()> {
         .send(&[ready_msg], &[&pty_file, &daemon_file]);
     let _ = pty_file.into_raw_fd();
     let _ = daemon_file.into_raw_fd();
-    try_with!(
-        res,
-        "failed to send ready signal, pty fd, and daemon socket fd to parent"
-    );
+    res.context("failed to send ready signal, pty fd, and daemon socket fd to parent")?;
 
     // Step 11: Change to /var/lib/cntr
     if let Err(e) = env::set_current_dir("/var/lib/cntr") {
@@ -313,22 +277,18 @@ pub(crate) fn run(options: &ChildOptions) -> Result<()> {
 
     // Step 12: Inherit LSM profile
     if let Some(profile) = lsm_profile {
-        try_with!(profile.inherit_profile(), "failed to inherit lsm profile");
+        profile
+            .inherit_profile()
+            .context("failed to inherit lsm profile")?;
     }
 
     // Step 13: Execute the command
     let status = cmd.run()?;
     if let Some(signum) = status.signal() {
-        let signal = try_with!(
-            Signal::try_from(signum),
-            "invalid signal received: {}",
-            signum
-        );
-        try_with!(
-            signal::kill(unistd::getpid(), signal),
-            "failed to send signal {:?} to own pid",
-            signal
-        );
+        let signal = Signal::try_from(signum)
+            .with_context(|| format!("invalid signal received: {}", signum))?;
+        signal::kill(unistd::getpid(), signal)
+            .with_context(|| format!("failed to send signal {:?} to own pid", signal))?;
     }
     if let Some(code) = status.code() {
         process::exit(code);

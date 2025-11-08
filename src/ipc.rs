@@ -1,6 +1,6 @@
+use anyhow::Context;
 use nix::errno::Errno;
 use nix::sys::socket::*;
-use simple_error::try_with;
 use std::fs::File;
 use std::io::{IoSlice, IoSliceMut};
 use std::os::unix::prelude::*;
@@ -26,10 +26,8 @@ impl Socket {
             vec![ControlMessage::ScmRights(&fds)]
         };
 
-        try_with!(
-            sendmsg(self.fd.as_raw_fd(), &iov, &cmsg, MsgFlags::empty(), NONE),
-            "sendmsg failed"
-        );
+        sendmsg(self.fd.as_raw_fd(), &iov, &cmsg, MsgFlags::empty(), NONE)
+            .context("failed to send message via Unix socket")?;
         Ok(())
     }
 
@@ -55,9 +53,12 @@ impl Socket {
                 );
                 match res {
                     Err(Errno::EAGAIN) | Err(Errno::EINTR) => continue,
-                    Err(e) => return try_with!(Err(e), "recvmsg failed"),
+                    Err(e) => return Err(e).context("failed to receive message from Unix socket"),
                     Ok(msg) => {
-                        for cmsg in try_with!(msg.cmsgs(), "failed to get cmsgs") {
+                        for cmsg in msg
+                            .cmsgs()
+                            .context("failed to get control messages from socket")?
+                        {
                             if let ControlMessageOwned::ScmRights(received_fds) = cmsg {
                                 for fd in received_fds {
                                     fds.push(fd);
@@ -90,7 +91,7 @@ pub fn socket_pair() -> Result<(Socket, Socket)> {
         SockFlag::SOCK_CLOEXEC,
     );
 
-    let (parent_fd, child_fd) = try_with!(res, "failed to create socketpair");
+    let (parent_fd, child_fd) = res.context("failed to create socketpair")?;
     Ok((
         Socket {
             fd: File::from(parent_fd),

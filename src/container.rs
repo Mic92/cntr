@@ -5,8 +5,8 @@
 
 use crate::procfs;
 use crate::result::Result;
+use anyhow::{Context, bail};
 use nix::unistd::Pid;
-use simple_error::{bail, try_with};
 use std::fs::metadata;
 use std::os::unix::fs::MetadataExt;
 
@@ -35,15 +35,14 @@ impl ContainerContext {
         let pid = Pid::from_raw(pid_raw);
 
         // Get container uid/gid from process metadata
-        let metadata = try_with!(
-            metadata(procfs::get_path().join(pid.to_string())),
-            "failed to get container uid/gid"
-        );
+        let metadata = metadata(procfs::get_path().join(pid.to_string()))
+            .context("failed to get container uid/gid from process metadata")?;
         let uid = nix::unistd::Uid::from_raw(metadata.uid());
         let gid = nix::unistd::Gid::from_raw(metadata.gid());
 
         // Get process status
-        let process_status = try_with!(procfs::status(pid), "failed to get process status");
+        let process_status = procfs::status(pid)
+            .with_context(|| format!("failed to get process status for PID {}", pid))?;
 
         Ok(ContainerContext {
             uid,

@@ -1,3 +1,4 @@
+use anyhow::Context;
 use libc::{self, winsize};
 use nix::errno::Errno;
 use nix::fcntl::OFlag;
@@ -10,7 +11,6 @@ use nix::sys::termios::{
     ControlFlags, InputFlags, LocalFlags, OutputFlags, SetArg, Termios, tcgetattr, tcsetattr,
 };
 use nix::{self, fcntl, unistd};
-use simple_error::try_with;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::os::unix::prelude::*;
@@ -79,7 +79,7 @@ struct RawTty<'a> {
 
 impl<'a> RawTty<'a> {
     fn new(stdin: BorrowedFd<'a>) -> Result<RawTty<'a>> {
-        let orig_attr = try_with!(tcgetattr(stdin), "failed to get termios attributes");
+        let orig_attr = tcgetattr(stdin).context("failed to get termios attributes")?;
 
         let mut attr = orig_attr.clone();
         attr.input_flags.remove(
@@ -106,10 +106,7 @@ impl<'a> RawTty<'a> {
         attr.control_chars[VMIN as usize] = 1; // One character-at-a-time input
         attr.control_chars[VTIME as usize] = 0; // with blocking read
 
-        try_with!(
-            tcsetattr(stdin, SetArg::TCSAFLUSH, &attr),
-            "failed to set termios attributes"
-        );
+        tcsetattr(stdin, SetArg::TCSAFLUSH, &attr).context("failed to set termios attributes")?;
         Ok(RawTty {
             fd: stdin,
             attr: orig_attr,
@@ -210,10 +207,10 @@ pub fn forward(pty: &File) -> Result<()> {
     if unsafe { libc::isatty(libc::STDIN_FILENO) } != 0 {
         resize_pty(pty.as_raw_fd());
 
-        raw_tty = Some(try_with!(
-            RawTty::new(unsafe { BorrowedFd::borrow_raw(libc::STDIN_FILENO) }),
-            "failed to set stdin tty into raw mode"
-        ))
+        raw_tty = Some(
+            RawTty::new(unsafe { BorrowedFd::borrow_raw(libc::STDIN_FILENO) })
+                .context("failed to set stdin tty into raw mode")?,
+        )
     };
 
     unsafe { PTY_MASTER_FD = pty.as_raw_fd() };
@@ -222,10 +219,7 @@ pub fn forward(pty: &File) -> Result<()> {
         SaFlags::empty(),
         SigSet::empty(),
     );
-    try_with!(
-        unsafe { sigaction(SIGWINCH, &sig_action) },
-        "failed to install SIGWINCH handler"
-    );
+    unsafe { sigaction(SIGWINCH, &sig_action) }.context("failed to install SIGWINCH handler")?;
 
     let stdin: File = unsafe { File::from_raw_fd(libc::STDIN_FILENO) };
     let stdout: File = unsafe { File::from_raw_fd(libc::STDOUT_FILENO) };
@@ -275,10 +269,10 @@ fn resize_pty(pty_master: RawFd) {
 }
 
 pub fn open_ptm() -> Result<PtyMaster> {
-    let pty_master = try_with!(posix_openpt(OFlag::O_RDWR), "posix_openpt()");
+    let pty_master = posix_openpt(OFlag::O_RDWR).context("failed to open pty with posix_openpt()")?;
 
-    try_with!(grantpt(&pty_master), "grantpt()");
-    try_with!(unlockpt(&pty_master), "unlockpt()");
+    grantpt(&pty_master).context("failed to grant pty access with grantpt()")?;
+    unlockpt(&pty_master).context("failed to unlock pty with unlockpt()")?;
 
     Ok(pty_master)
 }

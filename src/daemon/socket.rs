@@ -3,7 +3,6 @@ use log::{info, warn};
 use nix::sys::socket::{
     AddressFamily, Backlog, SockFlag, SockType, UnixAddr, accept, bind, listen, socket,
 };
-use simple_error::try_with;
 use std::fs;
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd, RawFd};
 use std::path::PathBuf;
@@ -68,37 +67,31 @@ impl DaemonSocket {
     /// Internal helper to create and bind the socket
     fn bind_internal(socket_path: PathBuf, process_status: ProcStatus) -> Result<Self> {
         // Create Unix domain socket
-        let fd = try_with!(
-            socket(
-                AddressFamily::Unix,
-                SockType::Stream,
-                SockFlag::SOCK_CLOEXEC,
-                None
-            ),
-            "failed to create daemon socket"
-        );
+        let fd = socket(
+            AddressFamily::Unix,
+            SockType::Stream,
+            SockFlag::SOCK_CLOEXEC,
+            None,
+        )
+        .context("failed to create daemon socket")?;
 
         // Remove existing socket file if it exists (from previous run)
         let _ = fs::remove_file(&socket_path);
 
         // Bind to socket path
-        let unix_addr = try_with!(
-            UnixAddr::new(&socket_path),
-            "failed to create Unix address for {}",
-            socket_path.display()
-        );
+        let unix_addr = UnixAddr::new(&socket_path).with_context(|| {
+            format!(
+                "failed to create Unix address for {}",
+                socket_path.display()
+            )
+        })?;
 
-        try_with!(
-            bind(fd.as_raw_fd(), &unix_addr),
-            "failed to bind daemon socket to {}",
-            socket_path.display()
-        );
+        bind(fd.as_raw_fd(), &unix_addr).with_context(|| {
+            format!("failed to bind daemon socket to {}", socket_path.display())
+        })?;
 
         // Listen for connections (backlog of 5)
-        try_with!(
-            listen(&fd, Backlog::new(5).unwrap()),
-            "failed to listen on daemon socket"
-        );
+        listen(&fd, Backlog::new(5).unwrap()).context("failed to listen on daemon socket")?;
 
         Ok(DaemonSocket {
             fd,
@@ -133,7 +126,7 @@ impl DaemonSocket {
                 Ok(false)
             }
             Err(e) => {
-                try_with!(Err(e), "failed to accept connection on daemon socket");
+                Err(e).context("failed to accept connection on daemon socket")?;
                 Ok(false)
             }
         }
@@ -148,23 +141,18 @@ impl DaemonSocket {
     fn handle_request(&self, client_fd: &OwnedFd) -> Result<()> {
         // Read exec request from client
         let mut client_file = std::fs::File::from(client_fd.try_clone().unwrap());
-        let request = try_with!(
-            ExecRequest::deserialize(&mut client_file),
-            "failed to deserialize exec request"
-        );
+        let request = ExecRequest::deserialize(&mut client_file)
+            .context("failed to deserialize exec request")?;
 
         // Send acknowledgment that we're handling the request
         let response = ExecResponse::Ok;
-        try_with!(
-            response.serialize(&mut client_file),
-            "failed to send response to client"
-        );
+        response
+            .serialize(&mut client_file)
+            .context("failed to send response to client")?;
 
         // Execute the command in the container
-        try_with!(
-            crate::daemon::execute_in_container(&request, &self.process_status),
-            "failed to execute command in container"
-        );
+        crate::daemon::execute_in_container(&request, &self.process_status)
+            .context("failed to execute command in container")?;
 
         Ok(())
     }

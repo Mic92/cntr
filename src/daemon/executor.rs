@@ -2,7 +2,6 @@ use anyhow::Context;
 use log::warn;
 use nix::sys::wait::{WaitStatus, waitpid};
 use nix::unistd::{self, ForkResult};
-use simple_error::try_with;
 
 use crate::cmd::Cmd;
 use crate::container_setup;
@@ -27,7 +26,7 @@ pub(crate) fn execute_in_container(
     process_status: &ProcStatus,
 ) -> Result<()> {
     // Fork to handle the exec without blocking the daemon
-    let fork_result = unsafe { try_with!(unistd::fork(), "failed to fork for exec handler") };
+    let fork_result = unsafe { unistd::fork().context("failed to fork for exec handler")? };
 
     match fork_result {
         ForkResult::Parent { child } => {
@@ -77,19 +76,18 @@ fn exec_in_child(request: &ExecRequest, process_status: &ProcStatus) -> Result<(
     container_setup::enter_container(container_pid, process_status)?;
 
     // Create command with container's environment
-    let cmd = try_with!(
-        Cmd::new(
-            request.command.clone(),
-            request.arguments.clone(),
-            container_pid,
-            None, // home directory - let Cmd read from environment
-        ),
-        "failed to create command for exec request"
-    );
+    let cmd = Cmd::new(
+        request.command.clone(),
+        request.arguments.clone(),
+        container_pid,
+        None, // home directory - let Cmd read from environment
+    )
+    .context("failed to create command for exec request")?;
 
     // Execute via chroot
     // This will NOT return - it replaces the current process
-    try_with!(cmd.exec_chroot(), "failed to execute command in container");
+    cmd.exec_chroot()
+        .context("failed to execute command in container")?;
 
     Ok(())
 }

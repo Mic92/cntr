@@ -1,6 +1,6 @@
+use anyhow::Context;
 use log::warn;
 use nix::{self, unistd};
-use simple_error::try_with;
 use std::collections::HashMap;
 use std::env;
 use std::ffi::OsString;
@@ -24,7 +24,8 @@ pub struct Cmd {
 
 fn read_environment(pid: unistd::Pid) -> Result<HashMap<OsString, OsString>> {
     let path = procfs::get_path().join(pid.to_string()).join("environ");
-    let f = try_with!(File::open(&path), "failed to open {}", path.display());
+    let f = File::open(&path)
+        .with_context(|| format!("failed to open environment file {}", path.display()))?;
     let reader = BufReader::new(f);
     let res: HashMap<OsString, OsString> = reader
         .split(b'\0')
@@ -63,10 +64,8 @@ impl Cmd {
         let command =
             command.unwrap_or_else(|| env::var("SHELL").unwrap_or_else(|_| String::from("sh")));
 
-        let variables = try_with!(
-            read_environment(pid),
-            "could not inherit environment variables of container"
-        );
+        let variables = read_environment(pid)
+            .context("could not inherit environment variables from container")?;
         Ok(Cmd {
             command,
             arguments,
@@ -87,11 +86,11 @@ impl Cmd {
                 .insert(OsString::from("HOME"), path.into_os_string());
         }
 
-        let cmd = Command::new(self.command)
-            .args(self.arguments)
-            .envs(self.environment)
+        let cmd = Command::new(&self.command)
+            .args(&self.arguments)
+            .envs(&self.environment)
             .status();
-        Ok(try_with!(cmd, "failed to run `sh -l`"))
+        cmd.with_context(|| format!("failed to run command: {}", self.command))
     }
 
     pub fn exec_chroot(self) -> Result<()> {
@@ -114,7 +113,7 @@ impl Cmd {
                 })
                 .exec()
         };
-        try_with!(Err(err), "failed to execute `{}`", self.command);
+        Err(err).with_context(|| format!("failed to execute command: {}", self.command))?;
         Ok(())
     }
 }

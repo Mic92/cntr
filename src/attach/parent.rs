@@ -4,7 +4,6 @@ use nix::sys::signal::{self, Signal};
 use nix::sys::wait::{WaitPidFlag, WaitStatus, waitpid};
 use nix::unistd::Pid;
 use nix::{cmsg_space, unistd};
-use simple_error::{bail, try_with};
 use std::os::fd::{AsFd, IntoRawFd, RawFd};
 use std::process;
 
@@ -27,10 +26,9 @@ pub(crate) fn run(child_pid: Pid, process_status: &ProcStatus, socket: &ipc::Soc
     // Step 1: Wait for child to assemble mount hierarchy and signal completion
     // The child will send: ready signal + PTY fd + daemon socket fd
     let mut cmsgspace = cmsg_space!([RawFd; 2]);
-    let (msg_buf, mut fds) = try_with!(
-        socket.receive::<std::fs::File>(1, &mut cmsgspace),
-        "failed to receive ready signal from child"
-    );
+    let (msg_buf, mut fds) = socket
+        .receive::<std::fs::File>(1, &mut cmsgspace)
+        .context("failed to receive ready signal from child")?;
 
     if msg_buf.is_empty() || msg_buf[0] != b'R' {
         bail!("child did not send ready signal");
@@ -81,7 +79,7 @@ pub(crate) fn run(child_pid: Pid, process_status: &ProcStatus, socket: &ipc::Soc
                     && revents.contains(PollFlags::POLLIN)
                 {
                     // Forward PTY output
-                    try_with!(pty::forward(&pty_fd), "failed to forward terminal output");
+                    pty::forward(&pty_fd).context("failed to forward terminal output")?;
                 }
 
                 // Check if daemon socket has incoming connection
@@ -96,7 +94,7 @@ pub(crate) fn run(child_pid: Pid, process_status: &ProcStatus, socket: &ipc::Soc
                 // Interrupted by signal, continue to check child status
             }
             Err(e) => {
-                try_with!(Err(e), "poll failed");
+                return Err(e).context("poll failed");
             }
         }
 
@@ -116,11 +114,9 @@ pub(crate) fn run(child_pid: Pid, process_status: &ProcStatus, socket: &ipc::Soc
             }
             Ok(WaitStatus::Signaled(_, signal, _)) => {
                 // Child received a signal - propagate it to ourselves
-                try_with!(
-                    signal::kill(unistd::getpid(), signal),
-                    "failed to send signal {:?} to our own process",
-                    signal
-                );
+                signal::kill(unistd::getpid(), signal).with_context(|| {
+                    format!("failed to send signal {:?} to our own process", signal)
+                })?;
             }
             Ok(WaitStatus::Exited(_, status)) => {
                 // Child exited normally - exit with same status
@@ -132,7 +128,7 @@ pub(crate) fn run(child_pid: Pid, process_status: &ProcStatus, socket: &ipc::Soc
             }
             Err(e) => {
                 // waitpid failed
-                return try_with!(Err(e), "waitpid failed");
+                return Err(e).context("waitpid failed");
             }
         }
     }

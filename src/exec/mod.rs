@@ -2,8 +2,6 @@ use anyhow::{Context, bail};
 use nix::sys::socket::{self, AddressFamily, SockFlag, SockType, UnixAddr, connect};
 use nix::sys::wait::{WaitStatus, waitpid};
 use nix::unistd::{self, ForkResult};
-use simple_error::{bail, try_with};
-use std::error::Error;
 use std::io::{self, ErrorKind};
 use std::os::fd::{AsRawFd, IntoRawFd};
 use std::process;
@@ -41,22 +39,21 @@ pub fn exec_daemon(exe: Option<String>, args: Vec<String>) -> Result<()> {
     }
 
     // Create Unix domain socket for client
-    let client_sock = try_with!(
-        socket::socket(
-            AddressFamily::Unix,
-            SockType::Stream,
-            SockFlag::SOCK_CLOEXEC,
-            None
-        ),
-        "failed to create client socket"
-    );
+    let client_sock = socket::socket(
+        AddressFamily::Unix,
+        SockType::Stream,
+        SockFlag::SOCK_CLOEXEC,
+        None,
+    )
+    .context("failed to create client socket")?;
 
     // Connect to daemon socket
-    let unix_addr = try_with!(
-        UnixAddr::new(&socket_path),
-        "failed to create Unix address for {}",
-        socket_path.display()
-    );
+    let unix_addr = UnixAddr::new(&socket_path).with_context(|| {
+        format!(
+            "failed to create Unix address for {}",
+            socket_path.display()
+        )
+    })?;
 
     if let Err(e) = connect(client_sock.as_raw_fd(), &unix_addr) {
         match e {
@@ -76,11 +73,12 @@ pub fn exec_daemon(exe: Option<String>, args: Vec<String>) -> Result<()> {
                 );
             }
             _ => {
-                try_with!(
-                    Err(e),
-                    "failed to connect to daemon socket at {}",
-                    socket_path.display()
-                );
+                Err(e).with_context(|| {
+                    format!(
+                        "failed to connect to daemon socket at {}",
+                        socket_path.display()
+                    )
+                })?;
             }
         }
     }
@@ -128,7 +126,7 @@ pub fn exec_daemon(exe: Option<String>, args: Vec<String>) -> Result<()> {
                     _ => {}
                 }
             }
-            try_with!(Err(e), "failed to receive response from daemon");
+            Err(e).context("failed to receive response from daemon")?;
             unreachable!()
         }
     };
@@ -174,11 +172,11 @@ pub fn exec_direct(
     let ctx = ContainerContext::lookup(container_name, container_types)?;
 
     // Create PTY for interactive command execution
-    let pty_master = try_with!(pty::open_ptm(), "failed to open pty master");
+    let pty_master = pty::open_ptm().context("failed to open pty master")?;
 
     // Fork: child enters container and execs, parent forwards PTY I/O
     let res = unsafe { unistd::fork() };
-    match try_with!(res, "failed to fork") {
+    match res.context("failed to fork")? {
         ForkResult::Parent { child } => {
             // Parent: Forward PTY I/O and wait for child
             exec_direct_parent(child, &pty_master)
@@ -219,17 +217,14 @@ fn exec_direct_parent(child_pid: nix::unistd::Pid, pty_master: &nix::pty::PtyMas
         }
         Ok(WaitStatus::Signaled(_, signal, _)) => {
             // Child was signaled - send same signal to ourselves
-            try_with!(
-                nix::sys::signal::kill(unistd::getpid(), signal),
-                "failed to send signal {:?} to own process",
-                signal
-            );
+            nix::sys::signal::kill(unistd::getpid(), signal)
+                .with_context(|| format!("failed to send signal {:?} to own process", signal))?;
         }
         Ok(status) => {
             bail!("child exited with unexpected status: {:?}", status);
         }
         Err(e) => {
-            try_with!(Err(e), "failed to wait for child");
+            Err(e).context("failed to wait for child")?;
         }
     }
 
@@ -244,7 +239,7 @@ fn exec_direct_child(
     pty_master: &nix::pty::PtyMaster,
 ) -> Result<()> {
     // Attach PTY slave
-    try_with!(pty::attach_pts(pty_master), "failed to setup pty slave");
+    pty::attach_pts(pty_master).context("failed to setup pty slave")?;
 
     // Prepare command to execute
     let cmd = Cmd::new(exe, args, ctx.process_status.global_pid, None)?;
@@ -254,22 +249,13 @@ fn exec_direct_child(
 
     // Resolve container's root path (handles chroot containers)
     let proc_root_path = format!("/proc/{}/root", ctx.process_status.global_pid);
-    let container_root = try_with!(
-        std::fs::read_link(&proc_root_path),
-        "failed to read container root from {}",
-        proc_root_path
-    );
+    let container_root = std::fs::read_link(&proc_root_path)
+        .with_context(|| format!("failed to read container root from {}", proc_root_path))?;
 
     // Chroot to container's root
-    try_with!(
-        nix::unistd::chroot(&container_root),
-        "failed to chroot to {}",
-        container_root.display()
-    );
-    try_with!(
-        std::env::set_current_dir("/"),
-        "failed to chdir to / after chroot"
-    );
+    nix::unistd::chroot(&container_root)
+        .with_context(|| format!("failed to chroot to {}", container_root.display()))?;
+    std::env::set_current_dir("/").context("failed to chdir to / after chroot")?;
 
     // Execute the command (replaces current process)
     // Now we're in the container's root, so paths work correctly

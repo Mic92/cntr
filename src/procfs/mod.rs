@@ -1,6 +1,6 @@
+use anyhow::Context;
 use libc::c_ulong;
 use nix::unistd::Pid;
-use simple_error::{SimpleError, try_with};
 use std::env;
 use std::ffi::OsString;
 use std::fs::File;
@@ -24,34 +24,39 @@ pub struct ProcStatus {
 
 pub fn status(target_pid: Pid) -> Result<ProcStatus> {
     let path = get_path().join(target_pid.to_string()).join("status");
-    let file = try_with!(File::open(&path), "failed to open {}", path.display());
+    let file = File::open(&path)
+        .with_context(|| format!("failed to open process status file {}", path.display()))?;
 
     let mut effective_caps: Option<c_ulong> = None;
 
     let reader = BufReader::new(file);
     for line in reader.lines() {
-        let line = try_with!(line, "could not read {}", path.display());
+        let line = line.with_context(|| format!("could not read line from {}", path.display()))?;
         let columns: Vec<&str> = line.split('\t').collect();
         assert!(columns.len() >= 2);
         if columns[0] == "CapEff:"
             && let Some(cap_string) = columns.last()
         {
-            let cap = try_with!(
-                c_ulong::from_str_radix(cap_string, 16),
-                "read invalid capability from proc: '{}'",
-                columns[1]
-            );
+            let cap = c_ulong::from_str_radix(cap_string, 16).with_context(|| {
+                format!(
+                    "failed to parse capability '{}' from {}",
+                    cap_string,
+                    path.display()
+                )
+            })?;
             effective_caps = Some(cap);
         }
     }
 
+    let effective_capabilities = effective_caps.ok_or_else(|| {
+        anyhow::anyhow!(
+            "could not find effective capabilities (CapEff) in {}",
+            path.display()
+        )
+    })?;
+
     Ok(ProcStatus {
         global_pid: target_pid,
-        effective_capabilities: effective_caps.ok_or_else(|| {
-            SimpleError::new(format!(
-                "Could not find effective capabilities in {}",
-                path.display()
-            ))
-        })?,
+        effective_capabilities,
     })
 }

@@ -5,7 +5,6 @@
 
 use anyhow::{Context, bail};
 use nix::unistd::{self, Gid, Pid, Uid};
-use simple_error::{bail, try_with};
 
 use crate::capabilities;
 use crate::cgroup;
@@ -29,20 +28,15 @@ pub(crate) fn prepare_security_context(
     _process_status: &ProcStatus,
 ) -> Result<SecurityContext> {
     // Read LSM profile before entering namespaces
-    let lsm_profile = try_with!(
-        lsm::read_profile(container_pid),
-        "failed to get lsm profile"
-    );
+    let lsm_profile = lsm::read_profile(container_pid).context("failed to get lsm profile")?;
 
     // Get container uid/gid from process metadata
     use crate::procfs;
     use std::fs::metadata;
     use std::os::unix::fs::MetadataExt;
 
-    let metadata = try_with!(
-        metadata(procfs::get_path().join(container_pid.to_string())),
-        "failed to get container uid/gid"
-    );
+    let metadata = metadata(procfs::get_path().join(container_pid.to_string()))
+        .context("failed to get container uid/gid")?;
     let uid = Uid::from_raw(metadata.uid());
     let gid = Gid::from_raw(metadata.gid());
 
@@ -59,20 +53,17 @@ pub(crate) fn prepare_security_context(
 /// Returns true if USER namespace was entered.
 pub(crate) fn enter_namespaces(container_pid: Pid) -> Result<bool> {
     // Detect supported namespaces
-    let supported_namespaces = try_with!(
-        namespace::supported_namespaces(),
-        "failed to list namespaces"
-    );
+    let supported_namespaces =
+        namespace::supported_namespaces().context("failed to list namespaces")?;
 
     if !supported_namespaces.contains(namespace::MOUNT.name) {
         bail!("the system has no support for mount namespaces");
     }
 
     // Open mount namespace
-    let mount_namespace = try_with!(
-        namespace::MOUNT.open(container_pid),
-        "could not access mount namespace"
-    );
+    let mount_namespace = namespace::MOUNT
+        .open(container_pid)
+        .context("could not access mount namespace")?;
 
     // Open other namespaces
     let mut other_namespaces = Vec::new();
@@ -93,19 +84,20 @@ pub(crate) fn enter_namespaces(container_pid: Pid) -> Result<bool> {
             continue;
         }
 
-        other_namespaces.push(try_with!(
-            kind.open(container_pid),
-            "failed to open {} namespace",
-            kind.name
-        ));
+        other_namespaces.push(
+            kind.open(container_pid)
+                .with_context(|| format!("failed to open {} namespace", kind.name))?,
+        );
     }
 
     // Enter mount namespace first
-    try_with!(mount_namespace.apply(), "failed to enter mount namespace");
+    mount_namespace
+        .apply()
+        .context("failed to enter mount namespace")?;
 
     // Enter other namespaces
     for ns in other_namespaces {
-        try_with!(ns.apply(), "failed to apply namespace");
+        ns.apply().context("failed to apply namespace")?;
     }
 
     Ok(supported_namespaces.contains(namespace::USER.name))
@@ -136,21 +128,21 @@ pub(crate) fn apply_security_context(
             && let Err(e) = unistd::setgroups(&[])
             && !dropped_groups
         {
-            try_with!(Err(e), "could not set groups");
+            Err(e).context("could not set groups")?;
         }
-        try_with!(unistd::setgid(ctx.gid), "could not set group id");
-        try_with!(unistd::setuid(ctx.uid), "could not set user id");
+        unistd::setgid(ctx.gid).context("could not set group id")?;
+        unistd::setuid(ctx.uid).context("could not set user id")?;
     }
 
     // Drop capabilities
-    try_with!(
-        capabilities::drop(process_status.effective_capabilities),
-        "failed to apply capabilities"
-    );
+    capabilities::drop(process_status.effective_capabilities)
+        .context("failed to apply capabilities")?;
 
     // Inherit LSM profile
     if let Some(profile) = ctx.lsm_profile {
-        try_with!(profile.inherit_profile(), "failed to inherit lsm profile");
+        profile
+            .inherit_profile()
+            .context("failed to inherit lsm profile")?;
     }
 
     Ok(())
@@ -165,10 +157,7 @@ pub(crate) fn apply_security_context(
 /// 4. Applies security context (UID/GID, capabilities, LSM)
 pub(crate) fn enter_container(container_pid: Pid, process_status: &ProcStatus) -> Result<()> {
     // Move to container's cgroup
-    try_with!(
-        cgroup::move_to(unistd::getpid(), container_pid),
-        "failed to change cgroup"
-    );
+    cgroup::move_to(unistd::getpid(), container_pid).context("failed to change cgroup")?;
 
     // Prepare security context
     let ctx = prepare_security_context(container_pid, process_status)?;
