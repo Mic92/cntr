@@ -122,6 +122,11 @@ pub(crate) fn run(options: &ChildOptions) -> Result<()> {
 
     let base_dir = paths::get_base_dir();
 
+    // Create base_dir BEFORE entering any namespaces
+    // This ensures the directory exists in the host namespace
+    std::fs::create_dir_all(&base_dir)
+        .with_context(|| format!("failed to create {}", base_dir.display()))?;
+
     // Resolve container's root path (handles chroot containers)
     // For chrooted processes, /proc/<pid>/root links to the chroot directory
     let proc_root_path = format!("/proc/{}/root", options.process_status.global_pid);
@@ -241,9 +246,8 @@ pub(crate) fn run(options: &ChildOptions) -> Result<()> {
         .open(unistd::getpid())
         .context("failed to open our own mount namespace")?;
 
-    // Create tmpfs at base_dir (for socket and mount points)
-    std::fs::create_dir_all(&base_dir)
-        .with_context(|| format!("failed to create {}", base_dir.display()))?;
+    // Mount tmpfs at base_dir (for socket and mount points)
+    // Note: base_dir was already created earlier before entering the namespace
     nix::mount::mount(
         Some("tmpfs"),
         base_dir.as_path(),
