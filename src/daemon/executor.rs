@@ -9,7 +9,7 @@ use crate::daemon::protocol::ExecRequest;
 use crate::procfs::ProcStatus;
 use crate::result::Result;
 
-/// Execute a command in the container namespace (T032)
+/// Execute a command in the container namespace
 ///
 /// This function performs the actual exec requested by a client.
 /// It's called by the daemon after receiving and validating an ExecRequest.
@@ -80,7 +80,7 @@ fn exec_in_child(request: &ExecRequest, process_status: &ProcStatus) -> Result<(
         request.command.clone(),
         request.arguments.clone(),
         container_pid,
-        None, // home directory - let Cmd read from environment
+        None,
     )
     .context("failed to create command for exec request")?;
 

@@ -1,12 +1,11 @@
 use anyhow::{Context, bail};
-use log::warn;
+use log::{debug, warn};
 use nix::sys::signal::{self, Signal};
 use nix::unistd;
 use nix::unistd::{Gid, Uid};
 use std::env;
 use std::ffi::CString;
-use std::fs::File;
-use std::os::unix::io::{AsRawFd, FromRawFd, IntoRawFd};
+use std::os::unix::io::{BorrowedFd, RawFd};
 use std::os::unix::prelude::*;
 use std::path::PathBuf;
 use std::process;
@@ -21,7 +20,7 @@ use crate::paths;
 use crate::procfs::ProcStatus;
 use crate::pty;
 use crate::result::Result;
-use crate::syscalls::mount_api::{AT_FDCWD, AT_RECURSIVE, MountFd, OPEN_TREE_CLONE};
+use crate::syscalls::mount_api::{AT_RECURSIVE, MountFd, OPEN_TREE_CLONE};
 use nix::sched::{CloneFlags, unshare};
 
 /// Options for child process
@@ -30,12 +29,13 @@ pub(crate) struct ChildOptions<'a> {
     pub(crate) arguments: Vec<String>,
     pub(crate) process_status: ProcStatus,
     pub(crate) socket: &'a ipc::Socket,
-    pub(crate) home: Option<PathBuf>,
+    pub(crate) userns_fd: Option<RawFd>,
+    pub(crate) effective_home: Option<PathBuf>,
     pub(crate) uid: Uid,
     pub(crate) gid: Gid,
 }
 
-/// Child process logic for mount API attach (T018)
+/// Child process logic for mount API attach
 ///
 /// The child assembles a mount hierarchy where:
 /// - / = host filesystem (with all host mounts)
@@ -79,7 +79,7 @@ pub(crate) fn run(options: &ChildOptions) -> Result<()> {
         options.command.clone(),
         options.arguments.clone(),
         options.process_status.global_pid,
-        options.home.clone(),
+        options.effective_home.clone(),
     )?;
 
     // Step 4: Detect and open namespaces
@@ -128,10 +128,115 @@ pub(crate) fn run(options: &ChildOptions) -> Result<()> {
     let container_root_path = std::fs::read_link(&proc_root_path)
         .with_context(|| format!("failed to read container root path from {}", proc_root_path))?;
 
-    // Create private mount namespace in parent
+    // Create private mount namespace
     unshare(CloneFlags::CLONE_NEWNS).context("failed to unshare mount namespace")?;
 
-    // Save our own mount namespace FD (with tmpfs)
+    // Make all mounts private (required before applying idmap)
+    nix::mount::mount(
+        None::<&str>,
+        "/",
+        None::<&str>,
+        nix::mount::MsFlags::MS_REC | nix::mount::MsFlags::MS_PRIVATE,
+        None::<&str>,
+    )
+    .context("failed to make mounts private")?;
+
+    // Apply idmapped mount to all supported filesystems if --effective-user was specified
+    // This makes all files created on the host appear as owned by the effective user
+    if let Some(userns_fd) = options.userns_fd {
+        use crate::syscalls::mount_api::{AT_RECURSIVE, MountFd, OPEN_TREE_CLONE};
+        use std::io::BufRead;
+
+        let userns_borrowed = unsafe { BorrowedFd::borrow_raw(userns_fd) };
+
+        // Read /proc/mounts to get all mount points
+        let mounts_file =
+            std::fs::File::open("/proc/mounts").context("failed to open /proc/mounts")?;
+        let reader = std::io::BufReader::new(mounts_file);
+
+        // Skip virtual/special filesystems that don't support idmapped mounts
+        let skip_fstypes = [
+            "proc",
+            "sysfs",
+            "devtmpfs",
+            "devpts",
+            "cgroup",
+            "cgroup2",
+            "securityfs",
+            "debugfs",
+            "tracefs",
+            "pstore",
+            "efivarfs",
+            "mqueue",
+            "hugetlbfs",
+            "autofs",
+            "fusectl",
+            "configfs",
+            "rpc_pipefs",
+            "binfmt_misc",
+            "overlay",
+        ];
+
+        for line in reader.lines() {
+            let line = match line {
+                Ok(l) => l,
+                Err(_) => continue,
+            };
+
+            // Parse: device mountpoint fstype options
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() < 3 {
+                continue;
+            }
+
+            let mount_point = parts[1];
+            let fstype = parts[2];
+
+            // Skip virtual filesystems
+            if skip_fstypes.contains(&fstype) {
+                continue;
+            }
+
+            // Skip the base_dir itself (we'll mount container stuff there)
+            if mount_point.starts_with(base_dir.to_str().unwrap_or("")) {
+                continue;
+            }
+
+            // Try to apply idmap to this mount
+            let mount_cstr = match CString::new(mount_point) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            // Clone the mount with open_tree
+            let tree = match MountFd::open_tree_at(&mount_cstr, OPEN_TREE_CLONE | AT_RECURSIVE) {
+                Ok(t) => t,
+                Err(e) => {
+                    warn!("Failed to open_tree {}: {}", mount_point, e);
+                    continue;
+                }
+            };
+
+            // Apply idmap
+            if let Err(e) = tree.apply_idmap(userns_borrowed) {
+                warn!(
+                    "Failed to apply idmap to {} ({}): {}",
+                    mount_point, fstype, e
+                );
+                continue;
+            }
+
+            // Move back to original location
+            if let Err(e) = tree.attach_to(None, &mount_cstr, 0) {
+                warn!("Failed to attach idmapped {} back: {}", mount_point, e);
+                continue;
+            }
+
+            debug!("Applied idmap to {} ({})", mount_point, fstype);
+        }
+    }
+
+    // Save our own mount namespace FD
     let our_mount_ns = namespace::MOUNT
         .open(unistd::getpid())
         .context("failed to open our own mount namespace")?;
@@ -188,12 +293,13 @@ pub(crate) fn run(options: &ChildOptions) -> Result<()> {
         }
     }
 
-    // Return to our own mount namespace (with tmpfs)
+    // Return to our own mount namespace (with tmpfs and idmapped host root)
     our_mount_ns
         .apply()
         .context("failed to return to our mount namespace")?;
 
     // Attach each captured tree to base_dir
+    // Note: We DON'T apply idmap to container trees - idmap was applied to host root above
     for (file_name, tree_fd) in captured_trees {
         let target = base_dir.join(&file_name);
 
@@ -208,7 +314,7 @@ pub(crate) fn run(options: &ChildOptions) -> Result<()> {
         let target_cstr = CString::new(target.to_str().unwrap())
             .with_context(|| format!("failed to create CString for {}", target.display()))?;
 
-        if let Err(e) = tree_fd.attach_to(AT_FDCWD, &target_cstr, 0) {
+        if let Err(e) = tree_fd.attach_to(None, &target_cstr, 0) {
             warn!("Failed to attach tree to {:?}: {}", target, e);
         }
     }
@@ -265,14 +371,12 @@ pub(crate) fn run(options: &ChildOptions) -> Result<()> {
 
     // Send ready signal + PTY fd + daemon socket fd to parent
     let ready_msg = b"R";
-    let pty_file = unsafe { File::from_raw_fd(pty_master.as_raw_fd()) };
-    let daemon_file = unsafe { File::from_raw_fd(daemon_sock.as_raw_fd()) };
-    let res = options
+    let pty_fd = pty_master.as_fd();
+    let daemon_fd = daemon_sock.as_fd();
+    options
         .socket
-        .send(&[ready_msg], &[&pty_file, &daemon_file]);
-    let _ = pty_file.into_raw_fd();
-    let _ = daemon_file.into_raw_fd();
-    res.context("failed to send ready signal, pty fd, and daemon socket fd to parent")?;
+        .send(&[ready_msg], &[&pty_fd, &daemon_fd])
+        .context("failed to send ready signal, pty fd, and daemon socket fd to parent")?;
 
     // Step 11: Change to base_dir
     if let Err(e) = env::set_current_dir(&base_dir) {

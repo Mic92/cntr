@@ -14,7 +14,7 @@ use crate::ipc;
 use crate::pty;
 use crate::result::Result;
 
-/// Parent process logic for mount API attach (T017, T030, T031)
+/// Parent process logic for mount API attach
 ///
 /// The parent stays in the host namespace and:
 /// 1. Waits for child to assemble mount hierarchy and signal completion
@@ -51,7 +51,7 @@ pub(crate) fn run(child_pid: Pid, process_status: &ProcStatus, socket: &ipc::Soc
         daemon::DaemonSocket::from_raw_fd(daemon_fd.into_raw_fd(), process_status.clone())
     };
 
-    // Step 5: Main event loop - forward PTY and handle exec requests (T031)
+    // Step 5: Main event loop - forward PTY and handle exec requests
     // This handles:
     // - Terminal I/O forwarding
     // - Daemon socket connections (exec requests)
