@@ -281,7 +281,7 @@ pub(crate) fn run(options: &ChildOptions) -> Result<()> {
         }
 
         let source = entry.path();
-        let source_cstr = CString::new(source.to_str().unwrap())
+        let source_cstr = CString::new(source.as_os_str().as_bytes())
             .with_context(|| format!("failed to create CString for {}", source.display()))?;
 
         // Capture this entry's tree (includes all submounts)
@@ -313,7 +313,7 @@ pub(crate) fn run(options: &ChildOptions) -> Result<()> {
             let _ = std::fs::File::create(&target);
         }
 
-        let target_cstr = CString::new(target.to_str().unwrap())
+        let target_cstr = CString::new(target.as_os_str().as_bytes())
             .with_context(|| format!("failed to create CString for {}", target.display()))?;
 
         if let Err(e) = tree_fd.attach_to(None, &target_cstr, 0) {

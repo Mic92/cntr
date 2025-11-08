@@ -37,9 +37,8 @@ pub(crate) fn supported_namespaces() -> Result<HashSet<String>> {
 impl Kind {
     pub(crate) fn open(&'static self, pid: unistd::Pid) -> Result<Namespace> {
         let buf = self.path(pid);
-        let path = buf.to_str().unwrap();
-        let file = File::open(path)
-            .with_context(|| format!("failed to open namespace file '{}'", path))?;
+        let file = File::open(&buf)
+            .with_context(|| format!("failed to open namespace file '{}'", buf.display()))?;
         Ok(Namespace { kind: self, file })
     }
 
