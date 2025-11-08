@@ -82,7 +82,7 @@ fn print_help() {
 }
 
 /// Parse attach command arguments
-fn parse_attach_args<I>(mut args: I) -> Result<(), Box<dyn std::error::Error>>
+fn parse_attach_args<I>(mut args: I) -> Result<std::process::ExitCode, Box<dyn std::error::Error>>
 where
     I: Iterator<Item = String>,
 {
@@ -101,11 +101,11 @@ where
         match arg.as_str() {
             "-h" | "--help" => {
                 print_attach_help();
-                std::process::exit(0);
+                return Ok(std::process::ExitCode::SUCCESS);
             }
             "-V" | "--version" => {
                 eprintln!("cntr {}", VERSION);
-                std::process::exit(0);
+                return Ok(std::process::ExitCode::SUCCESS);
             }
             "-t" | "--type" => {
                 let types_str = args.next().ok_or("--type requires an argument")?;
@@ -158,11 +158,11 @@ where
     };
 
     attach(&options)?;
-    Ok(())
+    Ok(std::process::ExitCode::SUCCESS)
 }
 
 /// Parse exec command arguments
-fn parse_exec_args<I>(mut args: I) -> Result<(), Box<dyn std::error::Error>>
+fn parse_exec_args<I>(mut args: I) -> Result<std::process::ExitCode, Box<dyn std::error::Error>>
 where
     I: Iterator<Item = String>,
 {
@@ -180,11 +180,11 @@ where
         match arg.as_str() {
             "-h" | "--help" => {
                 print_exec_help();
-                std::process::exit(0);
+                return Ok(std::process::ExitCode::SUCCESS);
             }
             "-V" | "--version" => {
                 eprintln!("cntr {}", VERSION);
-                std::process::exit(0);
+                return Ok(std::process::ExitCode::SUCCESS);
             }
             "-t" | "--type" => {
                 let types_str = args.next().ok_or("--type requires an argument")?;
@@ -221,10 +221,10 @@ where
 
     exec::exec(&container_name, &container_types, command, arguments)?;
 
-    Ok(())
+    Ok(std::process::ExitCode::SUCCESS)
 }
 
-pub fn run_with_args<I, T>(args: I) -> Result<(), Box<dyn std::error::Error>>
+pub fn run_with_args<I, T>(args: I) -> Result<std::process::ExitCode, Box<dyn std::error::Error>>
 where
     I: IntoIterator<Item = T>,
     T: Into<std::ffi::OsString> + Clone,
@@ -252,11 +252,11 @@ where
         "exec" => parse_exec_args(args_iter),
         "help" | "-h" | "--help" => {
             print_help();
-            Ok(())
+            Ok(std::process::ExitCode::SUCCESS)
         }
         "version" | "-V" | "--version" => {
             eprintln!("cntr {}", VERSION);
-            Ok(())
+            Ok(std::process::ExitCode::SUCCESS)
         }
         _ => Err(format!("unknown subcommand: {}", subcommand).into()),
     }

@@ -2,9 +2,12 @@ extern crate cntr;
 
 use std::{env, process};
 
-fn main() {
-    if let Err(e) = cntr::cli::run_with_args(env::args_os()) {
-        eprintln!("{}", e);
-        process::exit(1);
+fn main() -> process::ExitCode {
+    match cntr::cli::run_with_args(env::args_os()) {
+        Ok(code) => code,
+        Err(e) => {
+            eprintln!("{}", e);
+            process::ExitCode::FAILURE
+        }
     }
 }
