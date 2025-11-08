@@ -3,11 +3,46 @@
 Say no to `$ apt install vim` in containers!
 `cntr` is a replacement for `docker exec` that brings all your developers tools with you.
 This is done by mounting the file system from one container or the host into the target container
-by creating a nested container with the help of a FUSE filesystem.
+by creating a nested container with the help of the Linux mount API.
 This allows to ship minimal runtime image in production and limit the surface for exploits.
+
+**Requirements**: Linux kernel 6.8 or later (uses fsopen/fsmount mount API).
 
 Cntr was also published in [Usenix ATC 2018](https://www.usenix.org/conference/atc18/presentation/thalheim).
 See [bibtex](#bibtex) for citation.
+
+**Note:** The academic paper describes the original FUSE-based architecture.
+As of version 1.6.0, cntr has been rewritten to use the Linux mount API instead of FUSE,
+significantly improving performance and security while maintaining the same user interface and capabilities.
+
+## What you get
+
+```mermaid
+graph TB
+    User([User runs: cntr attach container_id])
+
+    User -->|attach| Shell
+
+    subgraph Shell["Your Shell Inside Container"]
+        HostTools["✓ Your host tools available<br/>/usr/bin/vim, /usr/bin/htop, /home/user/.config"]
+        ContainerFS["✓ Container filesystem at /var/lib/cntr/"]
+        ContainerEnv["✓ Container environment<br/>network, PIDs, hostname"]
+        Exec["✓ Run container commands via cntr exec"]
+    end
+
+    Shell -.->|shares namespace| Container["Running Container<br/>(unaffected)"]
+
+    style Shell fill:#e8f5e9
+    style User fill:#e3f2fd
+    style Container fill:#fff3e0
+```
+
+**What this means for you:**
+- Use your familiar tools (vim, gdb, strace) even if they're not in the container
+- Access container files at `/var/lib/cntr/etc/`, `/var/lib/cntr/var/`, etc.
+- Same network, process tree, and environment as the container
+- Original container keeps running normally - your changes only affect your session
+- Run native container commands with `cntr exec`
 
 ## Demo
 
@@ -22,7 +57,6 @@ In this two minute recording you learn all the basics of cntr:
   * podman
   * LXC
   * LXD
-  * rkt
   * systemd-nspawn
   * containerd
 - For other container engines cntr also takes process ids (PIDs) instead of container names.
@@ -30,6 +64,9 @@ In this two minute recording you learn all the basics of cntr:
 ## Installation
 
 Cntr by design is only able to run on Linux.
+
+**System Requirements:**
+- Linux kernel 6.8 or later
 
 ### Pre-build static-linked binary
 
@@ -64,16 +101,16 @@ For offline builds we also provided a tarball with all dependencies bundled
 At a high-level cntr provides two subcommands: `attach` and `exec`:
 
 - `attach`: Allows you to attach to a container with your own native shell/commands.
-  Cntr will mount the container at `/var/lib/cntr`.
+  Cntr will mount the container at `/var/lib/cntr` (configurable via `CNTR_BASE_DIR` environment variable).
   The container itself will run unaffected as the mount changes are not visible to container processes.
   - Example: `cntr attach <container_id>` where `container_id` can be a
     container identifier or process id (see examples below).
-- `exec`: Once you are in the container, you can also run commands from the
-  container filesystem itself. Since those might need their native mount layout
-  at `/` instead of `/var/lib/cntr`, cntr provides `exec` subcommand to chroot to container
-  again and also resets the environment variables that might have been changed
-  by the shell.
-  - Example: `cntr exec <command>` where `command` is an executable in the container
+- `exec`: Run commands from the container filesystem.
+  Can be used in two ways:
+  - From within an active `attach` session: `cntr exec <command>` to execute commands in the container's native environment
+  - Direct access mode: `cntr exec <container_id> -- <command>` to execute commands without an attach session
+  Since container commands might need their native mount layout at `/` instead of `/var/lib/cntr`,
+  `exec` chroots to the container and resets environment variables that might have been changed by the shell.
 
 **Note**: Cntr needs to run on the same host as the container. It does not work
 if the container is running in a virtual machine while cntr is running on the
@@ -81,63 +118,71 @@ hypervisor.
 
 ```console
 $ cntr --help
-Cntr 1.5.1
-Jörg Thalheim <joerg@thalheim.io>
-Enter or executed in container
+cntr 1.6.1
+by Jörg Thalheim <joerg@thalheim.io>
+
+Enter or execute in container
 
 USAGE:
     cntr <SUBCOMMAND>
 
-FLAGS:
-    -h, --help       Prints help information
-    -V, --version    Prints version information
-
 SUBCOMMANDS:
-    attach    Enter container
-    exec      Execute command in container filesystem
-    help      Prints this message or the help of the given subcommand(s)
+    attach    Enter container with mount overlay
+    exec      Execute command in container
+    help      Print help
+    version   Print version
 ```
 
 ```console
 $ cntr attach --help
-cntr-attach 1.5.1
-Jörg Thalheim <joerg@thalheim.io>
-Enter container
+cntr-attach 1.6.1
+by Jörg Thalheim <joerg@thalheim.io>
 
 USAGE:
-    cntr attach [OPTIONS] <id> [command]...
-
-FLAGS:
-    -h, --help    Prints help information
-
-OPTIONS:
-        --effective-user <EFFECTIVE_USER>    effective username that should be owner of new created files on the host
-    -t, --type <TYPE>                        Container types to try (sperated by ','). [default: all but command]
-                                             [possible values: process_id, rkt, podman, docker, nspawn, lxc, lxd,
-                                             containerd, command]
+    cntr attach [OPTIONS] <CONTAINER_ID> [-- <COMMAND>...]
 
 ARGS:
-    <id>            container id, container name or process id
-    <command>...    Command and its arguments to execute after attach. Consider prepending it with '-- ' to prevent
-                    parsing of '-x'-like flags. [default: $SHELL]
+    <CONTAINER_ID>    Container ID, name, or process ID
+
+OPTIONS:
+    -t, --type <TYPES>           Container types to try (comma-separated)
+                                 [possible: process-id,podman,docker,nspawn,lxc,lxd,containerd,command,kubernetes]
+                                 [default: all but command]
+    --effective-user <USER>      Effective username for new files on host
+    -h, --help                   Print help
+    -V, --version                Print version
+
+COMMAND:
+    Command and arguments to execute [default: $SHELL]
+    Use '--' to separate command from options
 ```
 
 ```console
 $ cntr exec --help
-cntr-exec 1.5.1
-Jörg Thalheim <joerg@thalheim.io>
-Execute command in container filesystem
+cntr-exec 1.6.1
+by Jörg Thalheim <joerg@thalheim.io>
 
 USAGE:
-    cntr exec [command]...
-
-FLAGS:
-    -h, --help       Prints help information
-    -V, --version    Prints version information
+    cntr exec [OPTIONS] [-- <COMMAND>...]                 # From inside attach
+    cntr exec [OPTIONS] <CONTAINER_ID> [-- <COMMAND>...]  # Direct mode
 
 ARGS:
-    <command>...    Command and its arguments to execute after attach. Consider prepending it with '-- ' to prevent
-                    parsing of '-x'-like flags. [default: $SHELL]
+    <CONTAINER_ID>    Container ID, name, or process ID (for direct mode)
+
+OPTIONS:
+    -t, --type <TYPES>           Container types to try (comma-separated)
+                                 [possible: process-id,podman,docker,nspawn,lxc,lxd,containerd,command,kubernetes]
+                                 [default: all but command]
+    -h, --help                   Print help
+    -V, --version                Print version
+
+COMMAND:
+    Command and arguments to execute [default: $SHELL]
+    Use '--' to separate command from options
+
+MODES:
+    Daemon mode:  Run from inside 'cntr attach' to execute in container
+    Direct mode:  Provide container ID to directly access container
 ```
 
 ### Docker
@@ -241,46 +286,6 @@ SUPPORT_URL="http://help.ubuntu.com/"
 BUG_REPORT_URL="http://bugs.launchpad.net/ubuntu/"
 VERSION_CODENAME=xenial
 UBUNTU_CODENAME=xenial
-```
-
-### rkt
-
-1: Find out the container uuid:
-
-```console
-$ rkt run --interactive=true docker://busybox
-$ rkt list
-UUID            APP     IMAGE NAME                                      STATE   CREATED         STARTED         NETWORKS
-c2d2e87e        busybox registry-1.docker.io/library/busybox:latest     running 6 minutes ago   6 minutes ago   default:ip4=172.16.28.3
-```
-
-2: Attach with cntr
-
-```console
-# make sure your container is still running!
-$ cntr attach c2d2e87e
-# Finally not the old ugly top!
-[gen0@rkt-c2d2e87e-e798-4341-ae93-26f6cbb7c017:/var/lib/cntr]# htop
-...
-```
-
-With cntr you can also debug stage1 of rkt - even there is no support from rkt itself.
-
-```console
-$ ps aux | grep stage1
-joerg    13546  0.0  0.0 120808  1608 pts/12   S+   11:10   0:00 grep --binary-files=without-match --directories=skip --color=auto stage1
-root     22232  0.0  0.0  54208  2656 pts/7    S+   10:54   0:00 stage1/rootfs/usr/lib/ld-linux-x86-64.so.2 stage1/rootfs/usr/bin/systemd-nspawn --boot --notify-ready=yes --register=true --link-journal=try-guest --quiet --uuid=c2d2e87e-e798-4341-ae93-26f6cbb7c017 --machine=rkt-c2d2e87e-e798-4341-ae93-26f6cbb7c017 --directory=stage1/rootfs --capability=CAP_AUDIT_WRITE,CAP_CHOWN,CAP_DAC_OVERRIDE,CAP_FSETID,CAP_FOWNER,CAP_KILL,CAP_MKNOD,CAP_NET_RAW,CAP_NET_BIND_SERVICE,CAP_SETUID,CAP_SETGID,CAP_SETPCAP,CAP_SETFCAP,CAP_SYS_CHROOT -- --default-standard-output=tty --log-target=null --show-status=0
-```
-
-Therefore we use the process id instead of the container uuid:
-
-```console
-$ cntr attach 22232
-# new and exiting territory!
-[root@turingmachine:/var/lib/cntr]# mount | grep pods
-sysfs on /var/lib/cntr/var/lib/rkt/pods/run/c2d2e87e-e798-4341-ae93-26f6cbb7c017/stage1/rootfs/sys type sysfs (ro,nosuid,nodev,noexec,relatime)
-tmpfs on /var/lib/cntr/var/lib/rkt/pods/run/c2d2e87e-e798-4341-ae93-26f6cbb7c017/stage1/rootfs/sys/fs/cgroup type tmpfs (ro,nosuid,nodev,noexec,mode=755)
-cgroup on /var/lib/cntr/var/lib/rkt/pods/run/c2d2e87e-e798-4341-ae93-26f6cbb7c017/stage1/rootfs/sys/fs/cgroup/memory type cgroup (ro,nosuid,nodev,noexec,relatime,memory)
 ```
 
 ### systemd-nspawn
@@ -393,6 +398,21 @@ $ zfs set acltype=posixacl zpool/media
 $ zfs set xattr=sa zpool/media              #  optional, but encouraged for best performance
 ```
 
+### Custom Mount Directory
+
+By default, cntr mounts containers at `/var/lib/cntr`. You can customize this location using the `CNTR_BASE_DIR` environment variable:
+
+```console
+$ export CNTR_BASE_DIR=/custom/path
+$ cntr attach mycontainer
+[root@container:/custom/path]#
+```
+
+This is particularly useful for:
+- Testing with temporary directories
+- Systems where `/var/lib/cntr` is not suitable
+- Isolating multiple cntr sessions
+
 # How it works
 
 Cntr is container-agnostic: Instead of interfacing with container engines, it
@@ -407,14 +427,6 @@ Cntr inherits the following container properties:
   * User/group ids
   * Environment variables
   * The following files: /etc/passwd, /etc/hostname, /etc/hosts, /etc/resolv.conf
-
-Under the hood it spawns a shell or user defined program that inherits the full
-context of the container and mount itself as a fuse filesystem.
-
-We extensively evaluated the correctness and performance of cntr's filesystem
-using [xfstests](https://github.com/Mic92/xfstests-cntr) and a wide range of
-filesystem performance benchmarks (iozone, pgbench, dbench, fio, fs-mark,
-postmark, ...)
 
 # Related projects
 - [nsenter](https://manpages.debian.org/testing/manpages-de/nsenter.1.de.html)
