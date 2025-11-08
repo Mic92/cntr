@@ -7,7 +7,7 @@ use std::os::unix::prelude::*;
 
 use crate::result::Result;
 
-pub struct Socket {
+pub(crate) struct Socket {
     fd: File,
 }
 
@@ -17,7 +17,7 @@ impl Socket {
     /// Send file descriptors using SCM_RIGHTS
     ///
     /// Works with any type implementing AsRawFd (File, OwnedFd, etc.)
-    pub fn send<F: AsRawFd>(&self, messages: &[&[u8]], files: &[&F]) -> Result<()> {
+    pub(crate) fn send<F: AsRawFd>(&self, messages: &[&[u8]], files: &[&F]) -> Result<()> {
         let iov: Vec<IoSlice> = messages.iter().map(|m| IoSlice::new(m)).collect();
         let fds: Vec<RawFd> = files.iter().map(|f| f.as_raw_fd()).collect();
         let cmsg = if fds.is_empty() {
@@ -34,7 +34,7 @@ impl Socket {
     /// Receive file descriptors using SCM_RIGHTS
     ///
     /// Works with any type implementing FromRawFd (File, OwnedFd, etc.)
-    pub fn receive<F: FromRawFd>(
+    pub(crate) fn receive<F: FromRawFd>(
         &self,
         message_length: usize,
         cmsgspace: &mut Vec<u8>,
@@ -83,7 +83,7 @@ impl Socket {
     }
 }
 
-pub fn socket_pair() -> Result<(Socket, Socket)> {
+pub(crate) fn socket_pair() -> Result<(Socket, Socket)> {
     let res = socketpair(
         AddressFamily::Unix,
         SockType::Datagram,

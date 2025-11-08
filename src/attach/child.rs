@@ -25,13 +25,13 @@ use nix::sched::{CloneFlags, unshare};
 
 /// Options for child process
 pub(crate) struct ChildOptions<'a> {
-    pub command: Option<String>,
-    pub arguments: Vec<String>,
-    pub process_status: ProcStatus,
-    pub socket: &'a ipc::Socket,
-    pub home: Option<PathBuf>,
-    pub uid: Uid,
-    pub gid: Gid,
+    pub(crate) command: Option<String>,
+    pub(crate) arguments: Vec<String>,
+    pub(crate) process_status: ProcStatus,
+    pub(crate) socket: &'a ipc::Socket,
+    pub(crate) home: Option<PathBuf>,
+    pub(crate) uid: Uid,
+    pub(crate) gid: Gid,
 }
 
 /// Child process logic for mount API attach (T018)

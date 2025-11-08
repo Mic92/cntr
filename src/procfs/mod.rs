@@ -10,19 +10,17 @@ use std::path::PathBuf;
 
 use crate::result::Result;
 
-mod unix;
-
-pub fn get_path() -> PathBuf {
+pub(crate) fn get_path() -> PathBuf {
     PathBuf::from(&env::var_os("CNTR_PROC").unwrap_or_else(|| OsString::from("/proc")))
 }
 
 #[derive(Clone)]
-pub struct ProcStatus {
-    pub global_pid: Pid,
-    pub effective_capabilities: c_ulong,
+pub(crate) struct ProcStatus {
+    pub(crate) global_pid: Pid,
+    pub(crate) effective_capabilities: c_ulong,
 }
 
-pub fn status(target_pid: Pid) -> Result<ProcStatus> {
+pub(crate) fn status(target_pid: Pid) -> Result<ProcStatus> {
     let path = get_path().join(target_pid.to_string()).join("status");
     let file = File::open(&path)
         .with_context(|| format!("failed to open process status file {}", path.display()))?;

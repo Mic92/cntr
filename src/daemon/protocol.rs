@@ -7,9 +7,9 @@ use crate::result::Result;
 #[derive(Debug, Clone)]
 pub(crate) struct ExecRequest {
     /// Command to execute (None means use default shell)
-    pub command: Option<String>,
+    pub(crate) command: Option<String>,
     /// Arguments to pass to the command
-    pub arguments: Vec<String>,
+    pub(crate) arguments: Vec<String>,
 }
 
 /// Response from daemon to client after processing exec request
@@ -23,7 +23,7 @@ pub(crate) enum ExecResponse {
 
 impl ExecRequest {
     /// Create a new exec request
-    pub fn new(command: Option<String>, arguments: Vec<String>) -> Self {
+    pub(crate) fn new(command: Option<String>, arguments: Vec<String>) -> Self {
         ExecRequest { command, arguments }
     }
 
@@ -38,7 +38,7 @@ impl ExecRequest {
     /// - for each argument:
     ///   - 4 bytes: argument length (u32, little-endian)
     ///   - N bytes: argument string (UTF-8)
-    pub fn serialize<W: Write>(&self, writer: &mut W) -> Result<()> {
+    pub(crate) fn serialize<W: Write>(&self, writer: &mut W) -> Result<()> {
         // Write command (Option<String>)
         if let Some(ref cmd) = self.command {
             writer
@@ -81,7 +81,7 @@ impl ExecRequest {
     }
 
     /// Deserialize a request from a byte stream
-    pub fn deserialize<R: Read>(reader: &mut R) -> Result<Self> {
+    pub(crate) fn deserialize<R: Read>(reader: &mut R) -> Result<Self> {
         // Read has_command flag
         let mut has_command = [0u8; 1];
         reader
@@ -144,7 +144,7 @@ impl ExecResponse {
     /// - if Error:
     ///   - 4 bytes: error message length (u32, little-endian)
     ///   - N bytes: error message string (UTF-8)
-    pub fn serialize<W: Write>(&self, writer: &mut W) -> Result<()> {
+    pub(crate) fn serialize<W: Write>(&self, writer: &mut W) -> Result<()> {
         match self {
             ExecResponse::Ok => {
                 writer
@@ -171,7 +171,7 @@ impl ExecResponse {
     }
 
     /// Deserialize a response from a byte stream
-    pub fn deserialize<R: Read>(reader: &mut R) -> Result<Self> {
+    pub(crate) fn deserialize<R: Read>(reader: &mut R) -> Result<Self> {
         // Read response type
         let mut response_type = [0u8; 1];
         reader

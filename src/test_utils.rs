@@ -9,7 +9,7 @@ use nix::unistd::{ForkResult, fork};
 /// The function runs in a forked child process, which waits for completion.
 pub fn run_in_userns<F>(test_fn: F)
 where
-    F: FnOnce() -> (),
+    F: FnOnce(),
 {
     match unsafe { fork() } {
         Ok(ForkResult::Child) => {

@@ -5,7 +5,7 @@
 //! in the standard library or libc crate.
 
 pub mod capability;
-pub mod mount_api;
-pub mod prctl;
+pub(crate) mod mount_api;
+pub(crate) mod prctl;
 
-pub use prctl::prctl;
+pub(crate) use prctl::prctl;

@@ -9,8 +9,9 @@ use sigstr;
 use std::ptr;
 use types::Result;
 
-pub fn install(pid: libc::pid_t) -> Result<()> {
-    let status = waitpid(pid, None).context("failed to wait for process, it may have died prematurely")?;
+pub(crate) fn install(pid: libc::pid_t) -> Result<()> {
+    let status =
+        waitpid(pid, None).context("failed to wait for process, it may have died prematurely")?;
     match status {
         WaitStatus::Exited(_, rc) => {
             bail!("process exited prematurely with {}", rc);
@@ -44,11 +45,11 @@ pub fn install(pid: libc::pid_t) -> Result<()> {
     Ok(())
 }
 
-pub fn me() -> nix::Result<libc::c_long> {
+pub(crate) fn me() -> nix::Result<libc::c_long> {
     ptrace(PTRACE_TRACEME, 0, ptr::null_mut(), ptr::null_mut())
 }
 
-pub fn dispatch() -> Result<()> {
+pub(crate) fn dispatch() -> Result<()> {
     loop {
         match wait() {
             Err(nix::Error::Sys(errno::ECHILD)) => return Ok(()),

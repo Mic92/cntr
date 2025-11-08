@@ -201,7 +201,7 @@ extern "C" fn handle_sigwinch(_: i32) {
 
 static mut PTY_MASTER_FD: i32 = -1;
 
-pub fn forward(pty: &File) -> Result<()> {
+pub(crate) fn forward(pty: &File) -> Result<()> {
     let mut raw_tty = None;
 
     if unsafe { libc::isatty(libc::STDIN_FILENO) } != 0 {
@@ -268,8 +268,9 @@ fn resize_pty(pty_master: RawFd) {
     }
 }
 
-pub fn open_ptm() -> Result<PtyMaster> {
-    let pty_master = posix_openpt(OFlag::O_RDWR).context("failed to open pty with posix_openpt()")?;
+pub(crate) fn open_ptm() -> Result<PtyMaster> {
+    let pty_master =
+        posix_openpt(OFlag::O_RDWR).context("failed to open pty with posix_openpt()")?;
 
     grantpt(&pty_master).context("failed to grant pty access with grantpt()")?;
     unlockpt(&pty_master).context("failed to unlock pty with unlockpt()")?;
@@ -277,7 +278,7 @@ pub fn open_ptm() -> Result<PtyMaster> {
     Ok(pty_master)
 }
 
-pub fn attach_pts(pty_master: &PtyMaster) -> nix::Result<()> {
+pub(crate) fn attach_pts(pty_master: &PtyMaster) -> nix::Result<()> {
     let pts_name = ptsname_r(pty_master)?;
 
     unistd::setsid()?;

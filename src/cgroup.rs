@@ -87,7 +87,7 @@ fn cgroup_path(cgroup: &str, mountpoints: &HashMap<String, String>) -> Option<Pa
 // TODO add implementation for unified cgroups, cgmanager, lxcfs
 // -> on the long run everything will be done with unified cgroups hopefully
 
-pub fn move_to(pid: unistd::Pid, target_pid: unistd::Pid) -> Result<()> {
+pub(crate) fn move_to(pid: unistd::Pid, target_pid: unistd::Pid) -> Result<()> {
     let cgroups = get_cgroups(target_pid)
         .with_context(|| format!("failed to get cgroups for PID {}", target_pid))?;
     let mountpoints = get_mounts().context("failed to get cgroup mountpoints")?;

@@ -4,18 +4,18 @@ use nix::unistd::{ForkResult, Pid, fork, pause};
 use std::{env, path::Path};
 
 // Re-export from library
-pub use cntr::test_utils::run_in_userns;
+pub(crate) use cntr::test_utils::run_in_userns;
 
 /// Container info with cleanup handle
-pub struct FakeContainer {
-    pub pid: Pid,
+pub(crate) struct FakeContainer {
+    pub(crate) pid: Pid,
     _temp_dir: tempfile::TempDir,
 }
 
 // TempDir auto-cleans on drop, no manual Drop needed
 
 /// Get the container PID and wait for it to be ready
-pub fn start_fake_container() -> FakeContainer {
+pub(crate) fn start_fake_container() -> FakeContainer {
     use nix::unistd::pipe;
     use std::io::Read;
     use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd};

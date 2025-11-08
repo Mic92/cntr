@@ -17,7 +17,7 @@ enum LSMKind {
 }
 
 impl LSMKind {
-    pub fn profile_path(&self, pid: Option<Pid>) -> PathBuf {
+    pub(crate) fn profile_path(&self, pid: Option<Pid>) -> PathBuf {
         match *self {
             LSMKind::AppArmor => {
                 let process = pid.map_or(String::from("self"), |p| p.to_string());
@@ -31,7 +31,7 @@ impl LSMKind {
     }
 }
 
-pub struct LSMProfile {
+pub(crate) struct LSMProfile {
     label: String,
     kind: LSMKind,
     label_file: File,
@@ -92,7 +92,7 @@ fn read_proclabel(path: &Path, kind: &LSMKind) -> Result<String> {
     }
 }
 
-pub fn read_profile(pid: Pid) -> Result<Option<LSMProfile>> {
+pub(crate) fn read_profile(pid: Pid) -> Result<Option<LSMProfile>> {
     let kind = check_type()?;
 
     if let Some(kind) = kind {
@@ -123,7 +123,7 @@ pub fn read_profile(pid: Pid) -> Result<Option<LSMProfile>> {
 }
 
 impl LSMProfile {
-    pub fn inherit_profile(mut self) -> Result<()> {
+    pub(crate) fn inherit_profile(mut self) -> Result<()> {
         let attr = match self.kind {
             LSMKind::AppArmor => format!("changeprofile {}", self.label),
             LSMKind::SELinux => self.label,
@@ -135,7 +135,7 @@ impl LSMProfile {
         Ok(())
     }
 
-    pub fn mount_label(&self, pid: Pid) -> Result<Option<String>> {
+    pub(crate) fn mount_label(&self, pid: Pid) -> Result<Option<String>> {
         match self.kind {
             LSMKind::AppArmor => Ok(None),
             LSMKind::SELinux => {

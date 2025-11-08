@@ -1,5 +1,4 @@
-pub use container_pid::{AVAILABLE_CONTAINER_TYPES, lookup_container_type};
-pub use logging::enable_debug_log;
+pub(crate) use container_pid::lookup_container_type;
 
 pub mod test_utils;
 
@@ -12,15 +11,13 @@ mod container_setup;
 mod daemon;
 mod exec;
 mod ipc;
-mod logging;
 mod lsm;
 mod mount_context;
-pub mod namespace;
+pub(crate) mod namespace;
 mod procfs;
 mod pty;
 mod result;
 pub mod syscalls;
-pub use attach::{AttachOptions, attach};
-pub use exec::{exec_daemon, exec_direct};
+pub(crate) use attach::{AttachOptions, attach};
 
 pub mod cli;

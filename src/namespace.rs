@@ -9,21 +9,19 @@ use std::path::PathBuf;
 use crate::procfs;
 use crate::result::Result;
 
-pub const MOUNT: Kind = Kind { name: "mnt" };
-pub const UTS: Kind = Kind { name: "uts" };
-pub const USER: Kind = Kind { name: "user" };
-pub const PID: Kind = Kind { name: "pid" };
-pub const NET: Kind = Kind { name: "net" };
-pub const CGROUP: Kind = Kind { name: "cgroup" };
-pub const IPC: Kind = Kind { name: "ipc" };
+pub(crate) const MOUNT: Kind = Kind { name: "mnt" };
+pub(crate) const UTS: Kind = Kind { name: "uts" };
+pub(crate) const USER: Kind = Kind { name: "user" };
+pub(crate) const PID: Kind = Kind { name: "pid" };
+pub(crate) const NET: Kind = Kind { name: "net" };
+pub(crate) const CGROUP: Kind = Kind { name: "cgroup" };
+pub(crate) const IPC: Kind = Kind { name: "ipc" };
 
-pub static ALL: &[Kind] = &[UTS, CGROUP, PID, NET, IPC, MOUNT, USER];
-
-pub struct Kind {
-    pub name: &'static str,
+pub(crate) struct Kind {
+    pub(crate) name: &'static str,
 }
 
-pub fn supported_namespaces() -> Result<HashSet<String>> {
+pub(crate) fn supported_namespaces() -> Result<HashSet<String>> {
     let mut namespaces = HashSet::new();
     let entries = fs::read_dir(PathBuf::from("/proc/self/ns"))
         .context("failed to open directory /proc/self/ns")?;
@@ -37,7 +35,7 @@ pub fn supported_namespaces() -> Result<HashSet<String>> {
 }
 
 impl Kind {
-    pub fn open(&'static self, pid: unistd::Pid) -> Result<Namespace> {
+    pub(crate) fn open(&'static self, pid: unistd::Pid) -> Result<Namespace> {
         let buf = self.path(pid);
         let path = buf.to_str().unwrap();
         let file = File::open(path)
@@ -45,11 +43,7 @@ impl Kind {
         Ok(Namespace { kind: self, file })
     }
 
-    pub fn namespace_from_file(&'static self, file: File) -> Namespace {
-        Namespace { kind: self, file }
-    }
-
-    pub fn is_same(&self, pid: unistd::Pid) -> bool {
+    pub(crate) fn is_same(&self, pid: unistd::Pid) -> bool {
         let path = self.path(pid);
         match fs::read_link(path) {
             Ok(dest) => match fs::read_link(self.own_path()) {
@@ -71,18 +65,15 @@ impl Kind {
     }
 }
 
-pub struct Namespace {
-    pub kind: &'static Kind,
+pub(crate) struct Namespace {
+    pub(crate) kind: &'static Kind,
     file: File,
 }
 
 impl Namespace {
-    pub fn apply(&self) -> Result<()> {
+    pub(crate) fn apply(&self) -> Result<()> {
         sched::setns(self.file.as_fd(), sched::CloneFlags::empty())
             .with_context(|| format!("failed to set namespace '{}'", self.kind.name))?;
         Ok(())
-    }
-    pub fn file(&self) -> &File {
-        &self.file
     }
 }

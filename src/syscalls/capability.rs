@@ -74,27 +74,3 @@ fn probe_mount_api() -> bool {
         }
     }
 }
-
-/// Require mount API support or exit with an error
-///
-/// This function checks for mount API support and terminates the program
-/// with a clear error message if the required syscalls are not available.
-///
-/// # Panics
-/// Panics if the mount API is not available on this kernel
-pub fn require_mount_api() {
-    if !has_mount_api() {
-        eprintln!("ERROR: This kernel does not support the mount API syscalls.");
-        eprintln!("Required: Linux 5.2+ for fsopen/fsmount/move_mount");
-        eprintln!("          Linux 6.8+ for statmount/listmount");
-        eprintln!();
-        eprintln!("Your kernel version:");
-        if let Ok(version) = std::fs::read_to_string("/proc/sys/kernel/osrelease") {
-            eprintln!("  {}", version.trim());
-        }
-        eprintln!();
-        eprintln!("cntr requires a modern kernel with mount API support.");
-        eprintln!("Please upgrade your kernel or use an older version of cntr with FUSE support.");
-        std::process::exit(1);
-    }
-}

@@ -6,8 +6,8 @@ use std::io::Read;
 use crate::result::Result;
 use crate::syscalls::prctl;
 
-pub const CAP_SYS_CHROOT: u32 = 18;
-pub const CAP_SYS_PTRACE: u32 = 19;
+pub(crate) const CAP_SYS_CHROOT: u32 = 18;
+pub(crate) const CAP_SYS_PTRACE: u32 = 19;
 
 fn last_capability() -> Result<c_ulong> {
     let path = "/proc/sys/kernel/cap_last_cap";
@@ -25,7 +25,7 @@ fn last_capability() -> Result<c_ulong> {
     })
 }
 
-pub fn drop(inheritable_capabilities: c_ulong) -> Result<()> {
+pub(crate) fn drop(inheritable_capabilities: c_ulong) -> Result<()> {
     // we need chroot at the moment for `exec` command
     let inheritable = inheritable_capabilities | (1 << CAP_SYS_CHROOT) | (1 << CAP_SYS_PTRACE);
     let last_capability =

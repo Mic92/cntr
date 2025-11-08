@@ -29,9 +29,8 @@ fn find_mount_options(p: Pid) -> Result<String> {
     bail!("did not find / in {}", path.display())
 }
 
-pub fn parse_selinux_context(p: Pid) -> Result<String> {
-    let options = find_mount_options(p)
-        .context("failed to find mount options for / filesystem")?;
+pub(crate) fn parse_selinux_context(p: Pid) -> Result<String> {
+    let options = find_mount_options(p).context("failed to find mount options for / filesystem")?;
     let needle = "context=\"";
     if let Some(index) = options.find(needle) {
         if let Some(context) = options[(index + needle.len())..].split('"').next() {

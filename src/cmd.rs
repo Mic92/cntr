@@ -15,7 +15,7 @@ use std::process::{Command, ExitStatus};
 use crate::procfs;
 use crate::result::Result;
 
-pub struct Cmd {
+pub(crate) struct Cmd {
     environment: HashMap<OsString, OsString>,
     command: String,
     arguments: Vec<String>,
@@ -49,7 +49,7 @@ fn read_environment(pid: unistd::Pid) -> Result<HashMap<OsString, OsString>> {
 }
 
 impl Cmd {
-    pub fn new(
+    pub(crate) fn new(
         command: Option<String>,
         args: Vec<String>,
         pid: unistd::Pid,
@@ -73,7 +73,7 @@ impl Cmd {
             home,
         })
     }
-    pub fn run(mut self) -> Result<ExitStatus> {
+    pub(crate) fn run(mut self) -> Result<ExitStatus> {
         let default_path =
             OsString::from("/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin");
         self.environment.insert(
@@ -93,7 +93,7 @@ impl Cmd {
         cmd.with_context(|| format!("failed to run command: {}", self.command))
     }
 
-    pub fn exec_chroot(self) -> Result<()> {
+    pub(crate) fn exec_chroot(self) -> Result<()> {
         let err = unsafe {
             Command::new(&self.command)
                 .args(self.arguments)

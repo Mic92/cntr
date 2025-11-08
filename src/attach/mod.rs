@@ -8,15 +8,15 @@ use nix::unistd::{self, ForkResult, User};
 mod child;
 mod parent;
 
-pub struct AttachOptions {
-    pub command: Option<String>,
-    pub arguments: Vec<String>,
-    pub container_name: String,
-    pub container_types: Vec<Box<dyn container_pid::Container>>,
-    pub effective_user: Option<User>,
+pub(crate) struct AttachOptions {
+    pub(crate) command: Option<String>,
+    pub(crate) arguments: Vec<String>,
+    pub(crate) container_name: String,
+    pub(crate) container_types: Vec<Box<dyn container_pid::Container>>,
+    pub(crate) effective_user: Option<User>,
 }
 
-pub fn attach(opts: &AttachOptions) -> Result<()> {
+pub(crate) fn attach(opts: &AttachOptions) -> Result<()> {
     // Verify mount API capability - REQUIRED (no FUSE fallback)
     if !capability::has_mount_api() {
         bail!(

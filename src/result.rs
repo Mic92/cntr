@@ -1,1 +1,1 @@
-pub type Result<T> = anyhow::Result<T>;
+pub(crate) type Result<T> = anyhow::Result<T>;

@@ -23,7 +23,7 @@ use crate::syscalls::capability;
 /// Arguments:
 /// - exe: Optional command to execute (None = default shell)
 /// - args: Arguments to pass to the command
-pub fn exec_daemon(exe: Option<String>, args: Vec<String>) -> Result<()> {
+pub(crate) fn exec_daemon(exe: Option<String>, args: Vec<String>) -> Result<()> {
     // Get daemon socket path (fixed location)
     let socket_path = daemon::get_socket_path();
 
@@ -154,7 +154,7 @@ pub fn exec_daemon(exe: Option<String>, args: Vec<String>) -> Result<()> {
 /// - container_types: List of container types to try
 /// - exe: Optional command to execute (None = default shell)
 /// - args: Arguments to pass to the command
-pub fn exec_direct(
+pub(crate) fn exec_direct(
     container_name: &str,
     container_types: &[Box<dyn container_pid::Container>],
     exe: Option<String>,
