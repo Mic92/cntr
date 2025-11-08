@@ -284,10 +284,19 @@ pub(crate) fn run(options: &ChildOptions) -> Result<()> {
         let source_cstr = CString::new(source.as_os_str().as_bytes())
             .with_context(|| format!("failed to create CString for {}", source.display()))?;
 
+        // Check if the source is a directory using filesystem metadata
+        let is_dir = entry.file_type().map(|ft| ft.is_dir()).unwrap_or_else(|e| {
+            warn!(
+                "Failed to get file type for {:?}, assuming non-directory: {}",
+                source, e
+            );
+            false
+        });
+
         // Capture this entry's tree (includes all submounts)
         match MountFd::open_tree_at(&source_cstr, OPEN_TREE_CLONE | AT_RECURSIVE) {
             Ok(tree_fd) => {
-                captured_trees.push((file_name, tree_fd));
+                captured_trees.push((file_name, tree_fd, is_dir));
             }
             Err(e) => {
                 warn!("Failed to capture tree for {:?}: {}", source, e);
@@ -302,15 +311,24 @@ pub(crate) fn run(options: &ChildOptions) -> Result<()> {
 
     // Attach each captured tree to base_dir
     // Note: We DON'T apply idmap to container trees - idmap was applied to host root above
-    for (file_name, tree_fd) in captured_trees {
+    for (file_name, tree_fd, is_dir) in captured_trees {
         let target = base_dir.join(&file_name);
 
-        // Create mount point
-        let is_dir = file_name.to_string_lossy() != ".exec.sock"; // Assume directories
+        // Create mount point based on the actual file type
         if is_dir {
-            let _ = std::fs::create_dir(&target);
+            if let Err(e) = std::fs::create_dir_all(&target) {
+                warn!("Failed to create directory mount point {:?}: {}", target, e);
+            }
         } else {
-            let _ = std::fs::File::create(&target);
+            // Ensure parent directory exists before creating file
+            if let Some(parent) = target.parent() {
+                if let Err(e) = std::fs::create_dir_all(parent) {
+                    warn!("Failed to create parent directory for {:?}: {}", target, e);
+                }
+            }
+            if let Err(e) = std::fs::File::create(&target) {
+                warn!("Failed to create file mount point {:?}: {}", target, e);
+            }
         }
 
         let target_cstr = CString::new(target.as_os_str().as_bytes())
