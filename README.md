@@ -106,11 +106,10 @@ At a high-level cntr provides two subcommands: `attach` and `exec`:
   - Example: `cntr attach <container_id>` where `container_id` can be a
     container identifier or process id (see examples below).
 - `exec`: Run commands from the container filesystem.
-  Can be used in two ways:
-  - From within an active `attach` session: `cntr exec <command>` to execute commands in the container's native environment
-  - Direct access mode: `cntr exec <container_id> -- <command>` to execute commands without an attach session
-  Since container commands might need their native mount layout at `/` instead of `/var/lib/cntr`,
-  `exec` chroots to the container and resets environment variables that might have been changed by the shell.
+  - Usage: `cntr exec <container_id> -- <command>`
+  - Example: `cntr exec <container_id>` where `container_id` can be a container identifier or process id
+  Since container commands might need their native mount layout at `/`,
+  `exec` chroots to the container and sets up the container's environment.
 
 **Note**: Cntr needs to run on the same host as the container. It does not work
 if the container is running in a virtual machine while cntr is running on the
@@ -163,11 +162,10 @@ cntr-exec 1.6.1
 by Jörg Thalheim <joerg@thalheim.io>
 
 USAGE:
-    cntr exec [OPTIONS] [-- <COMMAND>...]                 # From inside attach
-    cntr exec [OPTIONS] <CONTAINER_ID> [-- <COMMAND>...]  # Direct mode
+    cntr exec [OPTIONS] <CONTAINER_ID> [-- <COMMAND>...]
 
 ARGS:
-    <CONTAINER_ID>    Container ID, name, or process ID (for direct mode)
+    <CONTAINER_ID>    Container ID, name, or process ID (required)
 
 OPTIONS:
     -t, --type <TYPES>           Container types to try (comma-separated)
@@ -179,10 +177,6 @@ OPTIONS:
 COMMAND:
     Command and arguments to execute [default: $SHELL]
     Use '--' to separate command from options
-
-MODES:
-    Daemon mode:  Run from inside 'cntr attach' to execute in container
-    Direct mode:  Provide container ID to directly access container
 ```
 
 ### Docker
@@ -213,11 +207,11 @@ $ cntr attach 55a93d71b53b
 ```
 
 ...or the container name.
-Use `cntr exec` to execute container native commands (while running in the cntr shell).
+
+To execute container native commands, use `cntr exec`:
 
 ```console
-$ cntr attach boxbusy
-[root@55a93d71b53b:/var/lib/cntr]# cntr exec -- sh -c 'busybox | head -1'
+$ cntr exec boxbusy -- sh -c 'busybox | head -1'
 ```
 
 You can also use Dockerfile from this repo to build a docker container with cntr:

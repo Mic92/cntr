@@ -369,21 +369,13 @@ pub(crate) fn run(options: &ChildOptions) -> Result<()> {
     let pty_master = pty::open_ptm().context("failed to open pty master")?;
     pty::attach_pts(&pty_master).context("failed to setup pty slave")?;
 
-    // Step 10: Create daemon socket in the tmpfs overlay
-    // The socket lives at {base_dir}/.exec.sock on the tmpfs (writable)
-    // Pass the PTY master FD so daemon-executed commands can attach to it
-    let daemon_sock =
-        crate::daemon::DaemonSocket::bind(options.process_status.clone(), pty_master.as_raw_fd())
-            .context("failed to create daemon socket")?;
-
-    // Send ready signal + PTY fd + daemon socket fd to parent
+    // Step 10: Send ready signal + PTY fd to parent
     let ready_msg = b"R";
     let pty_fd = pty_master.as_fd();
-    let daemon_fd = daemon_sock.as_fd();
     options
         .socket
-        .send(&[ready_msg], &[&pty_fd, &daemon_fd])
-        .context("failed to send ready signal, pty fd, and daemon socket fd to parent")?;
+        .send(&[ready_msg], &[&pty_fd])
+        .context("failed to send ready signal and pty fd to parent")?;
 
     // Step 11: Change to base_dir
     if let Err(e) = env::set_current_dir(&base_dir) {

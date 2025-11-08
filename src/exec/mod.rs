@@ -1,160 +1,26 @@
 use anyhow::{Context, bail};
-use nix::sys::socket::{self, AddressFamily, SockFlag, SockType, UnixAddr, connect};
 use nix::sys::wait::{WaitStatus, waitpid};
 use nix::unistd::{self, ForkResult};
-use std::io::{self, ErrorKind};
 use std::os::fd::{AsRawFd, IntoRawFd};
 use std::process;
 
 use crate::cmd::Cmd;
 use crate::container::ContainerContext;
 use crate::container_setup;
-use crate::daemon::protocol::{ExecRequest, ExecResponse};
-use crate::paths;
 use crate::pty;
 use crate::result::Result;
 use crate::syscalls::capability;
 
-/// Execute a command in a container via the daemon socket
+/// Execute a command in a container
 ///
-/// Daemon mode: Must be run from inside 'cntr attach' session.
-/// Connects to daemon socket at {base_dir}/.exec.sock
-///
-/// Arguments:
-/// - exe: Optional command to execute (None = default shell)
-/// - args: Arguments to pass to the command
-pub(crate) fn exec_daemon(exe: Option<String>, args: Vec<String>) -> Result<()> {
-    // Get daemon socket path
-    let socket_path = paths::get_socket_path();
-
-    if !socket_path.exists() {
-        bail!(
-            "Daemon socket not found at {}. \
-            Are you running this from inside 'cntr attach'? \
-            The attach process must be running to use 'cntr exec' in daemon mode.\n\
-            \n\
-            Hint: To exec directly into a container, use: cntr exec -t TYPE CONTAINER_ID -- COMMAND",
-            socket_path.display()
-        );
-    }
-
-    // Create Unix domain socket for client
-    let client_sock = socket::socket(
-        AddressFamily::Unix,
-        SockType::Stream,
-        SockFlag::SOCK_CLOEXEC,
-        None,
-    )
-    .context("failed to create client socket")?;
-
-    // Connect to daemon socket
-    let unix_addr = UnixAddr::new(&socket_path).with_context(|| {
-        format!(
-            "failed to create Unix address for {}",
-            socket_path.display()
-        )
-    })?;
-
-    if let Err(e) = connect(client_sock.as_raw_fd(), &unix_addr) {
-        match e {
-            nix::errno::Errno::ECONNREFUSED => {
-                bail!(
-                    "Connection refused to daemon socket at {}. \
-                    The socket file exists but no daemon is listening. \
-                    The 'cntr attach' process may have died unexpectedly.",
-                    socket_path.display()
-                );
-            }
-            nix::errno::Errno::ENOENT => {
-                bail!(
-                    "Daemon socket disappeared at {}. \
-                    The 'cntr attach' process terminated while we were connecting.",
-                    socket_path.display()
-                );
-            }
-            _ => {
-                Err(e).with_context(|| {
-                    format!(
-                        "failed to connect to daemon socket at {}",
-                        socket_path.display()
-                    )
-                })?;
-            }
-        }
-    }
-
-    // Create exec request
-    let request = ExecRequest::new(exe.clone(), args.clone());
-
-    // Send request to daemon
-    let mut client_file = std::fs::File::from(client_sock);
-    if let Err(e) = request.serialize(&mut client_file) {
-        // Check if the error is due to daemon death (broken pipe)
-        if let Some(io_err) = e.source().and_then(|s| s.downcast_ref::<io::Error>()) {
-            match io_err.kind() {
-                ErrorKind::BrokenPipe | ErrorKind::ConnectionReset => {
-                    bail!(
-                        "Daemon closed connection while sending request. \
-                        The 'cntr attach' process died unexpectedly."
-                    );
-                }
-                _ => {}
-            }
-        }
-        return Err(e);
-    }
-
-    // Wait for response from daemon
-    let response = match ExecResponse::deserialize(&mut client_file) {
-        Ok(resp) => resp,
-        Err(e) => {
-            // Check if the error is due to daemon death (EOF or connection issues)
-            if let Some(io_err) = e.source().and_then(|s| s.downcast_ref::<io::Error>()) {
-                match io_err.kind() {
-                    ErrorKind::UnexpectedEof => {
-                        bail!(
-                            "Daemon closed connection before sending response. \
-                            The 'cntr attach' process died while processing the exec request."
-                        );
-                    }
-                    ErrorKind::BrokenPipe | ErrorKind::ConnectionReset => {
-                        bail!(
-                            "Lost connection to daemon while waiting for response. \
-                            The 'cntr attach' process died unexpectedly."
-                        );
-                    }
-                    _ => {}
-                }
-            }
-            Err(e).context("failed to receive response from daemon")?;
-            unreachable!()
-        }
-    };
-
-    // Check response
-    match response {
-        ExecResponse::Ok => {
-            // Daemon acknowledged the request and will handle the exec
-            // The client process exits here - the daemon handles the actual command execution
-            Ok(())
-        }
-        ExecResponse::Error(msg) => {
-            bail!("Daemon rejected exec request: {}", msg);
-        }
-    }
-}
-
-/// Execute a command directly in a container
-///
-/// Direct mode: Directly access container by ID/name with PTY.
-/// This provides similar functionality to attach but without the mount overlay or daemon.
+/// Directly accesses container by ID/name with PTY.
 ///
 /// Arguments:
 /// - container_name: Container ID, name, or PID
 /// - container_types: List of container types to try
 /// - exe: Optional command to execute (None = default shell)
 /// - args: Arguments to pass to the command
-pub(crate) fn exec_direct(
+pub(crate) fn exec(
     container_name: &str,
     container_types: &[Box<dyn container_pid::Container>],
     exe: Option<String>,
@@ -179,22 +45,22 @@ pub(crate) fn exec_direct(
     match res.context("failed to fork")? {
         ForkResult::Parent { child } => {
             // Parent: Forward PTY I/O and wait for child
-            exec_direct_parent(child, &pty_master)
+            exec_parent(child, &pty_master)
         }
         ForkResult::Child => {
             // Child: Setup PTY slave, enter container, exec command
-            if let Err(e) = exec_direct_child(&ctx, exe, args, &pty_master) {
-                eprintln!("exec_direct child failed: {}", e);
+            if let Err(e) = exec_child(&ctx, exe, args, &pty_master) {
+                eprintln!("exec child failed: {}", e);
                 process::exit(1);
             }
-            // Should not reach here - exec_direct_child calls process::exit
+            // Should not reach here - exec_child calls process::exit
             unreachable!()
         }
     }
 }
 
-/// Parent process for exec_direct: Forward PTY and wait for child
-fn exec_direct_parent(child_pid: nix::unistd::Pid, pty_master: &nix::pty::PtyMaster) -> Result<()> {
+/// Parent process for exec: Forward PTY and wait for child
+fn exec_parent(child_pid: nix::unistd::Pid, pty_master: &nix::pty::PtyMaster) -> Result<()> {
     // Close master PTY fd in child before forwarding
     // (child has slave end)
     let pty_file = unsafe {
@@ -231,8 +97,8 @@ fn exec_direct_parent(child_pid: nix::unistd::Pid, pty_master: &nix::pty::PtyMas
     Ok(())
 }
 
-/// Child process for exec_direct: Enter container and exec command
-fn exec_direct_child(
+/// Child process for exec: Enter container and exec command
+fn exec_child(
     ctx: &ContainerContext,
     exe: Option<String>,
     args: Vec<String>,

@@ -45,11 +45,10 @@ fn print_exec_help() {
     eprintln!("by {}", AUTHORS);
     eprintln!();
     eprintln!("USAGE:");
-    eprintln!("    cntr exec [OPTIONS] [-- <COMMAND>...]                 # From inside attach");
-    eprintln!("    cntr exec [OPTIONS] <CONTAINER_ID> [-- <COMMAND>...]  # Direct mode");
+    eprintln!("    cntr exec [OPTIONS] <CONTAINER_ID> [-- <COMMAND>...]");
     eprintln!();
     eprintln!("ARGS:");
-    eprintln!("    <CONTAINER_ID>    Container ID, name, or process ID (for direct mode)");
+    eprintln!("    <CONTAINER_ID>    Container ID, name, or process ID (required)");
     eprintln!();
     eprintln!("OPTIONS:");
     eprintln!("    -t, --type <TYPES>           Container types to try (comma-separated)");
@@ -63,10 +62,6 @@ fn print_exec_help() {
     eprintln!("COMMAND:");
     eprintln!("    Command and arguments to execute [default: $SHELL]");
     eprintln!("    Use '--' to separate command from options");
-    eprintln!();
-    eprintln!("MODES:");
-    eprintln!("    Daemon mode:  Run from inside 'cntr attach' to execute in container");
-    eprintln!("    Direct mode:  Provide container ID to directly access container");
 }
 
 /// Print main help
@@ -221,14 +216,10 @@ where
         (Some(cmd), parts)
     };
 
-    // Determine mode: daemon or direct
-    if let Some(container_name) = container_id {
-        // Direct mode: container ID provided
-        exec::exec_direct(&container_name, &container_types, command, arguments)?;
-    } else {
-        // Daemon mode: no container ID, use daemon socket
-        exec::exec_daemon(command, arguments)?;
-    }
+    // Container ID is now required
+    let container_name = container_id.ok_or("container ID is required for exec")?;
+
+    exec::exec(&container_name, &container_types, command, arguments)?;
 
     Ok(())
 }

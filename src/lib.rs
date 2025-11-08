@@ -8,7 +8,6 @@ mod cgroup;
 mod cmd;
 mod container;
 mod container_setup;
-mod daemon;
 mod exec;
 mod ipc;
 mod lsm;
