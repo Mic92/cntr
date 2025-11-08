@@ -382,22 +382,6 @@ To resolve containerd names one also would need to add the `ctr` binary (~12mb) 
 
 ## Additional Config
 
-### ZFS
-
-`cntr` requires POSIX ACLs be enabled under ZFS. By default, Linux ZFS doesn't have POSIX ACLs enabled. This results in
-the following error when trying to `attach`:
-
-```console
-unable to move container mounts to new mountpoint: EOPNOTSUPP: Operation not supported on transport endpoint
-```
-
-To enable POSIX ACLs on the ZFS dataset:
-
-```console
-$ zfs set acltype=posixacl zpool/media
-$ zfs set xattr=sa zpool/media              #  optional, but encouraged for best performance
-```
-
 ### Custom Mount Directory
 
 By default, cntr mounts containers at `/var/lib/cntr`. You can customize this location using the `CNTR_BASE_DIR` environment variable:
