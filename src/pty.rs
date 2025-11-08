@@ -285,6 +285,19 @@ pub(crate) fn attach_pts(pty_master: &PtyMaster) -> nix::Result<()> {
 
     let pty_slave = fcntl::open(pts_name.as_str(), OFlag::O_RDWR, stat::Mode::empty())?;
 
+    // Set the PTY slave as the controlling terminal for this session
+    // This is required for job control to work properly
+    // Use force flag (1) to steal from another session if needed
+    unsafe {
+        if libc::ioctl(pty_slave.as_raw_fd(), libc::TIOCSCTTY, 1) != 0 {
+            // If TIOCSCTTY fails, just warn but continue - job control may not work
+            // but the command will still execute
+            use nix::errno::Errno;
+            let err = Errno::last();
+            eprintln!("warning: failed to set controlling terminal: {:?}", err);
+        }
+    }
+
     unistd::dup2_stdin(&pty_slave)?;
     unistd::dup2_stdout(&pty_slave)?;
     unistd::dup2_stderr(&pty_slave)?;

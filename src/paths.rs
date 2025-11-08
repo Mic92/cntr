@@ -20,10 +20,3 @@ pub fn get_base_dir() -> PathBuf {
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(DEFAULT_CNTR_BASE_DIR))
 }
-
-/// Get the daemon socket path
-///
-/// The socket is always at {base_dir}/.exec.sock within the staging tmpfs.
-pub fn get_socket_path() -> PathBuf {
-    get_base_dir().join(".exec.sock")
-}
