@@ -1,3 +1,4 @@
+use anyhow::{Context, bail};
 use libc;
 use nix;
 use nix::errno;
@@ -5,12 +6,12 @@ use nix::sys::ptrace::ptrace::*;
 use nix::sys::ptrace::*;
 use nix::sys::wait::{WaitStatus, wait, waitpid};
 use sigstr;
-use simple_error::{bail, try_with};
 use std::ptr;
 use types::Result;
 
-pub fn install(pid: libc::pid_t) -> Result<()> {
-    let status = try_with!(waitpid(pid, None), "process died prematurely");
+pub(crate) fn install(pid: libc::pid_t) -> Result<()> {
+    let status =
+        waitpid(pid, None).context("failed to wait for process, it may have died prematurely")?;
     match status {
         WaitStatus::Exited(_, rc) => {
             bail!("process exited prematurely with {}", rc);
@@ -38,19 +39,17 @@ pub fn install(pid: libc::pid_t) -> Result<()> {
         | PTRACE_O_TRACEEXEC
         | PTRACE_O_TRACEVFORKDONE
         | PTRACE_O_TRACEEXIT;
-    try_with!(ptrace_setoptions(pid, opts), "failed to ptrace process");
-    try_with!(
-        ptrace(PTRACE_CONT, pid, ptr::null_mut(), ptr::null_mut()),
-        "failed to resume tracee"
-    );
+    ptrace_setoptions(pid, opts).context("failed to set ptrace options on process")?;
+    ptrace(PTRACE_CONT, pid, ptr::null_mut(), ptr::null_mut())
+        .context("failed to resume tracee with PTRACE_CONT")?;
     Ok(())
 }
 
-pub fn me() -> nix::Result<libc::c_long> {
+pub(crate) fn me() -> nix::Result<libc::c_long> {
     ptrace(PTRACE_TRACEME, 0, ptr::null_mut(), ptr::null_mut())
 }
 
-pub fn dispatch() -> Result<()> {
+pub(crate) fn dispatch() -> Result<()> {
     loop {
         match wait() {
             Err(nix::Error::Sys(errno::ECHILD)) => return Ok(()),

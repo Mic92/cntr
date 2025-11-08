@@ -1,5 +1,5 @@
+use anyhow::{Context, bail};
 use nix::unistd::Pid;
-use simple_error::{bail, try_with};
 use std::fs::File;
 use std::io::BufReader;
 use std::io::prelude::*;
@@ -11,10 +11,11 @@ use crate::result::Result;
 // tmpfs /proc/kcore tmpfs rw,context="system_u:object_r:container_file_t:s0:c125,c287",nosuid,mode=755 0 0
 fn find_mount_options(p: Pid) -> Result<String> {
     let path = procfs::get_path().join(format!("{}/mounts", p));
-    let f = try_with!(File::open(&path), "failed to open {}", path.display());
+    let f = File::open(&path)
+        .with_context(|| format!("failed to open mount file {}", path.display()))?;
     let reader = BufReader::new(f);
     for line in reader.lines() {
-        let line = try_with!(line, "failed to read {}", path.display());
+        let line = line.with_context(|| format!("failed to read line from {}", path.display()))?;
         let line = line.trim();
         let mut tokens = line.split_terminator([' ', '\t']).filter(|s| s != &"");
 
@@ -28,8 +29,8 @@ fn find_mount_options(p: Pid) -> Result<String> {
     bail!("did not find / in {}", path.display())
 }
 
-pub fn parse_selinux_context(p: Pid) -> Result<String> {
-    let options = try_with!(find_mount_options(p), "failed to parse mount options of /");
+pub(crate) fn parse_selinux_context(p: Pid) -> Result<String> {
+    let options = find_mount_options(p).context("failed to find mount options for / filesystem")?;
     let needle = "context=\"";
     if let Some(index) = options.find(needle) {
         if let Some(context) = options[(index + needle.len())..].split('"').next() {

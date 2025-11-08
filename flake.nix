@@ -29,6 +29,7 @@
         {
           packages.cntr = pkgs.callPackage ./default.nix {
             inherit self;
+            inherit (pkgs) pkgsStatic;
           };
           packages.default = config.packages.cntr;
           devShells.default = pkgs.mkShell {
@@ -37,9 +38,9 @@
               pkgs.cargo-watch
               pkgs.rustc
               pkgs.clippy
-              pkgs.cargo-bloat
               pkgs.rust-analyzer
             ];
+            CNTR_TEST_SHELL = "${pkgs.pkgsStatic.busybox}/bin/sh";
           };
           checks = {
             clippy = (
@@ -48,7 +49,7 @@
               }
             );
           }
-          // lib.optionalAttrs (!pkgs.hostPlatform.isRiscV64) {
+          // lib.optionalAttrs (!pkgs.stdenv.hostPlatform.isRiscV64) {
             inherit
               (pkgs.callPackages ./vm-test.nix {
                 inherit (config.packages) cntr;

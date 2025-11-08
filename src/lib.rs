@@ -1,31 +1,24 @@
-pub use container_pid::{AVAILABLE_CONTAINER_TYPES, lookup_container_type};
-pub use logging::enable_debug_log;
-pub use user_namespace::DEFAULT_ID_MAP;
+pub(crate) use container_pid::lookup_container_type;
+
+pub mod test_utils;
 
 mod attach;
 mod capabilities;
 mod cgroup;
 mod cmd;
-mod dirent;
-mod dotcntr;
+mod container;
+mod container_setup;
+mod daemon;
 mod exec;
-mod files;
-pub mod fs;
-mod fsuid;
-mod fusefd;
-mod inode;
 mod ipc;
-mod logging;
 mod lsm;
 mod mount_context;
-mod mountns;
-pub mod namespace;
-mod num_cpus;
+pub(crate) mod namespace;
+pub(crate) mod paths;
 mod procfs;
 mod pty;
 mod result;
-mod sys_ext;
-mod tmp;
-mod user_namespace;
-pub use attach::{AttachOptions, attach};
-pub use exec::{SETCAP_EXE, exec};
+pub mod syscalls;
+pub(crate) use attach::{AttachOptions, attach};
+
+pub mod cli;

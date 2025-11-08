@@ -3,6 +3,7 @@
   lib,
   clippy,
   self,
+  pkgsStatic,
   withClippy ? false,
 }:
 
@@ -17,6 +18,10 @@ let
     cargoLock.lockFile = ./Cargo.lock;
 
     nativeBuildInputs = [ clippy ];
+
+    # Provide statically-linked shell for integration tests
+    CNTR_TEST_SHELL = "${pkgsStatic.busybox}/bin/sh";
+
     meta = with lib; {
       description = "A container debugging tool based on FUSE";
       homepage = "https://github.com/Mic92/cntr";

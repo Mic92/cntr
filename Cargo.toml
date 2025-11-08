@@ -1,7 +1,7 @@
 [package]
 name = "cntr"
 edition = "2024"
-description = "A container debugging tool based on FUSE"
+description = "A container debugging tool based on Linux mount API"
 version = "1.6.1"
 authors = ["Jörg Thalheim <joerg@thalheim.io>"]
 categories = ["development-tools::debugging", "os::unix-apis"]
@@ -9,16 +9,8 @@ repository = "https://github.com/Mic92/cntr"
 license = "MIT"
 
 [dependencies]
-cpuprofiler = { version = "0.0.4", optional = true }
-clap = { version = "4", default-features = false, features = [
-  "std",
-  "cargo",
-  "derive",
-  "help",
-] }
 log = "0.4.28"
 libc = "0.2.177"
-parking_lot = "0.12.5"
 nix = { version = "0.30.1", features = [
   "fs",
   "mount",
@@ -30,10 +22,8 @@ nix = { version = "0.30.1", features = [
   "user",
   "term",
 ] }
-container-pid = "0.2.0"
-simple-error = "0.3.2"
-cntr-fuse = { version = "0.4.2", default-features = false }
-chashmap = "2.2.2"
+container-pid = "1.0"
+anyhow = "1.0"
 
 [[bin]]
 name = "cntr"
@@ -41,10 +31,3 @@ path = "src/bin/main.rs"
 
 [profile.release]
 lto = true
-
-[features]
-verbose_fuse_test_log = []
-profiling = []
-
-[dev-dependencies]
-lazy_static = "1.5"

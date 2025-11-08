@@ -1,6 +1,6 @@
+use anyhow::Context;
 use log::warn;
 use nix::{self, unistd};
-use simple_error::try_with;
 use std::collections::HashMap;
 use std::env;
 use std::ffi::OsString;
@@ -12,10 +12,11 @@ use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::{Command, ExitStatus};
 
+use crate::paths;
 use crate::procfs;
 use crate::result::Result;
 
-pub struct Cmd {
+pub(crate) struct Cmd {
     environment: HashMap<OsString, OsString>,
     command: String,
     arguments: Vec<String>,
@@ -24,7 +25,8 @@ pub struct Cmd {
 
 fn read_environment(pid: unistd::Pid) -> Result<HashMap<OsString, OsString>> {
     let path = procfs::get_path().join(pid.to_string()).join("environ");
-    let f = try_with!(File::open(&path), "failed to open {}", path.display());
+    let f = File::open(&path)
+        .with_context(|| format!("failed to open environment file {}", path.display()))?;
     let reader = BufReader::new(f);
     let res: HashMap<OsString, OsString> = reader
         .split(b'\0')
@@ -48,7 +50,7 @@ fn read_environment(pid: unistd::Pid) -> Result<HashMap<OsString, OsString>> {
 }
 
 impl Cmd {
-    pub fn new(
+    pub(crate) fn new(
         command: Option<String>,
         args: Vec<String>,
         pid: unistd::Pid,
@@ -63,10 +65,8 @@ impl Cmd {
         let command =
             command.unwrap_or_else(|| env::var("SHELL").unwrap_or_else(|_| String::from("sh")));
 
-        let variables = try_with!(
-            read_environment(pid),
-            "could not inherit environment variables of container"
-        );
+        let variables = read_environment(pid)
+            .context("could not inherit environment variables from container")?;
         Ok(Cmd {
             command,
             arguments,
@@ -74,7 +74,7 @@ impl Cmd {
             home,
         })
     }
-    pub fn run(mut self) -> Result<ExitStatus> {
+    pub(crate) fn run(mut self) -> Result<ExitStatus> {
         let default_path =
             OsString::from("/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin");
         self.environment.insert(
@@ -87,21 +87,22 @@ impl Cmd {
                 .insert(OsString::from("HOME"), path.into_os_string());
         }
 
-        let cmd = Command::new(self.command)
-            .args(self.arguments)
-            .envs(self.environment)
+        let cmd = Command::new(&self.command)
+            .args(&self.arguments)
+            .envs(&self.environment)
             .status();
-        Ok(try_with!(cmd, "failed to run `sh -l`"))
+        cmd.with_context(|| format!("failed to run command: {}", self.command))
     }
 
-    pub fn exec_chroot(self) -> Result<()> {
+    pub(crate) fn exec_chroot(self) -> Result<()> {
+        let base_dir = paths::get_base_dir();
         let err = unsafe {
             Command::new(&self.command)
                 .args(self.arguments)
                 .envs(self.environment)
-                .pre_exec(|| {
-                    if let Err(e) = unistd::chroot("/var/lib/cntr") {
-                        warn!("failed to chroot to /var/lib/cntr: {}", e);
+                .pre_exec(move || {
+                    if let Err(e) = unistd::chroot(&base_dir) {
+                        warn!("failed to chroot to {}: {}", base_dir.display(), e);
                         return Err(io::Error::from_raw_os_error(e as i32));
                     }
 
@@ -114,7 +115,7 @@ impl Cmd {
                 })
                 .exec()
         };
-        try_with!(Err(err), "failed to execute `{}`", self.command);
+        Err(err).with_context(|| format!("failed to execute command: {}", self.command))?;
         Ok(())
     }
 }

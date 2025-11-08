@@ -1,4 +1,1 @@
-use simple_error::SimpleError;
-use std::result;
-
-pub type Result<T> = result::Result<T, SimpleError>;
+pub(crate) type Result<T> = anyhow::Result<T>;
