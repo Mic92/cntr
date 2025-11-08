@@ -10,9 +10,8 @@ use std::io::{BufRead, BufReader};
 use std::os::unix::ffi::OsStringExt;
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
-use std::process::{Command, ExitStatus};
+use std::process::Command;
 
-use crate::paths;
 use crate::procfs;
 use crate::result::Result;
 
@@ -21,6 +20,7 @@ pub(crate) struct Cmd {
     command: String,
     arguments: Vec<String>,
     home: Option<PathBuf>,
+    container_root: PathBuf,
 }
 
 fn read_environment(pid: unistd::Pid) -> Result<HashMap<OsString, OsString>> {
@@ -67,14 +67,28 @@ impl Cmd {
 
         let variables = read_environment(pid)
             .context("could not inherit environment variables from container")?;
+
+        // Read container root path before entering namespaces
+        // After entering PID namespace, /proc/{container_pid} won't be accessible
+        let proc_root_path = format!("/proc/{}/root", pid);
+        let container_root = std::fs::read_link(&proc_root_path)
+            .with_context(|| format!("failed to read container root from {}", proc_root_path))?;
+
         Ok(Cmd {
             command,
             arguments,
             environment: variables,
             home,
+            container_root,
         })
     }
-    pub(crate) fn run(mut self) -> Result<ExitStatus> {
+
+    /// Execute in attach mode - no chroot, uses overlay
+    ///
+    /// For attach, we stay in the overlay environment which provides access
+    /// to both host binaries and container filesystem under /var/lib/cntr
+    pub(crate) fn exec_in_overlay(mut self) -> Result<()> {
+        // Set PATH if not already set (use cntr's PATH or default)
         let default_path =
             OsString::from("/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin");
         self.environment.insert(
@@ -88,22 +102,38 @@ impl Cmd {
                 .insert(OsString::from("HOME"), home_path.into_os_string());
         }
 
-        let cmd = Command::new(&self.command)
-            .args(&self.arguments)
-            .envs(&self.environment)
-            .status();
-        cmd.with_context(|| format!("failed to run command: {}", self.command))
+        // Execute without chroot - we're already in the overlay
+        let err = Command::new(&self.command)
+            .args(self.arguments)
+            .envs(self.environment)
+            .exec();
+        Err(err).with_context(|| format!("failed to execute command: {}", self.command))?;
+        Ok(())
     }
 
-    pub(crate) fn exec_chroot(self) -> Result<()> {
-        let base_dir = paths::get_base_dir();
+    /// Execute in container - chroot to container root
+    ///
+    /// For exec (direct mode) and daemon exec, we chroot to the actual container
+    /// root since we don't have the overlay.
+    pub(crate) fn exec_in_container(mut self) -> Result<()> {
+        // Set PATH if not already set (use cntr's PATH or default)
+        let default_path =
+            OsString::from("/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin");
+        self.environment.insert(
+            OsString::from("PATH"),
+            env::var_os("PATH").unwrap_or(default_path),
+        );
+
+        // Chroot to container's root and exec
+        // container_root was already resolved in new() before entering namespaces
+        let container_root = self.container_root;
         let err = unsafe {
             Command::new(&self.command)
                 .args(self.arguments)
                 .envs(self.environment)
                 .pre_exec(move || {
-                    if let Err(e) = unistd::chroot(&base_dir) {
-                        warn!("failed to chroot to {}: {}", base_dir.display(), e);
+                    if let Err(e) = unistd::chroot(&container_root) {
+                        warn!("failed to chroot to {}: {}", container_root.display(), e);
                         return Err(io::Error::from_raw_os_error(e as i32));
                     }
 

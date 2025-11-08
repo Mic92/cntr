@@ -247,24 +247,10 @@ fn exec_direct_child(
     // Enter container: cgroup, namespaces, security context (LSM, UID/GID, capabilities)
     container_setup::enter_container(ctx.process_status.global_pid, &ctx.process_status)?;
 
-    // Resolve container's root path (handles chroot containers)
-    let proc_root_path = format!("/proc/{}/root", ctx.process_status.global_pid);
-    let container_root = std::fs::read_link(&proc_root_path)
-        .with_context(|| format!("failed to read container root from {}", proc_root_path))?;
-
-    // Chroot to container's root
-    nix::unistd::chroot(&container_root)
-        .with_context(|| format!("failed to chroot to {}", container_root.display()))?;
-    std::env::set_current_dir("/").context("failed to chdir to / after chroot")?;
-
-    // Execute the command (replaces current process)
-    // Now we're in the container's root, so paths work correctly
-    let status = cmd.run()?;
-
-    // Handle exit status (if run() somehow returns)
-    if let Some(code) = status.code() {
-        process::exit(code);
-    }
+    // Execute the command in the container (chroots to container root and execs)
+    // This will NOT return - it replaces the current process
+    cmd.exec_in_container()
+        .context("failed to execute command in container")?;
 
     Ok(())
 }
