@@ -60,7 +60,7 @@ fn print_exec_help() {
     eprintln!("    -V, --version                Print version");
     eprintln!();
     eprintln!("COMMAND:");
-    eprintln!("    Command and arguments to execute [default: $SHELL]");
+    eprintln!("    Command and arguments to execute [default: /bin/sh]");
     eprintln!("    Use '--' to separate command from options");
 }
 

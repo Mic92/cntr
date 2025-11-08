@@ -107,6 +107,9 @@ fn exec_child(
     // Attach PTY slave
     pty::attach_pts(pty_master).context("failed to setup pty slave")?;
 
+    // Default to /bin/sh if no command specified
+    let exe = exe.or(Some(String::from("/bin/sh")));
+
     // Prepare command to execute
     let cmd = Cmd::new(exe, args, ctx.process_status.global_pid, None)?;
 

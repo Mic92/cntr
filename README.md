@@ -175,7 +175,7 @@ OPTIONS:
     -V, --version                Print version
 
 COMMAND:
-    Command and arguments to execute [default: $SHELL]
+    Command and arguments to execute [default: /bin/sh]
     Use '--' to separate command from options
 ```
 
