@@ -1,6 +1,9 @@
 //! Common test utilities for integration tests
 
+use nix::unistd::pipe;
 use nix::unistd::{ForkResult, Pid, fork, pause};
+use std::io::Read;
+use std::os::fd::IntoRawFd;
 use std::{env, ffi::OsString, os::unix::ffi::OsStringExt, path::Path, path::PathBuf};
 
 // Re-export from library
@@ -54,10 +57,6 @@ pub(crate) struct FakeContainer {
 
 /// Get the container PID and wait for it to be ready
 pub(crate) fn start_fake_container() -> FakeContainer {
-    use nix::unistd::pipe;
-    use std::io::Read;
-    use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd};
-
     // Create temp directory in parent (before fork)
     let temp_dir_handle = TempDir::new().expect("Failed to create temp directory");
     let temp_dir_path = temp_dir_handle.path().to_path_buf();
@@ -74,14 +73,16 @@ pub(crate) fn start_fake_container() -> FakeContainer {
             drop(read_fd);
 
             // Do container setup
-            fake_container_process_with_sync(write_fd.as_raw_fd(), &temp_dir_path);
+            // Transfer ownership of write_fd to the child process (never returns)
+            fake_container_process_with_sync(write_fd.into_raw_fd(), &temp_dir_path);
         }
         Ok(ForkResult::Parent { child }) => {
             // Close write end in parent
             drop(write_fd);
 
             // Wait for child to signal readiness by closing its write end
-            let mut read_file = unsafe { std::fs::File::from_raw_fd(read_fd.as_raw_fd()) };
+            // Transfer ownership from OwnedFd to File
+            let mut read_file = std::fs::File::from(read_fd);
             let mut buf = [0u8; 1];
 
             // This blocks until child closes write_fd (returns 0 bytes = EOF)
@@ -96,9 +97,6 @@ pub(crate) fn start_fake_container() -> FakeContainer {
                     panic!("Failed to read from sync pipe: {}", e);
                 }
             }
-
-            // Don't close read_fd twice
-            let _ = read_file.into_raw_fd();
 
             FakeContainer {
                 pid: child,
