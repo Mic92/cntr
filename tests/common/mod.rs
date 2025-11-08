@@ -1,15 +1,53 @@
 //! Common test utilities for integration tests
 
 use nix::unistd::{ForkResult, Pid, fork, pause};
-use std::{env, path::Path};
+use std::{env, ffi::OsString, os::unix::ffi::OsStringExt, path::Path, path::PathBuf};
 
 // Re-export from library
 pub(crate) use cntr::test_utils::run_in_userns;
 
+/// Simple temporary directory that cleans up on drop
+struct TempDir {
+    path: Option<PathBuf>,
+}
+
+impl TempDir {
+    /// Create a new temporary directory using mkdtemp
+    fn new() -> std::io::Result<Self> {
+        let mut template = env::temp_dir();
+        template.push("cntr-test.XXXXXX");
+        let mut bytes = template.into_os_string().into_vec();
+        // null byte
+        bytes.push(0);
+        let res = unsafe { libc::mkdtemp(bytes.as_mut_ptr().cast()) };
+        if res.is_null() {
+            Err(std::io::Error::last_os_error())
+        } else {
+            // remove null byte
+            bytes.pop();
+            let path = PathBuf::from(OsString::from_vec(bytes));
+            Ok(TempDir { path: Some(path) })
+        }
+    }
+
+    /// Get the path to the temporary directory
+    fn path(&self) -> &Path {
+        self.path.as_ref().unwrap()
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        if let Some(ref p) = self.path {
+            let _ = std::fs::remove_dir_all(p);
+        }
+    }
+}
+
 /// Container info with cleanup handle
 pub(crate) struct FakeContainer {
     pub(crate) pid: Pid,
-    _temp_dir: tempfile::TempDir,
+    _temp_dir: TempDir,
 }
 
 // TempDir auto-cleans on drop, no manual Drop needed
@@ -21,7 +59,7 @@ pub(crate) fn start_fake_container() -> FakeContainer {
     use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd};
 
     // Create temp directory in parent (before fork)
-    let temp_dir_handle = tempfile::tempdir().expect("Failed to create temp directory");
+    let temp_dir_handle = TempDir::new().expect("Failed to create temp directory");
     let temp_dir_path = temp_dir_handle.path().to_path_buf();
 
     // Create pipe for synchronization
