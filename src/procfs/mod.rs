@@ -18,6 +18,7 @@ pub(crate) fn get_path() -> PathBuf {
 pub(crate) struct ProcStatus {
     pub(crate) global_pid: Pid,
     pub(crate) effective_capabilities: c_ulong,
+    pub(crate) last_cap: c_ulong,
 }
 
 pub(crate) fn status(target_pid: Pid) -> Result<ProcStatus> {
@@ -53,8 +54,26 @@ pub(crate) fn status(target_pid: Pid) -> Result<ProcStatus> {
         )
     })?;
 
+    // Read cap_last_cap from the host namespace before entering the target namespace
+    let cap_last_cap_path = get_path().join("sys/kernel/cap_last_cap");
+    let mut cap_file = File::open(&cap_last_cap_path)
+        .with_context(|| format!("failed to open {}", cap_last_cap_path.display()))?;
+    let mut cap_contents = String::new();
+    cap_file
+        .read_to_string(&mut cap_contents)
+        .with_context(|| format!("failed to read {}", cap_last_cap_path.display()))?;
+    cap_contents.pop(); // remove newline
+    let last_cap = cap_contents.parse::<c_ulong>().with_context(|| {
+        format!(
+            "failed to parse last capability value from {}: '{}'",
+            cap_last_cap_path.display(),
+            cap_contents
+        )
+    })?;
+
     Ok(ProcStatus {
         global_pid: target_pid,
         effective_capabilities,
+        last_cap,
     })
 }

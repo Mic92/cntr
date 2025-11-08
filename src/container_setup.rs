@@ -135,8 +135,11 @@ pub(crate) fn apply_security_context(
     }
 
     // Drop capabilities
-    capabilities::drop(process_status.effective_capabilities)
-        .context("failed to apply capabilities")?;
+    capabilities::drop(
+        process_status.effective_capabilities,
+        process_status.last_cap,
+    )
+    .context("failed to apply capabilities")?;
 
     // Inherit LSM profile
     if let Some(profile) = ctx.lsm_profile {
