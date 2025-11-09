@@ -123,10 +123,10 @@ pub(crate) fn read_profile(pid: Pid) -> Result<Option<LSMProfile>> {
 }
 
 impl LSMProfile {
-    pub(crate) fn inherit_profile(mut self) -> Result<()> {
+    pub(crate) fn inherit_profile(&mut self) -> Result<()> {
         let attr = match self.kind {
             LSMKind::AppArmor => format!("changeprofile {}", self.label),
-            LSMKind::SELinux => self.label,
+            LSMKind::SELinux => self.label.clone(),
         };
 
         self.label_file

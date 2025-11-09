@@ -3,18 +3,15 @@ use log::{debug, warn};
 use nix::fcntl::AtFlags;
 use nix::sys::stat::{SFlag, fstatat};
 use nix::unistd;
-use nix::unistd::{Gid, Uid};
 use std::env;
 use std::ffi::CString;
 use std::os::unix::io::{AsFd, BorrowedFd, OwnedFd, RawFd};
 use std::os::unix::prelude::*;
 use std::path::{Path, PathBuf};
 
-use crate::capabilities;
 use crate::cgroup;
 use crate::cmd::Cmd;
 use crate::ipc;
-use crate::lsm;
 use crate::namespace;
 use crate::paths;
 use crate::procfs::ProcStatus;
@@ -31,8 +28,6 @@ pub(crate) struct ChildOptions<'a> {
     pub(crate) socket: &'a ipc::Socket,
     pub(crate) userns_fd: Option<RawFd>,
     pub(crate) effective_home: Option<PathBuf>,
-    pub(crate) uid: Uid,
-    pub(crate) gid: Gid,
 }
 
 /// Apply idmapped mounts to all supported filesystems
@@ -265,12 +260,9 @@ fn capture_and_attach_container_trees(
 /// 8. Execute the command
 ///
 /// This function never returns on success - it replaces the current process.
-pub(crate) fn run(options: &ChildOptions) -> Result<std::convert::Infallible> {
-    // Step 1: Read LSM profile before entering namespaces
-    let lsm_profile = lsm::read_profile(options.process_status.global_pid)
-        .context("failed to get lsm profile")?;
-
-    let mount_label = if let Some(ref p) = lsm_profile {
+pub(crate) fn run(options: &mut ChildOptions) -> Result<std::convert::Infallible> {
+    // Step 1: Get mount label from LSM profile
+    let mount_label = if let Some(ref p) = options.process_status.lsm_profile {
         p.mount_label(options.process_status.global_pid)
             .context("failed to read mount options")?
     } else {
@@ -289,7 +281,7 @@ pub(crate) fn run(options: &ChildOptions) -> Result<std::convert::Infallible> {
         options.effective_home.clone(),
     )?;
 
-    // Step 4: Detect and open namespaces
+    // Step 4: Open other namespaces (not mount - we handle that specially)
     let supported_namespaces =
         namespace::supported_namespaces().context("failed to list namespaces")?;
 
@@ -393,42 +385,19 @@ pub(crate) fn run(options: &ChildOptions) -> Result<std::convert::Infallible> {
         let _ = label; // Silence unused warning
     }
 
-    // Step 6: Enter other container namespaces
-    // Check if setgroups is already denied (happens in nested user namespaces)
-    let setgroups_denied = std::fs::read_to_string("/proc/self/setgroups")
-        .map(|s| s.trim() == "deny")
-        .unwrap_or(false);
-
-    let dropped_groups = if supported_namespaces.contains(namespace::USER.name) && !setgroups_denied
-    {
-        unistd::setgroups(&[]).is_ok()
-    } else {
-        setgroups_denied // Already denied, so consider it "dropped"
-    };
+    // Step 6: Enter other container namespaces and apply security context
+    let in_user_ns = other_namespaces.iter().any(|_ns| {
+        // Check if any namespace is a USER namespace
+        // We can't directly check the type, so we rely on whether USER was opened
+        supported_namespaces.contains(namespace::USER.name)
+    });
 
     for ns in other_namespaces {
         ns.apply().context("failed to apply namespace")?;
     }
 
-    // Step 7: Set UID/GID
-    if supported_namespaces.contains(namespace::USER.name) {
-        // Only try to set groups if not already denied
-        if !setgroups_denied
-            && let Err(e) = unistd::setgroups(&[])
-            && !dropped_groups
-        {
-            Err(e).context("could not set groups")?;
-        }
-        unistd::setgid(options.gid).context("could not set group id")?;
-        unistd::setuid(options.uid).context("could not set user id")?;
-    }
-
-    // Step 8: Drop capabilities
-    capabilities::drop(
-        options.process_status.effective_capabilities,
-        options.process_status.last_cap,
-    )
-    .context("failed to apply capabilities")?;
+    // Step 7-8: Apply security context (UID/GID, capabilities, LSM)
+    crate::container_setup::apply_security_context(&mut options.process_status, in_user_ns)?;
 
     // Step 9: Setup PTY
     let pty_master = pty::open_ptm().context("failed to open pty master")?;
@@ -451,14 +420,7 @@ pub(crate) fn run(options: &ChildOptions) -> Result<std::convert::Infallible> {
         );
     }
 
-    // Step 12: Inherit LSM profile
-    if let Some(profile) = lsm_profile {
-        profile
-            .inherit_profile()
-            .context("failed to inherit lsm profile")?;
-    }
-
-    // Step 13: Execute the command
+    // Step 12: Execute the command
     // This will replace the current process (attach child) with the shell
     // When the shell exits, the parent will see it and exit accordingly
     // Use exec_in_overlay() since we're in the overlay environment with access
