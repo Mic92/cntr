@@ -11,7 +11,6 @@ mod container_setup;
 pub(crate) mod exec;
 mod ipc;
 mod lsm;
-mod mount_context;
 pub(crate) mod namespace;
 pub(crate) mod paths;
 mod procfs;
