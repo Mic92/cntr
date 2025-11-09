@@ -349,12 +349,13 @@ pub(crate) fn open_ptm() -> Result<PtyMaster> {
     Ok(pty_master)
 }
 
-pub(crate) fn attach_pts(pty_master: &PtyMaster) -> nix::Result<()> {
-    let pts_name = ptsname_r(pty_master)?;
+pub(crate) fn attach_pts(pty_master: &PtyMaster) -> Result<()> {
+    let pts_name = ptsname_r(pty_master).context("failed to get PTY slave name from master")?;
 
-    unistd::setsid()?;
+    unistd::setsid().context("failed to create new session for PTY")?;
 
-    let pty_slave = fcntl::open(pts_name.as_str(), OFlag::O_RDWR, stat::Mode::empty())?;
+    let pty_slave = fcntl::open(pts_name.as_str(), OFlag::O_RDWR, stat::Mode::empty())
+        .with_context(|| format!("failed to open PTY slave at {}", pts_name.as_str()))?;
 
     // Set the PTY slave as the controlling terminal for this session
     // This is required for job control to work properly
@@ -364,11 +365,11 @@ pub(crate) fn attach_pts(pty_master: &PtyMaster) -> nix::Result<()> {
         warn!("Failed to set controlling terminal: {}", err);
     }
 
-    unistd::dup2_stdin(&pty_slave)?;
-    unistd::dup2_stdout(&pty_slave)?;
-    unistd::dup2_stderr(&pty_slave)?;
+    unistd::dup2_stdin(&pty_slave).context("failed to redirect stdin to PTY slave")?;
+    unistd::dup2_stdout(&pty_slave).context("failed to redirect stdout to PTY slave")?;
+    unistd::dup2_stderr(&pty_slave).context("failed to redirect stderr to PTY slave")?;
 
-    unistd::close(pty_slave)?;
+    unistd::close(pty_slave).context("failed to close PTY slave after duplication")?;
 
     Ok(())
 }

@@ -3,7 +3,6 @@ use nix::unistd::{self, ForkResult};
 use std::process;
 
 use crate::cmd::Cmd;
-use crate::container::ContainerContext;
 use crate::container_setup;
 use crate::pty;
 use crate::result::Result;
@@ -32,8 +31,9 @@ pub(crate) fn exec(
         );
     }
 
-    // Lookup container and get its context
-    let ctx = ContainerContext::lookup(container_name, container_types)?;
+    // Lookup container and get its process status
+    let mut process_status = crate::container::lookup_container(container_name, container_types)
+        .with_context(|| format!("failed to lookup container '{}'", container_name))?;
 
     // Create PTY for interactive command execution
     let pty_master = pty::open_ptm().context("failed to open pty master")?;
@@ -47,8 +47,8 @@ pub(crate) fn exec(
         }
         ForkResult::Child => {
             // Child: Setup PTY slave, enter container, exec command
-            let Err(e) = exec_child(&ctx, exe, args, &pty_master);
-            eprintln!("exec child failed: {}", e);
+            let Err(e) = exec_child(&mut process_status, exe, args, &pty_master);
+            eprintln!("exec child failed: {:?}", e);
             process::exit(1);
         }
     }
@@ -58,7 +58,7 @@ pub(crate) fn exec(
 ///
 /// This function never returns on success - it replaces the current process.
 fn exec_child(
-    ctx: &ContainerContext,
+    process_status: &mut crate::procfs::ProcStatus,
     exe: Option<String>,
     args: Vec<String>,
     pty_master: &nix::pty::PtyMaster,
@@ -70,10 +70,16 @@ fn exec_child(
     let exe = exe.or(Some(String::from("/bin/sh")));
 
     // Prepare command to execute
-    let cmd = Cmd::new(exe, args, ctx.process_status.global_pid, None)?;
+    let cmd = Cmd::new(exe.clone(), args, process_status.global_pid, None)
+        .with_context(|| format!("failed to prepare command {:?}", exe))?;
 
     // Enter container: cgroup, namespaces, security context (LSM, UID/GID, capabilities)
-    container_setup::enter_container(ctx.process_status.global_pid, &ctx.process_status)?;
+    container_setup::enter_container(process_status).with_context(|| {
+        format!(
+            "failed to enter container with PID {}",
+            process_status.global_pid
+        )
+    })?;
 
     // Execute the command in the container (chroots to container root and execs)
     // This will NOT return on success - it replaces the current process

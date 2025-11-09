@@ -93,7 +93,7 @@ fn read_proclabel(path: &Path, kind: &LSMKind) -> Result<String> {
 }
 
 pub(crate) fn read_profile(pid: Pid) -> Result<Option<LSMProfile>> {
-    let kind = check_type()?;
+    let kind = check_type().context("failed to determine LSM type")?;
 
     if let Some(kind) = kind {
         let target_path = kind.profile_path(Some(pid));
@@ -123,10 +123,10 @@ pub(crate) fn read_profile(pid: Pid) -> Result<Option<LSMProfile>> {
 }
 
 impl LSMProfile {
-    pub(crate) fn inherit_profile(mut self) -> Result<()> {
+    pub(crate) fn inherit_profile(&mut self) -> Result<()> {
         let attr = match self.kind {
             LSMKind::AppArmor => format!("changeprofile {}", self.label),
-            LSMKind::SELinux => self.label,
+            LSMKind::SELinux => self.label.clone(),
         };
 
         self.label_file

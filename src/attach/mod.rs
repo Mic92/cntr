@@ -1,4 +1,3 @@
-use crate::container::ContainerContext;
 use crate::ipc;
 use crate::result::Result;
 use crate::syscalls::capability;
@@ -28,8 +27,10 @@ pub(crate) fn attach(opts: &AttachOptions) -> Result<std::convert::Infallible> {
         );
     }
 
-    // Lookup container and get its context
-    let ctx = ContainerContext::lookup(&opts.container_name, &opts.container_types)?;
+    // Lookup container and get its process status
+    let process_status =
+        crate::container::lookup_container(&opts.container_name, &opts.container_types)
+            .with_context(|| format!("failed to lookup container '{}'", opts.container_name))?;
 
     // Create idmap helper if --effective-user is specified
     // This creates a user namespace with the mapping for idmapped mounts
@@ -62,25 +63,27 @@ pub(crate) fn attach(opts: &AttachOptions) -> Result<std::convert::Infallible> {
     let res = unsafe { unistd::fork() };
     match res.context("failed to fork")? {
         ForkResult::Parent { child } => {
+            // Close child's socket in parent to ensure proper EOF detection
+            drop(child_sock);
             // Keep idmap_helper alive for the duration of attach
-            let result = parent::run(child, &ctx.process_status, &parent_sock);
+            let result = parent::run(child, &process_status, &parent_sock);
             drop(idmap_helper);
             result
         }
         ForkResult::Child => {
-            let child_opts = child::ChildOptions {
+            // Close parent's socket in child
+            drop(parent_sock);
+            let mut child_opts = child::ChildOptions {
                 command: opts.command.clone(),
                 arguments: opts.arguments.clone(),
-                process_status: ctx.process_status,
+                process_status,
                 socket: &child_sock,
                 userns_fd,
                 effective_home,
-                uid: ctx.uid,
-                gid: ctx.gid,
             };
             // child::run returns Result<Infallible>, so can only return Err
-            let Err(e) = child::run(&child_opts);
-            eprintln!("attach child failed: {}", e);
+            let Err(e) = child::run(&mut child_opts);
+            eprintln!("attach child failed: {:?}", e);
             process::exit(1);
         }
     }

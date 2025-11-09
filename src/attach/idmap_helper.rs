@@ -66,14 +66,14 @@ impl IdmapHelper {
 
                 // Create user namespace and set up mapping
                 if let Err(e) = Self::setup_userns(inner_uid, outer_uid, inner_gid, outer_gid) {
-                    eprintln!("idmap helper failed: {}", e);
+                    eprintln!("idmap helper failed: {:?}", e);
                     unsafe { libc::_exit(1) };
                 }
 
                 // Signal parent we're ready
                 let mut write_file = File::from(write_fd);
                 if let Err(e) = write_file.write_all(b"R") {
-                    eprintln!("idmap helper failed to signal parent: {}", e);
+                    eprintln!("idmap helper failed to signal parent: {:?}", e);
                     unsafe { libc::_exit(1) };
                 }
 

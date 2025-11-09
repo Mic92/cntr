@@ -86,7 +86,7 @@ impl Socket {
 pub(crate) fn socket_pair() -> Result<(Socket, Socket)> {
     let res = socketpair(
         AddressFamily::Unix,
-        SockType::Datagram,
+        SockType::SeqPacket, // Use SEQPACKET instead of DGRAM for EOF detection
         None,
         SockFlag::SOCK_CLOEXEC,
     );
