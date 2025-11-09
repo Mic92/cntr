@@ -3,8 +3,7 @@ use nix::sys::signal::{self, Signal};
 use nix::sys::wait::{WaitPidFlag, WaitStatus, waitpid};
 use nix::unistd::Pid;
 use nix::{cmsg_space, unistd};
-use std::fs::File;
-use std::os::fd::{AsRawFd, FromRawFd, RawFd};
+use std::os::fd::RawFd;
 use std::process;
 
 use crate::procfs::ProcStatus;
@@ -44,8 +43,7 @@ pub(crate) fn run(
 
     // Step 3: Forward PTY I/O
     // This will block until child exits or PTY closes
-    let pty_file = unsafe { File::from_raw_fd(pty_fd.as_raw_fd()) };
-    let _ = pty::forward(&pty_file);
+    let _ = pty::forward(&pty_fd);
 
     // Step 4: Wait for child to exit and propagate exit status
     loop {
