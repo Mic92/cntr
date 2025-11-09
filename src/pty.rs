@@ -1,5 +1,6 @@
 use anyhow::Context;
 use libc::{self, winsize};
+use log::warn;
 use nix::errno::Errno;
 use nix::fcntl::OFlag;
 use nix::pty::*;
@@ -16,6 +17,12 @@ use std::io::{Read, Write};
 use std::os::unix::prelude::*;
 
 use crate::result::Result;
+
+// Safe wrapper for the TIOCSCTTY ioctl
+fn tiocsctty(fd: RawFd, arg: libc::c_int) -> nix::Result<libc::c_int> {
+    let res = unsafe { libc::ioctl(fd, libc::TIOCSCTTY, arg) };
+    Errno::result(res)
+}
 
 enum FilePairState {
     Write,
@@ -287,15 +294,10 @@ pub(crate) fn attach_pts(pty_master: &PtyMaster) -> nix::Result<()> {
 
     // Set the PTY slave as the controlling terminal for this session
     // This is required for job control to work properly
-    // Use force flag (1) to steal from another session if needed
-    unsafe {
-        if libc::ioctl(pty_slave.as_raw_fd(), libc::TIOCSCTTY, 1) != 0 {
-            // If TIOCSCTTY fails, just warn but continue - job control may not work
-            // but the command will still execute
-            use nix::errno::Errno;
-            let err = Errno::last();
-            eprintln!("warning: failed to set controlling terminal: {:?}", err);
-        }
+    if let Err(err) = tiocsctty(pty_slave.as_raw_fd(), 0) {
+        // If TIOCSCTTY fails, just warn but continue - job control may not work
+        // but the command will still execute
+        warn!("Failed to set controlling terminal: {}", err);
     }
 
     unistd::dup2_stdin(&pty_slave)?;
