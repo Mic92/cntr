@@ -7,6 +7,7 @@ use std::backtrace::Backtrace;
 use std::fs::File;
 use std::io::Read;
 use std::thread;
+use std::time::{Duration, Instant};
 
 /// Wait for a child process with timeout protection
 ///
