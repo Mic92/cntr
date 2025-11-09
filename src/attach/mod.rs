@@ -19,7 +19,7 @@ pub(crate) struct AttachOptions {
     pub(crate) effective_user: Option<User>,
 }
 
-pub(crate) fn attach(opts: &AttachOptions) -> Result<()> {
+pub(crate) fn attach(opts: &AttachOptions) -> Result<std::convert::Infallible> {
     // Verify mount API capability - REQUIRED (no FUSE fallback)
     if !capability::has_mount_api() {
         bail!(

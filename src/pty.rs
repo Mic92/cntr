@@ -1,4 +1,4 @@
-use anyhow::Context;
+use anyhow::{Context, bail};
 use libc::{self, winsize};
 use log::warn;
 use nix::errno::Errno;
@@ -254,6 +254,63 @@ pub(crate) fn forward<T: AsRawFd + AsFd>(pty: &T) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Forward PTY I/O and wait for child process to exit, propagating exit status.
+///
+/// This function:
+/// 1. Forwards PTY I/O between stdin/stdout and the PTY (blocks until child exits)
+/// 2. Waits for the child process to exit with job control support
+/// 3. Propagates the child's exit status to the current process
+///
+/// Job control handling:
+/// - If child is stopped (Ctrl+Z), stops parent too
+/// - When parent resumes, resumes the child
+///
+/// This function never returns - it always exits the process.
+pub(crate) fn forward_pty_and_wait<T: AsRawFd + AsFd>(
+    pty: &T,
+    child_pid: nix::unistd::Pid,
+) -> Result<std::convert::Infallible> {
+    use nix::sys::signal::{self, Signal};
+    use nix::sys::wait::{WaitPidFlag, WaitStatus, waitpid};
+    use nix::unistd;
+    use std::process;
+
+    // Forward PTY I/O between stdin/stdout and the PTY
+    // This will block until child exits or PTY closes
+    let _ = forward(pty);
+
+    // Wait for child to exit and propagate exit status
+    // Loop to handle job control signals (SIGSTOP, SIGCONT) and EINTR
+    loop {
+        match waitpid(child_pid, Some(WaitPidFlag::WUNTRACED)) {
+            Ok(WaitStatus::Stopped(child, _)) => {
+                // Child was stopped (Ctrl+Z) - stop ourselves and resume child when we resume
+                let _ = signal::kill(unistd::getpid(), Signal::SIGSTOP);
+                let _ = signal::kill(child, Signal::SIGCONT);
+            }
+            Ok(WaitStatus::Signaled(_, sig, _)) => {
+                // Child was signaled - propagate signal and exit
+                let _ = signal::kill(unistd::getpid(), sig);
+                process::exit(128 + sig as i32);
+            }
+            Ok(WaitStatus::Exited(_, status)) => {
+                // Child exited normally - exit with same status
+                process::exit(status);
+            }
+            Ok(status) => {
+                bail!("unexpected wait event: {:?}", status);
+            }
+            Err(nix::errno::Errno::EINTR) => {
+                // Interrupted by signal, continue waiting
+                continue;
+            }
+            Err(e) => {
+                return Err(e).context("waitpid failed");
+            }
+        }
+    }
 }
 
 fn get_winsize(term_fd: RawFd) -> winsize {

@@ -1,5 +1,4 @@
 use anyhow::{Context, bail};
-use nix::sys::wait::{WaitStatus, waitpid};
 use nix::unistd::{self, ForkResult};
 use std::process;
 
@@ -24,7 +23,7 @@ pub(crate) fn exec(
     container_types: &[Box<dyn container_pid::Container>],
     exe: Option<String>,
     args: Vec<String>,
-) -> Result<()> {
+) -> Result<std::convert::Infallible> {
     // Verify mount API capability
     if !capability::has_mount_api() {
         bail!(
@@ -44,7 +43,7 @@ pub(crate) fn exec(
     match res.context("failed to fork")? {
         ForkResult::Parent { child } => {
             // Parent: Forward PTY I/O and wait for child
-            exec_parent(child, &pty_master)
+            pty::forward_pty_and_wait(&pty_master, child)
         }
         ForkResult::Child => {
             // Child: Setup PTY slave, enter container, exec command
@@ -53,33 +52,6 @@ pub(crate) fn exec(
             process::exit(1);
         }
     }
-}
-
-/// Parent process for exec: Forward PTY and wait for child
-fn exec_parent(child_pid: nix::unistd::Pid, pty_master: &nix::pty::PtyMaster) -> Result<()> {
-    // Forward PTY I/O between stdin/stdout and the PTY master
-    // This will block until child exits or PTY closes
-    let _ = pty::forward(pty_master);
-
-    // Wait for child to exit
-    match waitpid(child_pid, None) {
-        Ok(WaitStatus::Exited(_, status)) => {
-            process::exit(status);
-        }
-        Ok(WaitStatus::Signaled(_, signal, _)) => {
-            // Child was signaled - send same signal to ourselves
-            nix::sys::signal::kill(unistd::getpid(), signal)
-                .with_context(|| format!("failed to send signal {:?} to own process", signal))?;
-        }
-        Ok(status) => {
-            bail!("child exited with unexpected status: {:?}", status);
-        }
-        Err(e) => {
-            Err(e).context("failed to wait for child")?;
-        }
-    }
-
-    Ok(())
 }
 
 /// Child process for exec: Enter container and exec command
