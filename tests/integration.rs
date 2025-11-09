@@ -1,8 +1,6 @@
 mod common;
 
 use common::{TempDir, run_in_userns, start_fake_container};
-use nix::sys::signal::{Signal, kill};
-use nix::sys::wait::waitpid;
 use std::{env, path::Path};
 
 /// Check test prerequisites: CNTR_TEST_SHELL environment variable and mount API support
@@ -78,10 +76,6 @@ fn test_attach_integration() {
             .status()
             .expect("Failed to execute cntr attach");
 
-        // Cleanup: kill container (FakeContainer will clean up temp dir on drop)
-        let _ = kill(container.pid, Signal::SIGTERM);
-        let _ = waitpid(container.pid, None);
-
         // Check result - panic will be caught by run_in_userns
         assert!(
             status.success(),
@@ -121,10 +115,6 @@ fn test_exec_direct() {
             ])
             .status()
             .expect("Failed to execute cntr exec");
-
-        // Cleanup: kill container (FakeContainer will clean up temp dir on drop)
-        let _ = kill(container.pid, Signal::SIGTERM);
-        let _ = waitpid(container.pid, None);
 
         // Check result - panic will be caught by run_in_userns
         assert!(

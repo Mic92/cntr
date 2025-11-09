@@ -1,5 +1,7 @@
 //! Common test utilities for integration tests
 
+use nix::sys::signal::{Signal, kill};
+use nix::sys::wait::waitpid;
 use nix::unistd::pipe;
 use nix::unistd::{ForkResult, Pid, fork, pause};
 use std::io::Read;
@@ -53,7 +55,26 @@ pub(crate) struct FakeContainer {
     _temp_dir: TempDir,
 }
 
-// TempDir auto-cleans on drop, no manual Drop needed
+impl Drop for FakeContainer {
+    fn drop(&mut self) {
+        // Kill the child process
+        if let Err(e) = kill(self.pid, Signal::SIGKILL) {
+            // Log but don't panic during test teardown
+            eprintln!(
+                "Warning: failed to kill fake container process {}: {}",
+                self.pid, e
+            );
+        }
+
+        // Reap the child to avoid zombies
+        if let Err(e) = waitpid(self.pid, None) {
+            eprintln!(
+                "Warning: failed to reap fake container process {}: {}",
+                self.pid, e
+            );
+        }
+    }
+}
 
 /// Get the container PID and wait for it to be ready
 pub(crate) fn start_fake_container() -> FakeContainer {
