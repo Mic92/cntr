@@ -62,12 +62,16 @@ pub(crate) fn attach(opts: &AttachOptions) -> Result<std::convert::Infallible> {
     let res = unsafe { unistd::fork() };
     match res.context("failed to fork")? {
         ForkResult::Parent { child } => {
+            // Close child's socket in parent to ensure proper EOF detection
+            drop(child_sock);
             // Keep idmap_helper alive for the duration of attach
             let result = parent::run(child, &ctx.process_status, &parent_sock);
             drop(idmap_helper);
             result
         }
         ForkResult::Child => {
+            // Close parent's socket in child
+            drop(parent_sock);
             let child_opts = child::ChildOptions {
                 command: opts.command.clone(),
                 arguments: opts.arguments.clone(),
