@@ -14,6 +14,7 @@ use nix::sys::termios::{
 use nix::{self, fcntl, unistd};
 use std::fs::File;
 use std::io::{Read, Write};
+use std::os::fd::{AsFd, AsRawFd, BorrowedFd};
 use std::os::unix::prelude::*;
 
 use crate::result::Result;
@@ -208,7 +209,7 @@ extern "C" fn handle_sigwinch(_: i32) {
 
 static mut PTY_MASTER_FD: i32 = -1;
 
-pub(crate) fn forward(pty: &File) -> Result<()> {
+pub(crate) fn forward<T: AsRawFd + AsFd>(pty: &T) -> Result<()> {
     let mut raw_tty = None;
 
     if unsafe { libc::isatty(libc::STDIN_FILENO) } != 0 {
@@ -228,17 +229,24 @@ pub(crate) fn forward(pty: &File) -> Result<()> {
     );
     unsafe { sigaction(SIGWINCH, &sig_action) }.context("failed to install SIGWINCH handler")?;
 
-    let stdin: File = unsafe { File::from_raw_fd(libc::STDIN_FILENO) };
-    let stdout: File = unsafe { File::from_raw_fd(libc::STDOUT_FILENO) };
-    let pty_file: File = unsafe { File::from_raw_fd(pty.as_raw_fd()) };
+    // Duplicate FDs so each File owns its own FD and can be safely closed
+    // This prevents double-close bugs when the original FD owners are dropped
+    let stdin_dup = unistd::dup(unsafe { BorrowedFd::borrow_raw(libc::STDIN_FILENO) })
+        .context("failed to duplicate stdin")?;
+    let stdout_dup = unistd::dup(unsafe { BorrowedFd::borrow_raw(libc::STDOUT_FILENO) })
+        .context("failed to duplicate stdout")?;
+    let pty_dup = unistd::dup(pty).context("failed to duplicate pty master")?;
+
+    let stdin: File = unsafe { File::from_raw_fd(stdin_dup.into_raw_fd()) };
+    let stdout: File = unsafe { File::from_raw_fd(stdout_dup.into_raw_fd()) };
+    let pty_file: File = unsafe { File::from_raw_fd(pty_dup.into_raw_fd()) };
+
     shovel(&mut [
         FilePair::new(&stdin, &pty_file),
         FilePair::new(&pty_file, &stdout),
     ]);
-    // Drop the files to avoid closing them
-    _ = stdin.into_raw_fd();
-    _ = stdout.into_raw_fd();
-    _ = pty_file.into_raw_fd();
+
+    // Files will be automatically closed when dropped (they own duplicated FDs)
 
     unsafe { PTY_MASTER_FD = -1 };
 

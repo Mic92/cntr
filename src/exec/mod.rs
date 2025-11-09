@@ -1,7 +1,6 @@
 use anyhow::{Context, bail};
 use nix::sys::wait::{WaitStatus, waitpid};
 use nix::unistd::{self, ForkResult};
-use std::os::fd::{AsRawFd, IntoRawFd};
 use std::process;
 
 use crate::cmd::Cmd;
@@ -58,20 +57,9 @@ pub(crate) fn exec(
 
 /// Parent process for exec: Forward PTY and wait for child
 fn exec_parent(child_pid: nix::unistd::Pid, pty_master: &nix::pty::PtyMaster) -> Result<()> {
-    // Close master PTY fd in child before forwarding
-    // (child has slave end)
-    let pty_file = unsafe {
-        use std::fs::File;
-        use std::os::fd::FromRawFd;
-        File::from_raw_fd(pty_master.as_raw_fd())
-    };
-
-    // Forward PTY I/O
+    // Forward PTY I/O between stdin/stdout and the PTY master
     // This will block until child exits or PTY closes
-    let _ = pty::forward(&pty_file);
-
-    // Don't close the PTY file (avoid double-free)
-    let _ = pty_file.into_raw_fd();
+    let _ = pty::forward(pty_master);
 
     // Wait for child to exit
     match waitpid(child_pid, None) {
