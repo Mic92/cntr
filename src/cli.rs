@@ -248,8 +248,16 @@ where
 {
     let args: Vec<String> = args
         .into_iter()
-        .map(|s| s.into().into_string().unwrap())
-        .collect();
+        .map(|s| {
+            let os_string: std::ffi::OsString = s.into();
+            os_string.into_string().map_err(|invalid| {
+                format!(
+                    "argument contains invalid UTF-8: {}",
+                    invalid.to_string_lossy()
+                )
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
 
     let mut args_iter = args.into_iter();
 
