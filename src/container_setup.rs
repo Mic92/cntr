@@ -84,14 +84,9 @@ pub(crate) fn apply_security_context(
 ) -> Result<()> {
     // Set UID/GID
     if in_user_namespace {
-        // Check if setgroups is already denied
-        let setgroups_denied = std::fs::read_to_string("/proc/self/setgroups")
-            .map(|s| s.trim() == "deny")
-            .unwrap_or(false);
-
-        if !setgroups_denied {
-            unistd::setgroups(&[]).context("could not set groups")?;
-        }
+        // Try to clear supplementary groups, but ignore errors as this may fail
+        // in some sandboxes even when not explicitly denied
+        let _ = unistd::setgroups(&[]);
         unistd::setgid(process_status.gid).context("could not set group id")?;
         unistd::setuid(process_status.uid).context("could not set user id")?;
     }
