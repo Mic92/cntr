@@ -7,39 +7,32 @@ on:
 jobs:
   build:
     name: Publish binaries
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        target:
-          - x86_64-unknown-linux-musl
+        include:
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            rust: stable
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-24.04-arm
+            rust: stable
           # TODO: fix other architectures support
           #- i686-unknown-linux-musl
           #- armv7-unknown-linux-musleabihf
-          #- aarch64-unknown-linux-musl
-        rust: [stable]
     steps:
       - name: Checkout
         uses: actions/checkout@v5
       - name: Install rust
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          profile: minimal
-          toolchain: ${{ matrix.rust }}
-          target: ${{ matrix.target }}
-          override: true
+          targets: ${{ matrix.target }}
       - name: Build
         run: cargo build --release --target ${{ matrix.target }} --locked
       - name: Package
         run: |
-          version=$(basename ${{ github.ref }})
-          name="cntr-$version"
-          depsname="cntr-src-$version"
-          install -D target/${{ matrix.target }}/release/cntr dist/cntr-bin-$version-${{ matrix.target }}
-          mkdir $depsname
-          git archive HEAD | tar -x -C $depsname
-          cargo vendor
-          mv vendor $depsname/
-          tar -czvf dist/$depsname.tar.gz $depsname
+          version=$(basename "${{ github.ref }}")
+          install -D "target/${{ matrix.target }}/release/cntr" "dist/cntr-bin-$version-${{ matrix.target }}"
       - name: Upload binaries to release
         uses: svenstaro/upload-release-action@v2
         with:
@@ -48,9 +41,34 @@ jobs:
           tag: ${{ github.ref }}
           overwrite: true
           file_glob: true
-      # publish-crates does not like this
-      - name: Cleanup dist
-        run: rm -r dist
-      - uses: katyo/publish-crates@v2
+
+  publish-crate:
+    name: Publish to crates.io
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Install rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Create vendored source tarball
+        run: |
+          version=$(basename "${{ github.ref }}")
+          depsname="cntr-src-$version"
+          mkdir "$depsname"
+          git archive HEAD | tar -x -C "$depsname"
+          cargo vendor
+          mv vendor "$depsname/"
+          tar -czvf "$depsname.tar.gz" "$depsname"
+      - name: Upload source tarball to release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: cntr-src-*.tar.gz
+          tag: ${{ github.ref }}
+          overwrite: true
+          file_glob: true
+      - name: Publish to crates.io
+        uses: katyo/publish-crates@v2
         with:
           registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}

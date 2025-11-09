@@ -4,29 +4,30 @@ on:
   merge_group:
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        target:
-          - x86_64-unknown-linux-gnu
-          - x86_64-unknown-linux-musl
-        rust:
-          - stable
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            rust: stable
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            rust: stable
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+            rust: stable
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-24.04-arm
+            rust: stable
     steps:
       - name: Checkout
         uses: actions/checkout@v5
       - name: Install rust
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          profile: minimal
-          toolchain: ${{ matrix.rust }}
-          target: ${{ matrix.target }}
-          override: true
+          targets: ${{ matrix.target }}
       - name: Ready cache
-        if: matrix.os == 'ubuntu-latest'
-        run: sudo chown -R $(whoami):$(id -ng) ~/.cargo/
+        run: sudo chown -R "$(whoami):$(id -ng)" ~/.cargo/
       - name: Test
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --target ${{ matrix.target }}
+        run: cargo test --target ${{ matrix.target }}
