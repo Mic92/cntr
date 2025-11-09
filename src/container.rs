@@ -3,6 +3,7 @@
 //! This module provides common functionality for looking up containers
 //! and accessing their properties.
 
+use crate::ApparmorMode;
 use crate::procfs;
 use crate::result::Result;
 use anyhow::bail;
@@ -13,9 +14,11 @@ use nix::unistd::Pid;
 /// # Arguments
 /// * `container_name` - Container name, ID, or PID
 /// * `container_types` - List of container types to try
+/// * `apparmor_mode` - AppArmor mode configuration
 pub(crate) fn lookup_container(
     container_name: &str,
     container_types: &[Box<dyn container_pid::Container>],
+    apparmor_mode: ApparmorMode,
 ) -> Result<procfs::ProcStatus> {
     // Lookup container PID
     let pid_raw = match container_pid::lookup_container_pid(container_name, container_types) {
@@ -25,5 +28,5 @@ pub(crate) fn lookup_container(
     let pid = Pid::from_raw(pid_raw);
 
     // Get process status (includes uid, gid, capabilities, lsm_profile)
-    procfs::status(pid)
+    procfs::status(pid, apparmor_mode)
 }

@@ -56,6 +56,10 @@
               })
               docker
               podman
+              nspawn
+              k3s
+              builder
+              apparmor
               ;
           }
           // lib.mapAttrs' (n: lib.nameValuePair "package-${n}") config.packages;

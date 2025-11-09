@@ -1,3 +1,4 @@
+use crate::ApparmorMode;
 use crate::ipc;
 use crate::result::Result;
 use crate::syscalls::capability;
@@ -16,6 +17,7 @@ pub(crate) struct AttachOptions {
     pub(crate) container_name: String,
     pub(crate) container_types: Vec<Box<dyn container_pid::Container>>,
     pub(crate) effective_user: Option<User>,
+    pub(crate) apparmor_mode: ApparmorMode,
 }
 
 pub(crate) fn attach(opts: &AttachOptions) -> Result<std::convert::Infallible> {
@@ -28,9 +30,12 @@ pub(crate) fn attach(opts: &AttachOptions) -> Result<std::convert::Infallible> {
     }
 
     // Lookup container and get its process status
-    let process_status =
-        crate::container::lookup_container(&opts.container_name, &opts.container_types)
-            .with_context(|| format!("failed to lookup container '{}'", opts.container_name))?;
+    let process_status = crate::container::lookup_container(
+        &opts.container_name,
+        &opts.container_types,
+        opts.apparmor_mode,
+    )
+    .with_context(|| format!("failed to lookup container '{}'", opts.container_name))?;
 
     // Create idmap helper if --effective-user is specified
     // This creates a user namespace with the mapping for idmapped mounts

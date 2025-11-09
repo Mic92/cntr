@@ -140,7 +140,10 @@ impl Cmd {
     /// root since we don't have the overlay.
     ///
     /// This function never returns on success - it replaces the current process.
-    pub(crate) fn exec_in_container(mut self) -> Result<Infallible> {
+    pub(crate) fn exec_in_container(
+        mut self,
+        lsm_profile: Option<(PathBuf, String)>,
+    ) -> Result<Infallible> {
         // Set PATH only if not already present in container environment
         // Avoid using host's PATH which may point to binaries not present after chroot
         if !self.environment.contains_key(OsStr::new("PATH")) {
@@ -158,6 +161,7 @@ impl Cmd {
                 .args(self.arguments)
                 .envs(self.environment)
                 .pre_exec(move || {
+                    // First do chroot
                     if let Err(e) = unistd::chroot(&container_root) {
                         warn!("failed to chroot to {}: {}", container_root.display(), e);
                         return Err(e.into());
@@ -166,6 +170,15 @@ impl Cmd {
                     if let Err(e) = env::set_current_dir("/") {
                         warn!("failed to change directory to /");
                         return Err(e);
+                    }
+
+                    // Apply AppArmor profile after chroot
+                    if let Some((path, label)) = &lsm_profile {
+                        use std::fs::File;
+                        use std::io::Write;
+                        let mut file = File::options().write(true).open(path)?;
+                        let attr = format!("changeprofile {}", label);
+                        file.write_all(attr.as_bytes())?;
                     }
 
                     Ok(())

@@ -1,7 +1,7 @@
 use nix::unistd::User;
 use std::env;
 
-use crate::{AttachOptions, attach, exec};
+use crate::{ApparmorMode, AttachOptions, attach, exec};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const AUTHORS: &str = env!("CARGO_PKG_AUTHORS");
@@ -30,6 +30,18 @@ fn parse_container_types(s: &str) -> Result<Vec<Box<dyn container_pid::Container
     Ok(valid_types)
 }
 
+/// Parse AppArmor mode from string
+fn parse_apparmor_mode(s: &str) -> Result<ApparmorMode, String> {
+    match s.to_lowercase().as_str() {
+        "auto" => Ok(ApparmorMode::Auto),
+        "off" => Ok(ApparmorMode::Off),
+        _ => Err(format!(
+            "invalid apparmor mode '{}', expected 'auto' or 'off'",
+            s
+        )),
+    }
+}
+
 /// Print help for attach command
 fn print_attach_help() {
     eprintln!("cntr-attach {}", VERSION);
@@ -48,6 +60,9 @@ fn print_attach_help() {
     );
     eprintln!("                                 [default: all but command]");
     eprintln!("    --effective-user <USER>      Effective username for new files on host");
+    eprintln!("    --apparmor <MODE>            AppArmor profile mode");
+    eprintln!("                                 [possible: auto, off]");
+    eprintln!("                                 [default: auto]");
     eprintln!("    -h, --help                   Print help");
     eprintln!("    -V, --version                Print version");
     eprintln!();
@@ -73,6 +88,9 @@ fn print_exec_help() {
         "                                 [possible: process_id,podman,docker,nspawn,lxc,lxd,containerd,command,kubernetes]"
     );
     eprintln!("                                 [default: all but command]");
+    eprintln!("    --apparmor <MODE>            AppArmor profile mode");
+    eprintln!("                                 [possible: auto, off]");
+    eprintln!("                                 [default: auto]");
     eprintln!("    -h, --help                   Print help");
     eprintln!("    -V, --version                Print version");
     eprintln!();
@@ -106,6 +124,7 @@ where
     let mut container_id: Option<String> = None;
     let mut container_types: Vec<Box<dyn container_pid::Container>> = vec![];
     let mut effective_user: Option<User> = None;
+    let mut apparmor_mode = ApparmorMode::Auto;
     let mut command_parts: Vec<String> = vec![];
     let mut in_command = false;
 
@@ -138,6 +157,10 @@ where
                         return Err(format!("failed to lookup user '{}': {}", username, e).into());
                     }
                 }
+            }
+            "--apparmor" => {
+                let mode_str = args.next().ok_or("--apparmor requires an argument")?;
+                apparmor_mode = parse_apparmor_mode(&mode_str).map_err(|e| e.to_string())?;
             }
             "--" => {
                 in_command = true;
@@ -173,6 +196,7 @@ where
         container_name: container_name.clone(),
         container_types,
         effective_user,
+        apparmor_mode,
     };
 
     attach(&options)
@@ -187,6 +211,7 @@ where
 {
     let mut container_id: Option<String> = None;
     let mut container_types: Vec<Box<dyn container_pid::Container>> = vec![];
+    let mut apparmor_mode = ApparmorMode::Auto;
     let mut command_parts: Vec<String> = vec![];
     let mut in_command = false;
 
@@ -209,6 +234,10 @@ where
                 let types_str = args.next().ok_or("--type requires an argument")?;
                 container_types = parse_container_types(&types_str)
                     .map_err(|e| format!("invalid --type argument '{}': {}", types_str, e))?;
+            }
+            "--apparmor" => {
+                let mode_str = args.next().ok_or("--apparmor requires an argument")?;
+                apparmor_mode = parse_apparmor_mode(&mode_str).map_err(|e| e.to_string())?;
             }
             "--" => {
                 in_command = true;
@@ -239,7 +268,15 @@ where
     // Container ID is now required
     let container_name = container_id.ok_or("container ID is required for exec")?;
 
-    exec::exec(&container_name, &container_types, command, arguments)
+    let options = exec::ExecOptions {
+        command,
+        arguments,
+        container_name: container_name.clone(),
+        container_types,
+        apparmor_mode,
+    };
+
+    exec::exec(&options)
         .map_err(|e| format!("failed to exec into container '{}': {}", container_name, e))?;
 
     Ok(std::process::ExitCode::SUCCESS)
