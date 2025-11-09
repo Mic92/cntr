@@ -8,7 +8,7 @@ mod cgroup;
 mod cmd;
 mod container;
 mod container_setup;
-mod exec;
+pub(crate) mod exec;
 mod ipc;
 mod lsm;
 mod mount_context;
@@ -21,3 +21,12 @@ pub mod syscalls;
 pub(crate) use attach::{AttachOptions, attach};
 
 pub mod cli;
+
+/// AppArmor mode configuration
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ApparmorMode {
+    /// Automatically detect and apply AppArmor profile (default)
+    Auto,
+    /// Disable AppArmor profile application
+    Off,
+}

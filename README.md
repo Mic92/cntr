@@ -149,6 +149,9 @@ OPTIONS:
                                  [possible: process-id,podman,docker,nspawn,lxc,lxd,containerd,command,kubernetes]
                                  [default: all but command]
     --effective-user <USER>      Effective username for new files on host
+    --apparmor <MODE>            AppArmor profile mode
+                                 [possible: auto, off]
+                                 [default: auto]
     -h, --help                   Print help
     -V, --version                Print version
 
@@ -172,6 +175,9 @@ OPTIONS:
     -t, --type <TYPES>           Container types to try (comma-separated)
                                  [possible: process-id,podman,docker,nspawn,lxc,lxd,containerd,command,kubernetes]
                                  [default: all but command]
+    --apparmor <MODE>            AppArmor profile mode
+                                 [possible: auto, off]
+                                 [default: auto]
     -h, --help                   Print help
     -V, --version                Print version
 
@@ -391,6 +397,30 @@ This is particularly useful for:
 - Testing with temporary directories
 - Systems where `/var/lib/cntr` is not suitable
 - Isolating multiple cntr sessions
+
+### AppArmor Profile Control
+
+By default, cntr automatically inherits the AppArmor security profile from the target container. You can control this behavior using the `--apparmor` flag:
+
+```console
+# Default behavior - automatically inherit AppArmor profile
+$ cntr attach mycontainer
+
+# Explicitly enable AppArmor profile inheritance
+$ cntr attach --apparmor auto mycontainer
+
+# Disable AppArmor profile inheritance
+$ cntr attach --apparmor off mycontainer
+$ cntr exec --apparmor off mycontainer -- /bin/sh
+```
+
+**When to use `--apparmor off`:**
+- Troubleshooting AppArmor-related issues
+- Running tools that conflict with the container's AppArmor profile
+- Systems where AppArmor is not properly configured
+- Development and debugging scenarios where you need unrestricted access
+
+**Note:** On systems without AppArmor enabled, this flag has no effect. The flag is available for both `attach` and `exec` commands.
 
 # How it works
 

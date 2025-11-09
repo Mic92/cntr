@@ -5,6 +5,7 @@ use std::io::ErrorKind;
 use std::io::prelude::*;
 use std::path::PathBuf;
 
+use crate::ApparmorMode;
 use crate::procfs;
 use crate::result::Result;
 
@@ -52,7 +53,12 @@ fn read_apparmor_label(path: &PathBuf) -> Result<String> {
     Ok(fields[0].to_owned())
 }
 
-pub(crate) fn read_profile(pid: Pid) -> Result<Option<LSMProfile>> {
+pub(crate) fn read_profile(pid: Pid, apparmor_mode: ApparmorMode) -> Result<Option<LSMProfile>> {
+    // If AppArmor is disabled via flag, return None
+    if apparmor_mode == ApparmorMode::Off {
+        return Ok(None);
+    }
+
     if !is_apparmor_enabled().context("failed to check AppArmor availability")? {
         return Ok(None);
     }

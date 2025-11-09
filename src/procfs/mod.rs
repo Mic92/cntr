@@ -8,6 +8,7 @@ use std::io::BufReader;
 use std::io::prelude::*;
 use std::path::{Path, PathBuf};
 
+use crate::ApparmorMode;
 use crate::lsm::LSMProfile;
 use crate::result::Result;
 
@@ -70,7 +71,7 @@ pub(crate) struct ProcStatus {
     pub(crate) lsm_profile: Option<LSMProfile>,
 }
 
-pub(crate) fn status(target_pid: Pid) -> Result<ProcStatus> {
+pub(crate) fn status(target_pid: Pid, apparmor_mode: ApparmorMode) -> Result<ProcStatus> {
     let path = get_path().join(target_pid.to_string()).join("status");
     let file = File::open(&path)
         .with_context(|| format!("failed to open process status file {}", path.display()))?;
@@ -143,7 +144,8 @@ pub(crate) fn status(target_pid: Pid) -> Result<ProcStatus> {
     let gid = Gid::from_raw(container_gid);
 
     // Read LSM profile
-    let lsm_profile = crate::lsm::read_profile(target_pid).context("failed to get lsm profile")?;
+    let lsm_profile =
+        crate::lsm::read_profile(target_pid, apparmor_mode).context("failed to get lsm profile")?;
 
     Ok(ProcStatus {
         global_pid: target_pid,

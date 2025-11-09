@@ -2,27 +2,25 @@ use anyhow::{Context, bail};
 use nix::unistd::{self, ForkResult};
 use std::process;
 
+use crate::ApparmorMode;
 use crate::cmd::Cmd;
 use crate::container_setup;
 use crate::pty;
 use crate::result::Result;
 use crate::syscalls::capability;
 
+pub(crate) struct ExecOptions {
+    pub(crate) command: Option<String>,
+    pub(crate) arguments: Vec<String>,
+    pub(crate) container_name: String,
+    pub(crate) container_types: Vec<Box<dyn container_pid::Container>>,
+    pub(crate) apparmor_mode: ApparmorMode,
+}
+
 /// Execute a command in a container
 ///
 /// Directly accesses container by ID/name with PTY.
-///
-/// Arguments:
-/// - container_name: Container ID, name, or PID
-/// - container_types: List of container types to try
-/// - exe: Optional command to execute (None = default shell)
-/// - args: Arguments to pass to the command
-pub(crate) fn exec(
-    container_name: &str,
-    container_types: &[Box<dyn container_pid::Container>],
-    exe: Option<String>,
-    args: Vec<String>,
-) -> Result<std::convert::Infallible> {
+pub(crate) fn exec(opts: &ExecOptions) -> Result<std::convert::Infallible> {
     // Verify mount API capability
     if !capability::has_mount_api() {
         bail!(
@@ -32,8 +30,12 @@ pub(crate) fn exec(
     }
 
     // Lookup container and get its process status
-    let mut process_status = crate::container::lookup_container(container_name, container_types)
-        .with_context(|| format!("failed to lookup container '{}'", container_name))?;
+    let mut process_status = crate::container::lookup_container(
+        &opts.container_name,
+        &opts.container_types,
+        opts.apparmor_mode,
+    )
+    .with_context(|| format!("failed to lookup container '{}'", opts.container_name))?;
 
     // Create PTY for interactive command execution
     let pty_master = pty::open_ptm().context("failed to open pty master")?;
@@ -47,7 +49,12 @@ pub(crate) fn exec(
         }
         ForkResult::Child => {
             // Child: Setup PTY slave, enter container, exec command
-            let Err(e) = exec_child(&mut process_status, exe, args, &pty_master);
+            let Err(e) = exec_child(
+                &mut process_status,
+                opts.command.clone(),
+                opts.arguments.clone(),
+                &pty_master,
+            );
             eprintln!("exec child failed: {:?}", e);
             process::exit(1);
         }
