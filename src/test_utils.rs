@@ -1,7 +1,91 @@
 //! Test utilities shared between unit and integration tests
 
-use nix::sys::wait::{WaitStatus, waitpid};
-use nix::unistd::{ForkResult, fork};
+use nix::sys::signal::{Signal, kill};
+use nix::unistd::{ForkResult, Pid, fork};
+use std::time::{Duration, Instant};
+use std::thread;
+
+/// Wait for a child process with timeout protection
+///
+/// This function polls the child process with WNOHANG and tracks elapsed time.
+/// If the timeout is exceeded, it sends SIGTERM, waits for a grace period,
+/// then sends SIGKILL if needed before reaping the child.
+///
+/// # Panics
+///
+/// Panics if:
+/// - The child times out (after attempting SIGTERM then SIGKILL)
+/// - waitpid encounters an error
+/// - Unable to send kill signals
+fn wait_child_with_timeout(child: Pid, timeout: Duration) -> WaitStatus {
+    const GRACE_PERIOD: Duration = Duration::from_secs(2);
+    const POLL_INTERVAL: Duration = Duration::from_millis(100);
+
+    let start = Instant::now();
+    let mut sent_sigterm = false;
+    let mut sigterm_time: Option<Instant> = None;
+
+    loop {
+        match waitpid(child, Some(WaitPidFlag::WNOHANG)) {
+            Ok(WaitStatus::StillAlive) => {
+                let elapsed = start.elapsed();
+
+                if elapsed >= timeout {
+                    if !sent_sigterm {
+                        // First, try SIGTERM for graceful shutdown
+                        if let Err(e) = kill(child, Signal::SIGTERM) {
+                            panic!(
+                                "Test timeout: failed to send SIGTERM to child {}: {}",
+                                child, e
+                            );
+                        }
+                        sent_sigterm = true;
+                        sigterm_time = Some(Instant::now());
+                    } else if sigterm_time.is_some_and(|t| t.elapsed() >= GRACE_PERIOD) {
+                        // Grace period expired, forcefully kill with SIGKILL
+                        if let Err(e) = kill(child, Signal::SIGKILL) {
+                            // ESRCH is OK - child may have exited after SIGTERM
+                            if e != nix::errno::Errno::ESRCH {
+                                panic!(
+                                    "Test timeout: failed to send SIGKILL to child {}: {}",
+                                    child, e
+                                );
+                            }
+                        }
+
+                        // Reap the child process
+                        match waitpid(child, None) {
+                            Ok(_) => {
+                                panic!(
+                                    "Test timed out after {:.2} seconds (child PID: {})",
+                                    elapsed.as_secs_f64(),
+                                    child
+                                );
+                            }
+                            Err(e) => {
+                                panic!(
+                                    "Test timed out after {:.2} seconds and waitpid failed after SIGKILL: {} (child PID: {})",
+                                    elapsed.as_secs_f64(),
+                                    e,
+                                    child
+                                );
+                            }
+                        }
+                    }
+                }
+
+                thread::sleep(POLL_INTERVAL);
+            }
+            Ok(status) => {
+                // Child has exited or terminated
+                return status;
+            }
+            Err(e) => {
+                panic!("waitpid failed: {}", e);
+            }
+        }
+    }
+}
 
 /// Run a test function in a user namespace
 ///
@@ -54,19 +138,16 @@ where
             }
         }
         Ok(ForkResult::Parent { child }) => {
-            // Wait for test to complete
-            match waitpid(child, None) {
-                Ok(WaitStatus::Exited(_, 0)) => {
+            // Wait for test to complete with timeout protection
+            match wait_child_with_timeout(child, Duration::from_secs(30)) {
+                WaitStatus::Exited(_, 0) => {
                     // Test passed
                 }
-                Ok(WaitStatus::Exited(_, code)) => {
+                WaitStatus::Exited(_, code) => {
                     panic!("Test failed with exit code {}", code);
                 }
-                Ok(status) => {
+                status => {
                     panic!("Test process terminated abnormally: {:?}", status);
-                }
-                Err(e) => {
-                    panic!("waitpid failed: {}", e);
                 }
             }
         }
