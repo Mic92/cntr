@@ -32,7 +32,14 @@ pub(crate) fn status(target_pid: Pid) -> Result<ProcStatus> {
     for line in reader.lines() {
         let line = line.with_context(|| format!("could not read line from {}", path.display()))?;
         let columns: Vec<&str> = line.split('\t').collect();
-        assert!(columns.len() >= 2);
+        if columns.len() < 2 {
+            anyhow::bail!(
+                "malformed line in {} (expected at least 2 tab-separated columns, found {}): '{}'",
+                path.display(),
+                columns.len(),
+                line
+            );
+        }
         if columns[0] == "CapEff:"
             && let Some(cap_string) = columns.last()
         {
