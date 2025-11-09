@@ -59,6 +59,7 @@ In this two minute recording you learn all the basics of cntr:
   * LXD
   * systemd-nspawn
   * containerd
+  * k3s (via containerd/crictl)
 - For other container engines cntr also takes process ids (PIDs) instead of container names.
 
 ## Installation

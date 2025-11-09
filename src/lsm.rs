@@ -21,7 +21,9 @@ impl LSMKind {
         match *self {
             LSMKind::AppArmor => {
                 let process = pid.map_or(String::from("self"), |p| p.to_string());
-                procfs::get_path().join(process).join("attr/current")
+                procfs::get_path()
+                    .join(process)
+                    .join("attr/apparmor/current")
             }
             LSMKind::SELinux => {
                 let process = pid.map_or(String::from("thread-self"), |p| p.to_string());
