@@ -7,8 +7,9 @@
 //! 2. Syscall numbers may vary by architecture
 //! 3. SELinux/seccomp policies may block syscalls
 
-use std::sync::Once;
+use nix::errno::Errno;
 use std::ffi::CString;
+use std::sync::Once;
 
 static INIT: Once = Once::new();
 static mut MOUNT_API_AVAILABLE: bool = false;
@@ -55,12 +56,11 @@ fn probe_mount_api() -> bool {
         }
 
         // Check errno to determine if syscall exists
-        let errno = *libc::__errno_location();
-        match errno {
-            libc::ENOSYS => false,              // Syscall not implemented
-            libc::ENODEV => true,               // Device/fs not found - syscall exists!
-            libc::EPERM | libc::EACCES => true, // Permission denied - syscall exists
-            _ => true,                          // Any other error - assume syscall exists
+        match Errno::last() {
+            Errno::ENOSYS => false,               // Syscall not implemented
+            Errno::ENODEV => true,                // Device/fs not found - syscall exists!
+            Errno::EPERM | Errno::EACCES => true, // Permission denied - syscall exists
+            _ => true,                            // Any other error - assume syscall exists
         }
     }
 }
