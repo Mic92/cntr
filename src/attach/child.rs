@@ -1,12 +1,14 @@
 use anyhow::{Context, bail};
 use log::{debug, warn};
+use nix::fcntl::AtFlags;
+use nix::sys::stat::{SFlag, fstatat};
 use nix::unistd;
 use nix::unistd::{Gid, Uid};
 use std::env;
 use std::ffi::CString;
-use std::os::unix::io::{BorrowedFd, RawFd};
+use std::os::unix::io::{AsFd, BorrowedFd, OwnedFd, RawFd};
 use std::os::unix::prelude::*;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::capabilities;
 use crate::cgroup;
@@ -33,6 +35,211 @@ pub(crate) struct ChildOptions<'a> {
     pub(crate) gid: Gid,
 }
 
+/// Apply idmapped mounts to all supported filesystems
+///
+/// This makes all files created on the host appear as owned by the effective user.
+/// Requires kernel 5.12+ and --effective-user option.
+fn apply_idmapped_mounts(userns_fd: BorrowedFd, base_dir: &Path) -> Result<()> {
+    use std::io::BufRead;
+
+    // Read /proc/mounts to get all mount points
+    let mounts_file = std::fs::File::open("/proc/mounts").context("failed to open /proc/mounts")?;
+    let reader = std::io::BufReader::new(mounts_file);
+
+    // Skip virtual/special filesystems that don't support idmapped mounts
+    let skip_fstypes = [
+        "proc",
+        "sysfs",
+        "devtmpfs",
+        "devpts",
+        "cgroup",
+        "cgroup2",
+        "securityfs",
+        "debugfs",
+        "tracefs",
+        "pstore",
+        "efivarfs",
+        "mqueue",
+        "hugetlbfs",
+        "autofs",
+        "fusectl",
+        "configfs",
+        "rpc_pipefs",
+        "binfmt_misc",
+        "overlay",
+    ];
+
+    for line in reader.lines() {
+        let line = match line {
+            Ok(l) => l,
+            Err(_) => continue,
+        };
+
+        // Parse: device mountpoint fstype options
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() < 3 {
+            continue;
+        }
+
+        let mount_point = parts[1];
+        let fstype = parts[2];
+
+        // Skip virtual filesystems
+        if skip_fstypes.contains(&fstype) {
+            continue;
+        }
+
+        // Skip the base_dir itself (we'll mount container stuff there)
+        if Path::new(mount_point).starts_with(base_dir) {
+            continue;
+        }
+
+        // Try to apply idmap to this mount
+        let mount_cstr = match CString::new(mount_point) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+
+        // Clone the mount with open_tree
+        let tree = match MountFd::open_tree_at(None, &mount_cstr, OPEN_TREE_CLONE | AT_RECURSIVE) {
+            Ok(t) => t,
+            Err(e) => {
+                warn!("Failed to open_tree {}: {}", mount_point, e);
+                continue;
+            }
+        };
+
+        // Apply idmap
+        if let Err(e) = tree.apply_idmap(userns_fd) {
+            warn!(
+                "Failed to apply idmap to {} ({}): {}",
+                mount_point, fstype, e
+            );
+            continue;
+        }
+
+        // Move back to original location
+        if let Err(e) = tree.attach_to(None, &mount_cstr, 0) {
+            warn!("Failed to attach idmapped {} back: {}", mount_point, e);
+            continue;
+        }
+
+        debug!("Applied idmap to {} ({})", mount_point, fstype);
+    }
+
+    Ok(())
+}
+
+/// Capture and attach container filesystem trees
+///
+/// This function:
+/// 1. Enters the container's mount namespace
+/// 2. Captures each root entry using open_tree() (preserves submounts)
+/// 3. Returns to our mount namespace
+/// 4. Attaches the captured trees to base_dir
+fn capture_and_attach_container_trees(
+    container_root_fd: std::fs::File,
+    container_pid: unistd::Pid,
+    our_mount_ns: namespace::Namespace,
+    base_dir: &Path,
+) -> Result<()> {
+    // Enter container's mount namespace to capture trees with submounts
+    namespace::MOUNT
+        .open(container_pid)
+        .context("could not access container mount namespace")?
+        .apply()
+        .context("failed to enter container mount namespace")?;
+
+    // Open container root directory
+    let mut dir = nix::dir::Dir::from_fd(OwnedFd::from(container_root_fd))
+        .context("failed to create Dir from container root FD")?;
+
+    // Collect entries first to avoid borrow conflicts when using dir.as_fd() later
+    let entries: Vec<_> = dir
+        .iter()
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| {
+            let name = entry.file_name().to_bytes();
+            name != b"." && name != b".."
+        })
+        .filter_map(|entry| {
+            let name = CString::new(entry.file_name().to_bytes()).ok()?;
+            Some((name, entry.file_type()))
+        })
+        .collect();
+
+    let dir_fd = dir.as_fd();
+
+    // Capture each entry as a mount tree
+    let captured_trees: Vec<_> = entries
+        .iter()
+        .filter_map(|(name, file_type)| {
+            // Determine if entry is a directory
+            let is_dir = match file_type {
+                Some(nix::dir::Type::Directory) => true,
+                Some(_) => false,
+                None => fstatat(dir_fd, name.as_c_str(), AtFlags::AT_SYMLINK_NOFOLLOW)
+                    .map(|stat| SFlag::from_bits_truncate(stat.st_mode).contains(SFlag::S_IFDIR))
+                    .unwrap_or_else(|e| {
+                        warn!("Failed to stat {:?}, assuming non-directory: {}", name, e);
+                        false
+                    }),
+            };
+
+            // Capture tree
+            match MountFd::open_tree_at(
+                Some(dir_fd),
+                name.as_c_str(),
+                OPEN_TREE_CLONE | AT_RECURSIVE,
+            ) {
+                Ok(tree) => {
+                    let name_os = std::ffi::OsStr::from_bytes(name.as_bytes()).to_owned();
+                    Some((name_os, tree, is_dir))
+                }
+                Err(e) => {
+                    warn!("Failed to capture tree for {:?}: {}", name, e);
+                    None
+                }
+            }
+        })
+        .collect();
+
+    // Return to our mount namespace
+    our_mount_ns
+        .apply()
+        .context("failed to return to our mount namespace")?;
+
+    // Attach captured trees to base_dir
+    for (name, tree, is_dir) in captured_trees {
+        let target = base_dir.join(&name);
+
+        // Create mount point
+        let mount_point_created = if is_dir {
+            std::fs::create_dir_all(&target).is_ok()
+        } else {
+            target
+                .parent()
+                .map(|p| std::fs::create_dir_all(p).is_ok())
+                .unwrap_or(true)
+                && std::fs::File::create(&target).is_ok()
+        };
+
+        if !mount_point_created {
+            warn!("Failed to create mount point {:?}", target);
+            continue;
+        }
+
+        let target_cstr = CString::new(target.as_os_str().as_bytes())
+            .with_context(|| format!("failed to create CString for {}", target.display()))?;
+
+        if let Err(e) = tree.attach_to(None, &target_cstr, 0) {
+            warn!("Failed to attach tree to {:?}: {}", target, e);
+        }
+    }
+
+    Ok(())
+}
+
 /// Child process logic for mount API attach
 ///
 /// The child assembles a mount hierarchy where:
@@ -45,18 +252,20 @@ pub(crate) struct ChildOptions<'a> {
 /// 2. Prepare command to execute
 /// 3. Detect and open namespaces
 /// 4. Assemble mount hierarchy:
-///    - Resolve container's root path via /proc/<pid>/root (handles chroot)
+///    - Open container's root via /proc/<pid>/root as FD (handles chroot)
 ///    - Create private mount namespace
 ///    - Create tmpfs at {base_dir}
 ///    - Enter container's mount namespace
-///    - Capture each container entry with open_tree() (includes submounts)
+///    - Capture each container entry with open_tree() using the FD (includes submounts)
 ///    - Return to parent namespace
 ///    - Attach captured trees to {base_dir}/*
 /// 5. Enter other container namespaces (USER, NET, PID, IPC, UTS, CGROUP)
 /// 6. Set UID/GID and drop capabilities
 /// 7. Create daemon socket and setup PTY
 /// 8. Execute the command
-pub(crate) fn run(options: &ChildOptions) -> Result<()> {
+///
+/// This function never returns on success - it replaces the current process.
+pub(crate) fn run(options: &ChildOptions) -> Result<std::convert::Infallible> {
     // Step 1: Read LSM profile before entering namespaces
     let lsm_profile = lsm::read_profile(options.process_status.global_pid)
         .context("failed to get lsm profile")?;
@@ -125,11 +334,12 @@ pub(crate) fn run(options: &ChildOptions) -> Result<()> {
     std::fs::create_dir_all(&base_dir)
         .with_context(|| format!("failed to create {}", base_dir.display()))?;
 
-    // Resolve container's root path (handles chroot containers)
-    // For chrooted processes, /proc/<pid>/root links to the chroot directory
+    // Open container's root as a file descriptor (handles chroot containers)
+    // This FD will remain valid even after entering the container's mount namespace,
+    // allowing us to access the container's root even if /proc is not mounted inside
     let proc_root_path = format!("/proc/{}/root", options.process_status.global_pid);
-    let container_root_path = std::fs::read_link(&proc_root_path)
-        .with_context(|| format!("failed to read container root path from {}", proc_root_path))?;
+    let container_root_fd = std::fs::File::open(&proc_root_path)
+        .with_context(|| format!("failed to open container root at {}", proc_root_path))?;
 
     // Create private mount namespace
     unshare(CloneFlags::CLONE_NEWNS).context("failed to unshare mount namespace")?;
@@ -145,98 +355,10 @@ pub(crate) fn run(options: &ChildOptions) -> Result<()> {
     .context("failed to make mounts private")?;
 
     // Apply idmapped mount to all supported filesystems if --effective-user was specified
-    // This makes all files created on the host appear as owned by the effective user
     if let Some(userns_fd) = options.userns_fd {
-        use crate::syscalls::mount_api::{AT_RECURSIVE, MountFd, OPEN_TREE_CLONE};
-        use std::io::BufRead;
-
         let userns_borrowed = unsafe { BorrowedFd::borrow_raw(userns_fd) };
-
-        // Read /proc/mounts to get all mount points
-        let mounts_file =
-            std::fs::File::open("/proc/mounts").context("failed to open /proc/mounts")?;
-        let reader = std::io::BufReader::new(mounts_file);
-
-        // Skip virtual/special filesystems that don't support idmapped mounts
-        let skip_fstypes = [
-            "proc",
-            "sysfs",
-            "devtmpfs",
-            "devpts",
-            "cgroup",
-            "cgroup2",
-            "securityfs",
-            "debugfs",
-            "tracefs",
-            "pstore",
-            "efivarfs",
-            "mqueue",
-            "hugetlbfs",
-            "autofs",
-            "fusectl",
-            "configfs",
-            "rpc_pipefs",
-            "binfmt_misc",
-            "overlay",
-        ];
-
-        for line in reader.lines() {
-            let line = match line {
-                Ok(l) => l,
-                Err(_) => continue,
-            };
-
-            // Parse: device mountpoint fstype options
-            let parts: Vec<&str> = line.split_whitespace().collect();
-            if parts.len() < 3 {
-                continue;
-            }
-
-            let mount_point = parts[1];
-            let fstype = parts[2];
-
-            // Skip virtual filesystems
-            if skip_fstypes.contains(&fstype) {
-                continue;
-            }
-
-            // Skip the base_dir itself (we'll mount container stuff there)
-            if mount_point.starts_with(base_dir.to_str().unwrap_or("")) {
-                continue;
-            }
-
-            // Try to apply idmap to this mount
-            let mount_cstr = match CString::new(mount_point) {
-                Ok(c) => c,
-                Err(_) => continue,
-            };
-
-            // Clone the mount with open_tree
-            let tree = match MountFd::open_tree_at(&mount_cstr, OPEN_TREE_CLONE | AT_RECURSIVE) {
-                Ok(t) => t,
-                Err(e) => {
-                    warn!("Failed to open_tree {}: {}", mount_point, e);
-                    continue;
-                }
-            };
-
-            // Apply idmap
-            if let Err(e) = tree.apply_idmap(userns_borrowed) {
-                warn!(
-                    "Failed to apply idmap to {} ({}): {}",
-                    mount_point, fstype, e
-                );
-                continue;
-            }
-
-            // Move back to original location
-            if let Err(e) = tree.attach_to(None, &mount_cstr, 0) {
-                warn!("Failed to attach idmapped {} back: {}", mount_point, e);
-                continue;
-            }
-
-            debug!("Applied idmap to {} ({})", mount_point, fstype);
-        }
+        apply_idmapped_mounts(userns_borrowed, &base_dir)
+            .context("failed to apply idmapped mounts")?;
     }
 
     // Save our own mount namespace FD
@@ -255,71 +377,14 @@ pub(crate) fn run(options: &ChildOptions) -> Result<()> {
     )
     .with_context(|| format!("failed to mount tmpfs at {}", base_dir.display()))?;
 
-    // Enter container's mount namespace to capture trees with submounts
-    let container_mount_namespace = namespace::MOUNT
-        .open(options.process_status.global_pid)
-        .context("could not access container mount namespace")?;
-    container_mount_namespace
-        .apply()
-        .context("failed to enter container mount namespace")?;
-
-    // Capture each container root entry with open_tree()
-    let mut captured_trees = Vec::new();
-    for entry in std::fs::read_dir(&container_root_path).with_context(|| {
-        format!(
-            "failed to read container root at {}",
-            container_root_path.display()
-        )
-    })? {
-        let entry = entry.context("failed to read directory entry")?;
-        let file_name = entry.file_name();
-        let file_name_str = file_name.to_string_lossy();
-
-        // Skip special directories
-        if file_name_str == "." || file_name_str == ".." {
-            continue;
-        }
-
-        let source = entry.path();
-        let source_cstr = CString::new(source.to_str().unwrap())
-            .with_context(|| format!("failed to create CString for {}", source.display()))?;
-
-        // Capture this entry's tree (includes all submounts)
-        match MountFd::open_tree_at(&source_cstr, OPEN_TREE_CLONE | AT_RECURSIVE) {
-            Ok(tree_fd) => {
-                captured_trees.push((file_name, tree_fd));
-            }
-            Err(e) => {
-                warn!("Failed to capture tree for {:?}: {}", source, e);
-            }
-        }
-    }
-
-    // Return to our own mount namespace (with tmpfs and idmapped host root)
-    our_mount_ns
-        .apply()
-        .context("failed to return to our mount namespace")?;
-
-    // Attach each captured tree to base_dir
-    // Note: We DON'T apply idmap to container trees - idmap was applied to host root above
-    for (file_name, tree_fd) in captured_trees {
-        let target = base_dir.join(&file_name);
-
-        // Create mount point
-        let is_dir = file_name.to_string_lossy() != ".exec.sock"; // Assume directories
-        if is_dir {
-            let _ = std::fs::create_dir(&target);
-        } else {
-            let _ = std::fs::File::create(&target);
-        }
-
-        let target_cstr = CString::new(target.to_str().unwrap())
-            .with_context(|| format!("failed to create CString for {}", target.display()))?;
-
-        if let Err(e) = tree_fd.attach_to(None, &target_cstr, 0) {
-            warn!("Failed to attach tree to {:?}: {}", target, e);
-        }
-    }
+    // Capture container filesystem and attach to base_dir
+    capture_and_attach_container_trees(
+        container_root_fd,
+        options.process_status.global_pid,
+        our_mount_ns,
+        &base_dir,
+    )
+    .context("failed to capture and attach container trees")?;
 
     // Apply mount label if needed
     if let Some(label) = mount_label {
@@ -399,8 +464,5 @@ pub(crate) fn run(options: &ChildOptions) -> Result<()> {
     // Use exec_in_overlay() since we're in the overlay environment with access
     // to both host binaries and container filesystem
     cmd.exec_in_overlay()
-        .context("failed to execute command in overlay")?;
-
-    // Should not reach here - exec replaces process
-    unreachable!()
+        .context("failed to execute command in overlay")
 }

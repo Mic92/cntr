@@ -67,6 +67,7 @@ pub(crate) fn enter_namespaces(container_pid: Pid) -> Result<bool> {
 
     // Open other namespaces
     let mut other_namespaces = Vec::new();
+    let mut user_ns_entered = false;
     let other_kinds = &[
         namespace::UTS,
         namespace::CGROUP,
@@ -84,10 +85,16 @@ pub(crate) fn enter_namespaces(container_pid: Pid) -> Result<bool> {
             continue;
         }
 
-        other_namespaces.push(
-            kind.open(container_pid)
-                .with_context(|| format!("failed to open {} namespace", kind.name))?,
-        );
+        let ns = kind
+            .open(container_pid)
+            .with_context(|| format!("failed to open {} namespace", kind.name))?;
+
+        // Track if USER namespace was successfully opened
+        if kind.name == namespace::USER.name {
+            user_ns_entered = true;
+        }
+
+        other_namespaces.push(ns);
     }
 
     // Enter mount namespace first
@@ -100,7 +107,7 @@ pub(crate) fn enter_namespaces(container_pid: Pid) -> Result<bool> {
         ns.apply().context("failed to apply namespace")?;
     }
 
-    Ok(supported_namespaces.contains(namespace::USER.name))
+    Ok(user_ns_entered)
 }
 
 /// Apply security context (UID/GID, capabilities, LSM)
@@ -118,17 +125,8 @@ pub(crate) fn apply_security_context(
             .map(|s| s.trim() == "deny")
             .unwrap_or(false);
 
-        let dropped_groups = if !setgroups_denied {
-            unistd::setgroups(&[]).is_ok()
-        } else {
-            setgroups_denied
-        };
-
-        if !setgroups_denied
-            && let Err(e) = unistd::setgroups(&[])
-            && !dropped_groups
-        {
-            Err(e).context("could not set groups")?;
+        if !setgroups_denied {
+            unistd::setgroups(&[]).context("could not set groups")?;
         }
         unistd::setgid(ctx.gid).context("could not set group id")?;
         unistd::setuid(ctx.uid).context("could not set user id")?;

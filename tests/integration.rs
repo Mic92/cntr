@@ -1,9 +1,37 @@
 mod common;
 
 use common::{TempDir, run_in_userns, start_fake_container};
-use nix::sys::signal::{Signal, kill};
-use nix::sys::wait::waitpid;
 use std::{env, path::Path};
+
+/// Check test prerequisites: CNTR_TEST_SHELL environment variable and mount API support
+///
+/// Returns Some(shell_path) if all prerequisites are met, None otherwise.
+fn check_test_prerequisites() -> Option<String> {
+    // Check for static shell environment variable
+    let static_shell = match env::var("CNTR_TEST_SHELL").ok() {
+        Some(path) => path,
+        None => {
+            eprintln!("Skipping test: CNTR_TEST_SHELL environment variable not set");
+            return None;
+        }
+    };
+
+    if !Path::new(&static_shell).exists() {
+        eprintln!(
+            "Skipping test: CNTR_TEST_SHELL path does not exist: {}",
+            static_shell
+        );
+        return None;
+    }
+
+    // Check for mount API support
+    if !cntr::syscalls::capability::has_mount_api() {
+        eprintln!("Skipping test: mount API not available on this kernel");
+        return None;
+    }
+
+    Some(static_shell)
+}
 
 /// Integration test for attach flow
 ///
@@ -13,28 +41,10 @@ use std::{env, path::Path};
 /// 3. Namespace isolation works correctly
 #[test]
 fn test_attach_integration() {
-    // Check for static shell environment variable
-    let static_shell = match env::var("CNTR_TEST_SHELL") {
-        Ok(path) => path,
-        Err(_) => {
-            eprintln!("Skipping test: CNTR_TEST_SHELL environment variable not set");
-            return;
-        }
+    let static_shell = match check_test_prerequisites() {
+        Some(shell) => shell,
+        None => return,
     };
-
-    if !Path::new(&static_shell).exists() {
-        eprintln!(
-            "Skipping test: CNTR_TEST_SHELL path does not exist: {}",
-            static_shell
-        );
-        return;
-    }
-
-    // Check for mount API support
-    if !cntr::syscalls::capability::has_mount_api() {
-        eprintln!("Skipping test: mount API not available on this kernel");
-        return;
-    }
 
     run_in_userns(|| {
         let container = start_fake_container();
@@ -49,7 +59,7 @@ fn test_attach_integration() {
 
         let status = std::process::Command::new(cntr_bin)
             .env("CNTR_BASE_DIR", base_dir)
-            .args(&["attach", "-t", "process-id", &pid_str, "--"])
+            .args(&["attach", "-t", "process_id", &pid_str, "--"])
             .args(&[
                 &static_shell,
                 "-c",
@@ -66,10 +76,6 @@ fn test_attach_integration() {
             .status()
             .expect("Failed to execute cntr attach");
 
-        // Cleanup: kill container (FakeContainer will clean up temp dir on drop)
-        let _ = kill(container.pid, Signal::SIGTERM);
-        let _ = waitpid(container.pid, None);
-
         // Check result - panic will be caught by run_in_userns
         assert!(
             status.success(),
@@ -85,28 +91,10 @@ fn test_attach_integration() {
 /// access it with container parameters (no daemon involved).
 #[test]
 fn test_exec_direct() {
-    // Check for static shell environment variable
-    let static_shell = match env::var("CNTR_TEST_SHELL") {
-        Ok(path) => path,
-        Err(_) => {
-            eprintln!("Skipping test: CNTR_TEST_SHELL environment variable not set");
-            return;
-        }
+    let _static_shell = match check_test_prerequisites() {
+        Some(shell) => shell,
+        None => return,
     };
-
-    if !Path::new(&static_shell).exists() {
-        eprintln!(
-            "Skipping test: CNTR_TEST_SHELL path does not exist: {}",
-            static_shell
-        );
-        return;
-    }
-
-    // Check for mount API support
-    if !cntr::syscalls::capability::has_mount_api() {
-        eprintln!("Skipping test: mount API not available on this kernel");
-        return;
-    }
 
     run_in_userns(|| {
         let container = start_fake_container();
@@ -119,7 +107,7 @@ fn test_exec_direct() {
         let pid_str = container.pid.to_string();
 
         let status = std::process::Command::new(cntr_bin)
-            .args(&["exec", "-t", "process-id", &pid_str, "--"])
+            .args(&["exec", "-t", "process_id", &pid_str, "--"])
             .args(&[
                 "/bin/sh",
                 "-c",
@@ -127,10 +115,6 @@ fn test_exec_direct() {
             ])
             .status()
             .expect("Failed to execute cntr exec");
-
-        // Cleanup: kill container (FakeContainer will clean up temp dir on drop)
-        let _ = kill(container.pid, Signal::SIGTERM);
-        let _ = waitpid(container.pid, None);
 
         // Check result - panic will be caught by run_in_userns
         assert!(

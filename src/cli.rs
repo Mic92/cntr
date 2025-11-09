@@ -7,10 +7,27 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 const AUTHORS: &str = env!("CARGO_PKG_AUTHORS");
 
 /// Parse container types from comma-separated string
-fn parse_container_types(s: &str) -> Vec<Box<dyn container_pid::Container>> {
-    s.split(',')
-        .filter_map(|t| crate::lookup_container_type(t.trim()))
-        .collect()
+fn parse_container_types(s: &str) -> Result<Vec<Box<dyn container_pid::Container>>, String> {
+    let mut valid_types = Vec::new();
+    let mut unknown_names = Vec::new();
+
+    for token in s.split(',') {
+        let trimmed = token.trim();
+        if let Some(container_type) = crate::lookup_container_type(trimmed) {
+            valid_types.push(container_type);
+        } else {
+            unknown_names.push(trimmed.to_string());
+        }
+    }
+
+    if !unknown_names.is_empty() {
+        return Err(format!(
+            "unknown container type(s): {}",
+            unknown_names.join(", ")
+        ));
+    }
+
+    Ok(valid_types)
 }
 
 /// Print help for attach command
@@ -27,7 +44,7 @@ fn print_attach_help() {
     eprintln!("OPTIONS:");
     eprintln!("    -t, --type <TYPES>           Container types to try (comma-separated)");
     eprintln!(
-        "                                 [possible: process-id,podman,docker,nspawn,lxc,lxd,containerd,command,kubernetes]"
+        "                                 [possible: process_id,podman,docker,nspawn,lxc,lxd,containerd,command,kubernetes]"
     );
     eprintln!("                                 [default: all but command]");
     eprintln!("    --effective-user <USER>      Effective username for new files on host");
@@ -53,7 +70,7 @@ fn print_exec_help() {
     eprintln!("OPTIONS:");
     eprintln!("    -t, --type <TYPES>           Container types to try (comma-separated)");
     eprintln!(
-        "                                 [possible: process-id,podman,docker,nspawn,lxc,lxd,containerd,command,kubernetes]"
+        "                                 [possible: process_id,podman,docker,nspawn,lxc,lxd,containerd,command,kubernetes]"
     );
     eprintln!("                                 [default: all but command]");
     eprintln!("    -h, --help                   Print help");
@@ -82,7 +99,7 @@ fn print_help() {
 }
 
 /// Parse attach command arguments
-fn parse_attach_args<I>(mut args: I) -> Result<(), Box<dyn std::error::Error>>
+fn parse_attach_args<I>(mut args: I) -> Result<std::process::ExitCode, Box<dyn std::error::Error>>
 where
     I: Iterator<Item = String>,
 {
@@ -101,15 +118,15 @@ where
         match arg.as_str() {
             "-h" | "--help" => {
                 print_attach_help();
-                std::process::exit(0);
+                return Ok(std::process::ExitCode::SUCCESS);
             }
             "-V" | "--version" => {
                 eprintln!("cntr {}", VERSION);
-                std::process::exit(0);
+                return Ok(std::process::ExitCode::SUCCESS);
             }
             "-t" | "--type" => {
                 let types_str = args.next().ok_or("--type requires an argument")?;
-                container_types = parse_container_types(&types_str);
+                container_types = parse_container_types(&types_str)?;
             }
             "--effective-user" => {
                 let username = args.next().ok_or("--effective-user requires an argument")?;
@@ -158,11 +175,11 @@ where
     };
 
     attach(&options)?;
-    Ok(())
+    Ok(std::process::ExitCode::SUCCESS)
 }
 
 /// Parse exec command arguments
-fn parse_exec_args<I>(mut args: I) -> Result<(), Box<dyn std::error::Error>>
+fn parse_exec_args<I>(mut args: I) -> Result<std::process::ExitCode, Box<dyn std::error::Error>>
 where
     I: Iterator<Item = String>,
 {
@@ -180,15 +197,15 @@ where
         match arg.as_str() {
             "-h" | "--help" => {
                 print_exec_help();
-                std::process::exit(0);
+                return Ok(std::process::ExitCode::SUCCESS);
             }
             "-V" | "--version" => {
                 eprintln!("cntr {}", VERSION);
-                std::process::exit(0);
+                return Ok(std::process::ExitCode::SUCCESS);
             }
             "-t" | "--type" => {
                 let types_str = args.next().ok_or("--type requires an argument")?;
-                container_types = parse_container_types(&types_str);
+                container_types = parse_container_types(&types_str)?;
             }
             "--" => {
                 in_command = true;
@@ -221,18 +238,26 @@ where
 
     exec::exec(&container_name, &container_types, command, arguments)?;
 
-    Ok(())
+    Ok(std::process::ExitCode::SUCCESS)
 }
 
-pub fn run_with_args<I, T>(args: I) -> Result<(), Box<dyn std::error::Error>>
+pub fn run_with_args<I, T>(args: I) -> Result<std::process::ExitCode, Box<dyn std::error::Error>>
 where
     I: IntoIterator<Item = T>,
     T: Into<std::ffi::OsString> + Clone,
 {
     let args: Vec<String> = args
         .into_iter()
-        .map(|s| s.into().into_string().unwrap())
-        .collect();
+        .map(|s| {
+            let os_string: std::ffi::OsString = s.into();
+            os_string.into_string().map_err(|invalid| {
+                format!(
+                    "argument contains invalid UTF-8: {}",
+                    invalid.to_string_lossy()
+                )
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
 
     let mut args_iter = args.into_iter();
 
@@ -252,11 +277,11 @@ where
         "exec" => parse_exec_args(args_iter),
         "help" | "-h" | "--help" => {
             print_help();
-            Ok(())
+            Ok(std::process::ExitCode::SUCCESS)
         }
         "version" | "-V" | "--version" => {
             eprintln!("cntr {}", VERSION);
-            Ok(())
+            Ok(std::process::ExitCode::SUCCESS)
         }
         _ => Err(format!("unknown subcommand: {}", subcommand).into()),
     }

@@ -1,7 +1,5 @@
 use anyhow::{Context, bail};
-use nix::sys::wait::{WaitStatus, waitpid};
 use nix::unistd::{self, ForkResult};
-use std::os::fd::{AsRawFd, IntoRawFd};
 use std::process;
 
 use crate::cmd::Cmd;
@@ -25,7 +23,7 @@ pub(crate) fn exec(
     container_types: &[Box<dyn container_pid::Container>],
     exe: Option<String>,
     args: Vec<String>,
-) -> Result<()> {
+) -> Result<std::convert::Infallible> {
     // Verify mount API capability
     if !capability::has_mount_api() {
         bail!(
@@ -45,65 +43,26 @@ pub(crate) fn exec(
     match res.context("failed to fork")? {
         ForkResult::Parent { child } => {
             // Parent: Forward PTY I/O and wait for child
-            exec_parent(child, &pty_master)
+            pty::forward_pty_and_wait(&pty_master, child)
         }
         ForkResult::Child => {
             // Child: Setup PTY slave, enter container, exec command
-            if let Err(e) = exec_child(&ctx, exe, args, &pty_master) {
-                eprintln!("exec child failed: {}", e);
-                process::exit(1);
-            }
-            // Should not reach here - exec_child calls process::exit
-            unreachable!()
+            let Err(e) = exec_child(&ctx, exe, args, &pty_master);
+            eprintln!("exec child failed: {}", e);
+            process::exit(1);
         }
     }
-}
-
-/// Parent process for exec: Forward PTY and wait for child
-fn exec_parent(child_pid: nix::unistd::Pid, pty_master: &nix::pty::PtyMaster) -> Result<()> {
-    // Close master PTY fd in child before forwarding
-    // (child has slave end)
-    let pty_file = unsafe {
-        use std::fs::File;
-        use std::os::fd::FromRawFd;
-        File::from_raw_fd(pty_master.as_raw_fd())
-    };
-
-    // Forward PTY I/O
-    // This will block until child exits or PTY closes
-    let _ = pty::forward(&pty_file);
-
-    // Don't close the PTY file (avoid double-free)
-    let _ = pty_file.into_raw_fd();
-
-    // Wait for child to exit
-    match waitpid(child_pid, None) {
-        Ok(WaitStatus::Exited(_, status)) => {
-            process::exit(status);
-        }
-        Ok(WaitStatus::Signaled(_, signal, _)) => {
-            // Child was signaled - send same signal to ourselves
-            nix::sys::signal::kill(unistd::getpid(), signal)
-                .with_context(|| format!("failed to send signal {:?} to own process", signal))?;
-        }
-        Ok(status) => {
-            bail!("child exited with unexpected status: {:?}", status);
-        }
-        Err(e) => {
-            Err(e).context("failed to wait for child")?;
-        }
-    }
-
-    Ok(())
 }
 
 /// Child process for exec: Enter container and exec command
+///
+/// This function never returns on success - it replaces the current process.
 fn exec_child(
     ctx: &ContainerContext,
     exe: Option<String>,
     args: Vec<String>,
     pty_master: &nix::pty::PtyMaster,
-) -> Result<()> {
+) -> Result<std::convert::Infallible> {
     // Attach PTY slave
     pty::attach_pts(pty_master).context("failed to setup pty slave")?;
 
@@ -117,9 +76,7 @@ fn exec_child(
     container_setup::enter_container(ctx.process_status.global_pid, &ctx.process_status)?;
 
     // Execute the command in the container (chroots to container root and execs)
-    // This will NOT return - it replaces the current process
+    // This will NOT return on success - it replaces the current process
     cmd.exec_in_container()
-        .context("failed to execute command in container")?;
-
-    Ok(())
+        .context("failed to execute command in container")
 }

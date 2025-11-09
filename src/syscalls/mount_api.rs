@@ -9,21 +9,43 @@
 use std::ffi::CStr;
 use std::os::unix::io::{AsRawFd, BorrowedFd, FromRawFd, OwnedFd, RawFd};
 
-// Syscall numbers for x86_64 (asm-generic would be the same for most architectures)
+// Syscall numbers are consistent across all Linux architectures
 // See: include/uapi/asm-generic/unistd.h in kernel source
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(
+    target_arch = "x86_64",
+    target_arch = "x86",
+    target_arch = "aarch64",
+    target_arch = "arm",
+    target_arch = "riscv64",
+    target_arch = "powerpc64",
+    target_arch = "powerpc",
+    target_arch = "s390x",
+    target_arch = "mips64",
+    target_arch = "sparc64",
+    target_arch = "loongarch64"
+))]
 mod syscall_numbers {
     pub(crate) const SYS_OPEN_TREE: libc::c_long = 428;
     pub(crate) const SYS_MOVE_MOUNT: libc::c_long = 429;
     pub(crate) const SYS_MOUNT_SETATTR: libc::c_long = 442;
 }
 
-#[cfg(target_arch = "aarch64")]
-mod syscall_numbers {
-    pub(crate) const SYS_OPEN_TREE: libc::c_long = 428;
-    pub(crate) const SYS_MOVE_MOUNT: libc::c_long = 429;
-    pub(crate) const SYS_MOUNT_SETATTR: libc::c_long = 442;
-}
+#[cfg(not(any(
+    target_arch = "x86_64",
+    target_arch = "x86",
+    target_arch = "aarch64",
+    target_arch = "arm",
+    target_arch = "riscv64",
+    target_arch = "powerpc64",
+    target_arch = "powerpc",
+    target_arch = "s390x",
+    target_arch = "mips64",
+    target_arch = "sparc64",
+    target_arch = "loongarch64"
+)))]
+compile_error!(
+    "Mount API syscalls are not supported on this architecture. Please report this issue."
+);
 
 use syscall_numbers::*;
 
@@ -97,21 +119,27 @@ unsafe fn mount_setattr(
 
 /// RAII wrapper for mount file descriptor
 ///
-/// Represents a detached mount created by fsmount() or open_tree().
+/// Represents a detached mount created by open_tree().
 /// The fd is automatically closed when this struct is dropped.
 pub(crate) struct MountFd {
     fd: OwnedFd,
 }
 
 impl MountFd {
-    /// Create a detached copy of a mount tree using AT_FDCWD
+    /// Create a detached copy of a mount tree
     ///
     /// # Arguments
-    /// * `path` - Path to the mount point
+    /// * `dirfd` - Optional directory file descriptor to use as base (None = AT_FDCWD)
+    /// * `path` - Path to the mount point (absolute if dirfd is None, relative otherwise)
     /// * `flags` - Flags (typically OPEN_TREE_CLONE | AT_RECURSIVE)
-    pub(crate) fn open_tree_at(path: &CStr, flags: u32) -> Result<Self, std::io::Error> {
+    pub(crate) fn open_tree_at(
+        dirfd: Option<BorrowedFd>,
+        path: &CStr,
+        flags: u32,
+    ) -> Result<Self, std::io::Error> {
         unsafe {
-            let mount_fd = open_tree(AT_FDCWD, path.as_ptr(), flags);
+            let dfd = dirfd.map(|fd| fd.as_raw_fd()).unwrap_or(AT_FDCWD);
+            let mount_fd = open_tree(dfd, path.as_ptr(), flags);
             if mount_fd < 0 {
                 return Err(std::io::Error::last_os_error());
             }

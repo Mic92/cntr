@@ -5,6 +5,7 @@ use crate::syscalls::capability;
 use anyhow::{Context, bail};
 use nix::unistd::{self, ForkResult, User};
 use std::os::unix::io::AsRawFd;
+use std::process;
 
 mod child;
 mod idmap_helper;
@@ -18,7 +19,7 @@ pub(crate) struct AttachOptions {
     pub(crate) effective_user: Option<User>,
 }
 
-pub(crate) fn attach(opts: &AttachOptions) -> Result<()> {
+pub(crate) fn attach(opts: &AttachOptions) -> Result<std::convert::Infallible> {
     // Verify mount API capability - REQUIRED (no FUSE fallback)
     if !capability::has_mount_api() {
         bail!(
@@ -77,7 +78,10 @@ pub(crate) fn attach(opts: &AttachOptions) -> Result<()> {
                 uid: ctx.uid,
                 gid: ctx.gid,
             };
-            child::run(&child_opts)
+            // child::run returns Result<Infallible>, so can only return Err
+            let Err(e) = child::run(&child_opts);
+            eprintln!("attach child failed: {}", e);
+            process::exit(1);
         }
     }
 }

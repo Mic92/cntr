@@ -1,11 +1,7 @@
 use anyhow::{Context, bail};
-use nix::sys::signal::{self, Signal};
-use nix::sys::wait::{WaitPidFlag, WaitStatus, waitpid};
+use nix::cmsg_space;
 use nix::unistd::Pid;
-use nix::{cmsg_space, unistd};
-use std::fs::File;
-use std::os::fd::{AsRawFd, FromRawFd, RawFd};
-use std::process;
+use std::os::fd::RawFd;
 
 use crate::procfs::ProcStatus;
 
@@ -24,7 +20,7 @@ pub(crate) fn run(
     child_pid: Pid,
     _process_status: &ProcStatus,
     socket: &ipc::Socket,
-) -> Result<()> {
+) -> Result<std::convert::Infallible> {
     // Step 1: Wait for child to assemble mount hierarchy and signal completion
     // The child will send: ready signal + PTY fd
     let mut cmsgspace = cmsg_space!([RawFd; 1]);
@@ -42,38 +38,7 @@ pub(crate) fn run(
     }
     let pty_fd = fds.remove(0);
 
-    // Step 3: Forward PTY I/O
-    // This will block until child exits or PTY closes
-    let pty_file = unsafe { File::from_raw_fd(pty_fd.as_raw_fd()) };
-    let _ = pty::forward(&pty_file);
-
-    // Step 4: Wait for child to exit and propagate exit status
-    loop {
-        match waitpid(child_pid, Some(WaitPidFlag::WUNTRACED)) {
-            Ok(WaitStatus::Signaled(child, Signal::SIGSTOP, _)) => {
-                // Child was stopped - stop ourselves and resume child when we resume
-                let _ = signal::kill(unistd::getpid(), Signal::SIGSTOP);
-                let _ = signal::kill(child, Signal::SIGCONT);
-            }
-            Ok(WaitStatus::Signaled(_, sig, _)) => {
-                // Child received a signal - propagate it to ourselves
-                signal::kill(unistd::getpid(), sig)
-                    .with_context(|| format!("failed to send signal {:?} to own process", sig))?;
-            }
-            Ok(WaitStatus::Exited(_, status)) => {
-                // Child exited normally - exit with same status
-                process::exit(status);
-            }
-            Ok(what) => {
-                bail!("unexpected wait event: {:?}", what);
-            }
-            Err(nix::errno::Errno::EINTR) => {
-                // Interrupted by signal, continue
-                continue;
-            }
-            Err(e) => {
-                return Err(e).context("waitpid failed");
-            }
-        }
-    }
+    // Step 3: Forward PTY I/O and wait for child to exit
+    // This will block until child exits, then propagate the exit status
+    pty::forward_pty_and_wait(&pty_fd, child_pid)
 }

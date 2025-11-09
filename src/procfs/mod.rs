@@ -32,7 +32,14 @@ pub(crate) fn status(target_pid: Pid) -> Result<ProcStatus> {
     for line in reader.lines() {
         let line = line.with_context(|| format!("could not read line from {}", path.display()))?;
         let columns: Vec<&str> = line.split('\t').collect();
-        assert!(columns.len() >= 2);
+        if columns.len() < 2 {
+            anyhow::bail!(
+                "malformed line in {} (expected at least 2 tab-separated columns, found {}): '{}'",
+                path.display(),
+                columns.len(),
+                line
+            );
+        }
         if columns[0] == "CapEff:"
             && let Some(cap_string) = columns.last()
         {
@@ -56,18 +63,14 @@ pub(crate) fn status(target_pid: Pid) -> Result<ProcStatus> {
 
     // Read cap_last_cap from the host namespace before entering the target namespace
     let cap_last_cap_path = get_path().join("sys/kernel/cap_last_cap");
-    let mut cap_file = File::open(&cap_last_cap_path)
-        .with_context(|| format!("failed to open {}", cap_last_cap_path.display()))?;
-    let mut cap_contents = String::new();
-    cap_file
-        .read_to_string(&mut cap_contents)
+    let cap_contents = std::fs::read_to_string(&cap_last_cap_path)
         .with_context(|| format!("failed to read {}", cap_last_cap_path.display()))?;
-    cap_contents.pop(); // remove newline
-    let last_cap = cap_contents.parse::<c_ulong>().with_context(|| {
+    let cap_contents_trimmed = cap_contents.trim();
+    let last_cap = cap_contents_trimmed.parse::<c_ulong>().with_context(|| {
         format!(
             "failed to parse last capability value from {}: '{}'",
             cap_last_cap_path.display(),
-            cap_contents
+            cap_contents_trimmed
         )
     })?;
 

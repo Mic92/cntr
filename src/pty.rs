@@ -1,5 +1,6 @@
-use anyhow::Context;
+use anyhow::{Context, bail};
 use libc::{self, winsize};
+use log::warn;
 use nix::errno::Errno;
 use nix::fcntl::OFlag;
 use nix::pty::*;
@@ -13,9 +14,17 @@ use nix::sys::termios::{
 use nix::{self, fcntl, unistd};
 use std::fs::File;
 use std::io::{Read, Write};
+use std::os::fd::{AsFd, AsRawFd, BorrowedFd};
 use std::os::unix::prelude::*;
+use std::sync::atomic::{AtomicI32, Ordering};
 
 use crate::result::Result;
+
+// Safe wrapper for the TIOCSCTTY ioctl
+fn tiocsctty(fd: RawFd, arg: libc::c_int) -> nix::Result<libc::c_int> {
+    let res = unsafe { libc::ioctl(fd, libc::TIOCSCTTY, arg) };
+    Errno::result(res)
+}
 
 enum FilePairState {
     Write,
@@ -193,15 +202,15 @@ fn shovel(pairs: &mut [FilePair]) {
 }
 
 extern "C" fn handle_sigwinch(_: i32) {
-    let fd = unsafe { PTY_MASTER_FD };
+    let fd = PTY_MASTER_FD.load(Ordering::Relaxed);
     if fd != -1 {
         resize_pty(fd);
     }
 }
 
-static mut PTY_MASTER_FD: i32 = -1;
+static PTY_MASTER_FD: AtomicI32 = AtomicI32::new(-1);
 
-pub(crate) fn forward(pty: &File) -> Result<()> {
+pub(crate) fn forward<T: AsRawFd + AsFd>(pty: &T) -> Result<()> {
     let mut raw_tty = None;
 
     if unsafe { libc::isatty(libc::STDIN_FILENO) } != 0 {
@@ -213,7 +222,7 @@ pub(crate) fn forward(pty: &File) -> Result<()> {
         )
     };
 
-    unsafe { PTY_MASTER_FD = pty.as_raw_fd() };
+    PTY_MASTER_FD.store(pty.as_raw_fd(), Ordering::Relaxed);
     let sig_action = SigAction::new(
         SigHandler::Handler(handle_sigwinch),
         SaFlags::empty(),
@@ -221,25 +230,87 @@ pub(crate) fn forward(pty: &File) -> Result<()> {
     );
     unsafe { sigaction(SIGWINCH, &sig_action) }.context("failed to install SIGWINCH handler")?;
 
-    let stdin: File = unsafe { File::from_raw_fd(libc::STDIN_FILENO) };
-    let stdout: File = unsafe { File::from_raw_fd(libc::STDOUT_FILENO) };
-    let pty_file: File = unsafe { File::from_raw_fd(pty.as_raw_fd()) };
+    // Duplicate FDs so each File owns its own FD and can be safely closed
+    // This prevents double-close bugs when the original FD owners are dropped
+    let stdin_dup = unistd::dup(unsafe { BorrowedFd::borrow_raw(libc::STDIN_FILENO) })
+        .context("failed to duplicate stdin")?;
+    let stdout_dup = unistd::dup(unsafe { BorrowedFd::borrow_raw(libc::STDOUT_FILENO) })
+        .context("failed to duplicate stdout")?;
+    let pty_dup = unistd::dup(pty).context("failed to duplicate pty master")?;
+
+    let stdin: File = unsafe { File::from_raw_fd(stdin_dup.into_raw_fd()) };
+    let stdout: File = unsafe { File::from_raw_fd(stdout_dup.into_raw_fd()) };
+    let pty_file: File = unsafe { File::from_raw_fd(pty_dup.into_raw_fd()) };
+
     shovel(&mut [
         FilePair::new(&stdin, &pty_file),
         FilePair::new(&pty_file, &stdout),
     ]);
-    // Drop the files to avoid closing them
-    _ = stdin.into_raw_fd();
-    _ = stdout.into_raw_fd();
-    _ = pty_file.into_raw_fd();
 
-    unsafe { PTY_MASTER_FD = -1 };
+    PTY_MASTER_FD.store(-1, Ordering::Relaxed);
 
     if let Some(_raw_tty) = raw_tty {
         drop(_raw_tty)
     }
 
     Ok(())
+}
+
+/// Forward PTY I/O and wait for child process to exit, propagating exit status.
+///
+/// This function:
+/// 1. Forwards PTY I/O between stdin/stdout and the PTY (blocks until child exits)
+/// 2. Waits for the child process to exit with job control support
+/// 3. Propagates the child's exit status to the current process
+///
+/// Job control handling:
+/// - If child is stopped (Ctrl+Z), stops parent too
+/// - When parent resumes, resumes the child
+///
+/// This function never returns - it always exits the process.
+pub(crate) fn forward_pty_and_wait<T: AsRawFd + AsFd>(
+    pty: &T,
+    child_pid: nix::unistd::Pid,
+) -> Result<std::convert::Infallible> {
+    use nix::sys::signal::{self, Signal};
+    use nix::sys::wait::{WaitPidFlag, WaitStatus, waitpid};
+    use nix::unistd;
+    use std::process;
+
+    // Forward PTY I/O between stdin/stdout and the PTY
+    // This will block until child exits or PTY closes
+    let _ = forward(pty);
+
+    // Wait for child to exit and propagate exit status
+    // Loop to handle job control signals (SIGSTOP, SIGCONT) and EINTR
+    loop {
+        match waitpid(child_pid, Some(WaitPidFlag::WUNTRACED)) {
+            Ok(WaitStatus::Stopped(child, _)) => {
+                // Child was stopped (Ctrl+Z) - stop ourselves and resume child when we resume
+                let _ = signal::kill(unistd::getpid(), Signal::SIGSTOP);
+                let _ = signal::kill(child, Signal::SIGCONT);
+            }
+            Ok(WaitStatus::Signaled(_, sig, _)) => {
+                // Child was signaled - propagate signal and exit
+                let _ = signal::kill(unistd::getpid(), sig);
+                process::exit(128 + sig as i32);
+            }
+            Ok(WaitStatus::Exited(_, status)) => {
+                // Child exited normally - exit with same status
+                process::exit(status);
+            }
+            Ok(status) => {
+                bail!("unexpected wait event: {:?}", status);
+            }
+            Err(nix::errno::Errno::EINTR) => {
+                // Interrupted by signal, continue waiting
+                continue;
+            }
+            Err(e) => {
+                return Err(e).context("waitpid failed");
+            }
+        }
+    }
 }
 
 fn get_winsize(term_fd: RawFd) -> winsize {
@@ -287,15 +358,10 @@ pub(crate) fn attach_pts(pty_master: &PtyMaster) -> nix::Result<()> {
 
     // Set the PTY slave as the controlling terminal for this session
     // This is required for job control to work properly
-    // Use force flag (1) to steal from another session if needed
-    unsafe {
-        if libc::ioctl(pty_slave.as_raw_fd(), libc::TIOCSCTTY, 1) != 0 {
-            // If TIOCSCTTY fails, just warn but continue - job control may not work
-            // but the command will still execute
-            use nix::errno::Errno;
-            let err = Errno::last();
-            eprintln!("warning: failed to set controlling terminal: {:?}", err);
-        }
+    if let Err(err) = tiocsctty(pty_slave.as_raw_fd(), 0) {
+        // If TIOCSCTTY fails, just warn but continue - job control may not work
+        // but the command will still execute
+        warn!("Failed to set controlling terminal: {}", err);
     }
 
     unistd::dup2_stdin(&pty_slave)?;

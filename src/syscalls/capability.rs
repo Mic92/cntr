@@ -7,6 +7,8 @@
 //! 2. Syscall numbers may vary by architecture
 //! 3. SELinux/seccomp policies may block syscalls
 
+use nix::errno::Errno;
+use std::ffi::CString;
 use std::sync::Once;
 
 static INIT: Once = Once::new();
@@ -39,18 +41,14 @@ pub fn has_mount_api() -> bool {
 /// - ENODEV = device not found → mount API available, just bad fs name
 /// - Any other error = assume mount API is available
 fn probe_mount_api() -> bool {
-    use std::ffi::CString;
-
     // Use a deliberately non-existent filesystem type to probe
     let probe_fs = CString::new("__cntr_probe__").expect("CString::new failed");
 
+    // Use architecture-specific syscall numbers from libc
+    // MIPS uses different offsets: o32=4430, n64=5430, n32=6430
+    // Other architectures typically use 430
     unsafe {
-        #[cfg(target_arch = "x86_64")]
-        const SYS_FSOPEN: libc::c_long = 430;
-        #[cfg(target_arch = "aarch64")]
-        const SYS_FSOPEN: libc::c_long = 430;
-
-        let fd = libc::syscall(SYS_FSOPEN, probe_fs.as_ptr(), 0) as libc::c_int;
+        let fd = libc::syscall(libc::SYS_fsopen, probe_fs.as_ptr(), 0) as libc::c_int;
 
         if fd >= 0 {
             libc::close(fd);
@@ -58,12 +56,11 @@ fn probe_mount_api() -> bool {
         }
 
         // Check errno to determine if syscall exists
-        let errno = *libc::__errno_location();
-        match errno {
-            libc::ENOSYS => false,              // Syscall not implemented
-            libc::ENODEV => true,               // Device/fs not found - syscall exists!
-            libc::EPERM | libc::EACCES => true, // Permission denied - syscall exists
-            _ => true,                          // Any other error - assume syscall exists
+        match Errno::last() {
+            Errno::ENOSYS => false,               // Syscall not implemented
+            Errno::ENODEV => true,                // Device/fs not found - syscall exists!
+            Errno::EPERM | Errno::EACCES => true, // Permission denied - syscall exists
+            _ => true,                            // Any other error - assume syscall exists
         }
     }
 }
