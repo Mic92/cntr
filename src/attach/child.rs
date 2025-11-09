@@ -6,7 +6,7 @@ use std::env;
 use std::ffi::CString;
 use std::os::unix::io::{BorrowedFd, RawFd};
 use std::os::unix::prelude::*;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::capabilities;
 use crate::cgroup;
@@ -201,7 +201,7 @@ pub(crate) fn run(options: &ChildOptions) -> Result<()> {
             }
 
             // Skip the base_dir itself (we'll mount container stuff there)
-            if mount_point.starts_with(base_dir.to_str().unwrap_or("")) {
+            if Path::new(mount_point).starts_with(&base_dir) {
                 continue;
             }
 
