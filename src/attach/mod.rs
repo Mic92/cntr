@@ -80,7 +80,7 @@ pub(crate) fn attach(opts: &AttachOptions) -> Result<std::convert::Infallible> {
             };
             // child::run returns Result<Infallible>, so can only return Err
             let Err(e) = child::run(&child_opts);
-            eprintln!("attach child failed: {}", e);
+            eprintln!("attach child failed: {:?}", e);
             process::exit(1);
         }
     }

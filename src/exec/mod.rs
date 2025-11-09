@@ -48,7 +48,7 @@ pub(crate) fn exec(
         ForkResult::Child => {
             // Child: Setup PTY slave, enter container, exec command
             let Err(e) = exec_child(&ctx, exe, args, &pty_master);
-            eprintln!("exec child failed: {}", e);
+            eprintln!("exec child failed: {:?}", e);
             process::exit(1);
         }
     }
