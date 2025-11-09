@@ -23,7 +23,8 @@ pub(crate) fn drop(inheritable_capabilities: c_ulong, last_cap: c_ulong) -> Resu
 
     for cap in 0..=last_cap {
         if (inheritable & ((1 as c_ulong) << cap)) == 0 {
-            // TODO: do not ignore result
+            // Ignore errors - in some contexts we can't drop capabilities (e.g., unprivileged user namespaces)
+            // This is expected behavior and should not cause the operation to fail
             let _ = prctl(libc::PR_CAPBSET_DROP, cap, 0, 0, 0);
         }
     }

@@ -124,8 +124,10 @@ pub(crate) fn status(target_pid: Pid) -> Result<ProcStatus> {
     let host_gid = metadata.gid();
 
     // Translate host UID/GID to container namespace UID/GID
-    let container_uid = translate_id(&proc_dir.join("uid_map"), host_uid)?;
-    let container_gid = translate_id(&proc_dir.join("gid_map"), host_gid)?;
+    let container_uid = translate_id(&proc_dir.join("uid_map"), host_uid)
+        .with_context(|| format!("failed to translate host UID {} to container UID", host_uid))?;
+    let container_gid = translate_id(&proc_dir.join("gid_map"), host_gid)
+        .with_context(|| format!("failed to translate host GID {} to container GID", host_gid))?;
 
     let uid = Uid::from_raw(container_uid);
     let gid = Gid::from_raw(container_gid);

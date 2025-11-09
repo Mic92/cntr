@@ -279,7 +279,13 @@ pub(crate) fn run(options: &mut ChildOptions) -> Result<std::convert::Infallible
         options.arguments.clone(),
         options.process_status.global_pid,
         options.effective_home.clone(),
-    )?;
+    )
+    .with_context(|| {
+        format!(
+            "failed to prepare command for container PID {}",
+            options.process_status.global_pid
+        )
+    })?;
 
     // Step 4: Open other namespaces (not mount - we handle that specially)
     let supported_namespaces =

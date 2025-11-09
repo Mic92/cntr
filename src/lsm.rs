@@ -93,7 +93,7 @@ fn read_proclabel(path: &Path, kind: &LSMKind) -> Result<String> {
 }
 
 pub(crate) fn read_profile(pid: Pid) -> Result<Option<LSMProfile>> {
-    let kind = check_type()?;
+    let kind = check_type().context("failed to determine LSM type")?;
 
     if let Some(kind) = kind {
         let target_path = kind.profile_path(Some(pid));

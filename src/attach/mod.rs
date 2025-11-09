@@ -29,7 +29,8 @@ pub(crate) fn attach(opts: &AttachOptions) -> Result<std::convert::Infallible> {
 
     // Lookup container and get its process status
     let process_status =
-        crate::container::lookup_container(&opts.container_name, &opts.container_types)?;
+        crate::container::lookup_container(&opts.container_name, &opts.container_types)
+            .with_context(|| format!("failed to lookup container '{}'", opts.container_name))?;
 
     // Create idmap helper if --effective-user is specified
     // This creates a user namespace with the mapping for idmapped mounts

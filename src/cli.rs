@@ -126,7 +126,8 @@ where
             }
             "-t" | "--type" => {
                 let types_str = args.next().ok_or("--type requires an argument")?;
-                container_types = parse_container_types(&types_str)?;
+                container_types = parse_container_types(&types_str)
+                    .map_err(|e| format!("invalid --type argument '{}': {}", types_str, e))?;
             }
             "--effective-user" => {
                 let username = args.next().ok_or("--effective-user requires an argument")?;
@@ -169,12 +170,13 @@ where
     let options = AttachOptions {
         command,
         arguments,
-        container_name,
+        container_name: container_name.clone(),
         container_types,
         effective_user,
     };
 
-    attach(&options)?;
+    attach(&options)
+        .map_err(|e| format!("failed to attach to container '{}': {}", container_name, e))?;
     Ok(std::process::ExitCode::SUCCESS)
 }
 
@@ -205,7 +207,8 @@ where
             }
             "-t" | "--type" => {
                 let types_str = args.next().ok_or("--type requires an argument")?;
-                container_types = parse_container_types(&types_str)?;
+                container_types = parse_container_types(&types_str)
+                    .map_err(|e| format!("invalid --type argument '{}': {}", types_str, e))?;
             }
             "--" => {
                 in_command = true;
@@ -236,7 +239,8 @@ where
     // Container ID is now required
     let container_name = container_id.ok_or("container ID is required for exec")?;
 
-    exec::exec(&container_name, &container_types, command, arguments)?;
+    exec::exec(&container_name, &container_types, command, arguments)
+        .map_err(|e| format!("failed to exec into container '{}': {}", container_name, e))?;
 
     Ok(std::process::ExitCode::SUCCESS)
 }

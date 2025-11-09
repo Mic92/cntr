@@ -125,10 +125,20 @@ pub(crate) fn enter_container(process_status: &mut ProcStatus) -> Result<()> {
         .context("failed to change cgroup")?;
 
     // Enter namespaces
-    let in_user_ns = enter_namespaces(process_status.global_pid)?;
+    let in_user_ns = enter_namespaces(process_status.global_pid).with_context(|| {
+        format!(
+            "failed to enter namespaces for PID {}",
+            process_status.global_pid
+        )
+    })?;
 
     // Apply security context
-    apply_security_context(process_status, in_user_ns)?;
+    apply_security_context(process_status, in_user_ns).with_context(|| {
+        format!(
+            "failed to apply security context (UID={}, GID={})",
+            process_status.uid, process_status.gid
+        )
+    })?;
 
     Ok(())
 }
