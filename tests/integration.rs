@@ -49,7 +49,7 @@ fn test_attach_integration() {
 
         let status = std::process::Command::new(cntr_bin)
             .env("CNTR_BASE_DIR", base_dir)
-            .args(&["attach", "-t", "process-id", &pid_str, "--"])
+            .args(&["attach", "-t", "process_id", &pid_str, "--"])
             .args(&[
                 &static_shell,
                 "-c",
@@ -119,7 +119,7 @@ fn test_exec_direct() {
         let pid_str = container.pid.to_string();
 
         let status = std::process::Command::new(cntr_bin)
-            .args(&["exec", "-t", "process-id", &pid_str, "--"])
+            .args(&["exec", "-t", "process_id", &pid_str, "--"])
             .args(&[
                 "/bin/sh",
                 "-c",

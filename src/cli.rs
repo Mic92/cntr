@@ -7,10 +7,27 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 const AUTHORS: &str = env!("CARGO_PKG_AUTHORS");
 
 /// Parse container types from comma-separated string
-fn parse_container_types(s: &str) -> Vec<Box<dyn container_pid::Container>> {
-    s.split(',')
-        .filter_map(|t| crate::lookup_container_type(t.trim()))
-        .collect()
+fn parse_container_types(s: &str) -> Result<Vec<Box<dyn container_pid::Container>>, String> {
+    let mut valid_types = Vec::new();
+    let mut unknown_names = Vec::new();
+
+    for token in s.split(',') {
+        let trimmed = token.trim();
+        if let Some(container_type) = crate::lookup_container_type(trimmed) {
+            valid_types.push(container_type);
+        } else {
+            unknown_names.push(trimmed.to_string());
+        }
+    }
+
+    if !unknown_names.is_empty() {
+        return Err(format!(
+            "unknown container type(s): {}",
+            unknown_names.join(", ")
+        ));
+    }
+
+    Ok(valid_types)
 }
 
 /// Print help for attach command
@@ -27,7 +44,7 @@ fn print_attach_help() {
     eprintln!("OPTIONS:");
     eprintln!("    -t, --type <TYPES>           Container types to try (comma-separated)");
     eprintln!(
-        "                                 [possible: process-id,podman,docker,nspawn,lxc,lxd,containerd,command,kubernetes]"
+        "                                 [possible: process_id,podman,docker,nspawn,lxc,lxd,containerd,command,kubernetes]"
     );
     eprintln!("                                 [default: all but command]");
     eprintln!("    --effective-user <USER>      Effective username for new files on host");
@@ -53,7 +70,7 @@ fn print_exec_help() {
     eprintln!("OPTIONS:");
     eprintln!("    -t, --type <TYPES>           Container types to try (comma-separated)");
     eprintln!(
-        "                                 [possible: process-id,podman,docker,nspawn,lxc,lxd,containerd,command,kubernetes]"
+        "                                 [possible: process_id,podman,docker,nspawn,lxc,lxd,containerd,command,kubernetes]"
     );
     eprintln!("                                 [default: all but command]");
     eprintln!("    -h, --help                   Print help");
@@ -109,7 +126,7 @@ where
             }
             "-t" | "--type" => {
                 let types_str = args.next().ok_or("--type requires an argument")?;
-                container_types = parse_container_types(&types_str);
+                container_types = parse_container_types(&types_str)?;
             }
             "--effective-user" => {
                 let username = args.next().ok_or("--effective-user requires an argument")?;
@@ -188,7 +205,7 @@ where
             }
             "-t" | "--type" => {
                 let types_str = args.next().ok_or("--type requires an argument")?;
-                container_types = parse_container_types(&types_str);
+                container_types = parse_container_types(&types_str)?;
             }
             "--" => {
                 in_command = true;
