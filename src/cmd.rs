@@ -3,13 +3,13 @@ use log::warn;
 use nix::{self, unistd};
 use std::collections::HashMap;
 use std::env;
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::fs::File;
 use std::io;
 use std::io::{BufRead, BufReader};
 use std::os::unix::ffi::OsStringExt;
 use std::os::unix::process::CommandExt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::procfs;
@@ -47,6 +47,28 @@ fn read_environment(pid: unistd::Pid) -> Result<HashMap<OsString, OsString>> {
         })
         .collect();
     Ok(res)
+}
+
+/// Try to read PATH from container's /etc/environment
+///
+/// Attempts to extract PATH from /etc/environment under the container root.
+/// Returns None if the file cannot be read or PATH is not found.
+fn read_container_path(container_root: &Path) -> Option<OsString> {
+    let etc_environment = container_root.join("etc/environment");
+    let contents = std::fs::read_to_string(&etc_environment).ok()?;
+
+    for line in contents.lines() {
+        let trimmed = line.trim();
+        // Look for PATH=... or PATH="..."
+        if let Some(path_value) = trimmed.strip_prefix("PATH=") {
+            let path_value = path_value.trim_matches('"').trim_matches('\'');
+            if !path_value.is_empty() {
+                return Some(OsString::from(path_value));
+            }
+        }
+    }
+
+    None
 }
 
 impl Cmd {
@@ -116,13 +138,14 @@ impl Cmd {
     /// For exec (direct mode) and daemon exec, we chroot to the actual container
     /// root since we don't have the overlay.
     pub(crate) fn exec_in_container(mut self) -> Result<()> {
-        // Set PATH if not already set (use cntr's PATH or default)
-        let default_path =
-            OsString::from("/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin");
-        self.environment.insert(
-            OsString::from("PATH"),
-            env::var_os("PATH").unwrap_or(default_path),
-        );
+        // Set PATH only if not already present in container environment
+        // Avoid using host's PATH which may point to binaries not present after chroot
+        if !self.environment.contains_key(OsStr::new("PATH")) {
+            let default_path =
+                OsString::from("/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin");
+            let path = read_container_path(&self.container_root).unwrap_or(default_path);
+            self.environment.insert(OsString::from("PATH"), path);
+        }
 
         // Chroot to container's root and exec
         // container_root was already resolved in new() before entering namespaces
