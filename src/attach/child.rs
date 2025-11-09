@@ -1,10 +1,12 @@
 use anyhow::{Context, bail};
 use log::{debug, warn};
+use nix::fcntl::AtFlags;
+use nix::sys::stat::{SFlag, fstatat};
 use nix::unistd;
 use nix::unistd::{Gid, Uid};
 use std::env;
 use std::ffi::CString;
-use std::os::unix::io::{AsFd, AsRawFd, BorrowedFd, OwnedFd, RawFd};
+use std::os::unix::io::{AsFd, BorrowedFd, OwnedFd, RawFd};
 use std::os::unix::prelude::*;
 use std::path::{Path, PathBuf};
 
@@ -142,109 +144,95 @@ fn capture_and_attach_container_trees(
     base_dir: &Path,
 ) -> Result<()> {
     // Enter container's mount namespace to capture trees with submounts
-    let container_mount_namespace = namespace::MOUNT
+    namespace::MOUNT
         .open(container_pid)
-        .context("could not access container mount namespace")?;
-    container_mount_namespace
+        .context("could not access container mount namespace")?
         .apply()
         .context("failed to enter container mount namespace")?;
 
-    // Capture each container root entry with open_tree()
-    // Use the FD we opened before entering the namespace - works even without /proc mounted
-    let mut captured_trees = Vec::new();
-    let container_root_owned_fd = OwnedFd::from(container_root_fd);
-    let mut dir = nix::dir::Dir::from_fd(container_root_owned_fd)
+    // Open container root directory
+    let mut dir = nix::dir::Dir::from_fd(OwnedFd::from(container_root_fd))
         .context("failed to create Dir from container root FD")?;
 
-    // Get the directory FD before iterating to avoid borrow conflicts
-    let dir_raw_fd = dir.as_raw_fd();
+    // Collect entries first to avoid borrow conflicts when using dir.as_fd() later
+    let entries: Vec<_> = dir
+        .iter()
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| {
+            let name = entry.file_name().to_bytes();
+            name != b"." && name != b".."
+        })
+        .filter_map(|entry| {
+            let name = CString::new(entry.file_name().to_bytes()).ok()?;
+            Some((name, entry.file_type()))
+        })
+        .collect();
 
-    for entry_result in dir.iter() {
-        let entry = entry_result.context("failed to read directory entry")?;
-        let file_name = entry.file_name();
-        let file_name_bytes = file_name.to_bytes();
+    let dir_fd = dir.as_fd();
 
-        // Skip special directories
-        if file_name_bytes == b"." || file_name_bytes == b".." {
-            continue;
-        }
-
-        // Create CString from entry name (already a CStr)
-        let entry_name_cstr = file_name;
-
-        // Check if the source is a directory using filesystem metadata
-        let file_type = entry.file_type();
-        let is_dir = match file_type {
-            Some(nix::dir::Type::Directory) => true,
-            Some(_) => false,
-            None => {
-                // If we can't determine type, use fstatat (needed for NFS, XFS, etc. with DT_UNKNOWN)
-                use nix::fcntl::AtFlags;
-                use nix::sys::stat::{SFlag, fstatat};
-                // Use borrowed fd for fstatat
-                let borrowed_fd = unsafe { BorrowedFd::borrow_raw(dir_raw_fd) };
-                match fstatat(borrowed_fd, file_name, AtFlags::AT_SYMLINK_NOFOLLOW) {
-                    Ok(stat) => SFlag::from_bits_truncate(stat.st_mode).contains(SFlag::S_IFDIR),
-                    Err(e) => {
-                        warn!(
-                            "Failed to stat {:?}, assuming non-directory: {}",
-                            file_name, e
-                        );
+    // Capture each entry as a mount tree
+    let captured_trees: Vec<_> = entries
+        .iter()
+        .filter_map(|(name, file_type)| {
+            // Determine if entry is a directory
+            let is_dir = match file_type {
+                Some(nix::dir::Type::Directory) => true,
+                Some(_) => false,
+                None => fstatat(dir_fd, name.as_c_str(), AtFlags::AT_SYMLINK_NOFOLLOW)
+                    .map(|stat| SFlag::from_bits_truncate(stat.st_mode).contains(SFlag::S_IFDIR))
+                    .unwrap_or_else(|e| {
+                        warn!("Failed to stat {:?}, assuming non-directory: {}", name, e);
                         false
-                    }
+                    }),
+            };
+
+            // Capture tree
+            match MountFd::open_tree_at(
+                Some(dir_fd),
+                name.as_c_str(),
+                OPEN_TREE_CLONE | AT_RECURSIVE,
+            ) {
+                Ok(tree) => {
+                    let name_os = std::ffi::OsStr::from_bytes(name.as_bytes()).to_owned();
+                    Some((name_os, tree, is_dir))
+                }
+                Err(e) => {
+                    warn!("Failed to capture tree for {:?}: {}", name, e);
+                    None
                 }
             }
-        };
+        })
+        .collect();
 
-        // Capture this entry's tree using the directory FD
-        let dir_fd = unsafe { BorrowedFd::borrow_raw(dir_raw_fd) };
-        match MountFd::open_tree_at(
-            Some(dir_fd),
-            entry_name_cstr,
-            OPEN_TREE_CLONE | AT_RECURSIVE,
-        ) {
-            Ok(tree_fd) => {
-                // Convert CStr to OsString for storage
-                let file_name_os = std::ffi::OsStr::from_bytes(file_name_bytes).to_owned();
-                captured_trees.push((file_name_os, tree_fd, is_dir));
-            }
-            Err(e) => {
-                warn!("Failed to capture tree for {:?}: {}", file_name, e);
-            }
-        }
-    }
-
-    // Return to our own mount namespace (with tmpfs and idmapped host root)
+    // Return to our mount namespace
     our_mount_ns
         .apply()
         .context("failed to return to our mount namespace")?;
 
-    // Attach each captured tree to base_dir
-    // Note: We DON'T apply idmap to container trees - idmap was applied to host root above
-    for (file_name, tree_fd, is_dir) in captured_trees {
-        let target = base_dir.join(&file_name);
+    // Attach captured trees to base_dir
+    for (name, tree, is_dir) in captured_trees {
+        let target = base_dir.join(&name);
 
-        // Create mount point based on the actual file type
-        if is_dir {
-            if let Err(e) = std::fs::create_dir_all(&target) {
-                warn!("Failed to create directory mount point {:?}: {}", target, e);
-            }
+        // Create mount point
+        let mount_point_created = if is_dir {
+            std::fs::create_dir_all(&target).is_ok()
         } else {
-            // Ensure parent directory exists before creating file
-            if let Some(parent) = target.parent() {
-                if let Err(e) = std::fs::create_dir_all(parent) {
-                    warn!("Failed to create parent directory for {:?}: {}", target, e);
-                }
-            }
-            if let Err(e) = std::fs::File::create(&target) {
-                warn!("Failed to create file mount point {:?}: {}", target, e);
-            }
+            target
+                .parent()
+                .map(|p| std::fs::create_dir_all(p).is_ok())
+                .unwrap_or(true)
+                && std::fs::File::create(&target).is_ok()
+        };
+
+        if !mount_point_created {
+            warn!("Failed to create mount point {:?}", target);
+            continue;
         }
 
         let target_cstr = CString::new(target.as_os_str().as_bytes())
             .with_context(|| format!("failed to create CString for {}", target.display()))?;
 
-        if let Err(e) = tree_fd.attach_to(None, &target_cstr, 0) {
+        if let Err(e) = tree.attach_to(None, &target_cstr, 0) {
             warn!("Failed to attach tree to {:?}: {}", target, e);
         }
     }
