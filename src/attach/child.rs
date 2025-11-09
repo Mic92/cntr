@@ -263,7 +263,9 @@ fn capture_and_attach_container_trees(
 /// 6. Set UID/GID and drop capabilities
 /// 7. Create daemon socket and setup PTY
 /// 8. Execute the command
-pub(crate) fn run(options: &ChildOptions) -> Result<()> {
+///
+/// This function never returns on success - it replaces the current process.
+pub(crate) fn run(options: &ChildOptions) -> Result<std::convert::Infallible> {
     // Step 1: Read LSM profile before entering namespaces
     let lsm_profile = lsm::read_profile(options.process_status.global_pid)
         .context("failed to get lsm profile")?;
@@ -462,8 +464,5 @@ pub(crate) fn run(options: &ChildOptions) -> Result<()> {
     // Use exec_in_overlay() since we're in the overlay environment with access
     // to both host binaries and container filesystem
     cmd.exec_in_overlay()
-        .context("failed to execute command in overlay")?;
-
-    // Should not reach here - exec replaces process
-    unreachable!()
+        .context("failed to execute command in overlay")
 }

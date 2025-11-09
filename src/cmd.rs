@@ -2,6 +2,7 @@ use anyhow::Context;
 use log::warn;
 use nix::{self, unistd};
 use std::collections::HashMap;
+use std::convert::Infallible;
 use std::env;
 use std::ffi::{OsStr, OsString};
 use std::fs::File;
@@ -108,7 +109,9 @@ impl Cmd {
     ///
     /// For attach, we stay in the overlay environment which provides access
     /// to both host binaries and container filesystem under /var/lib/cntr
-    pub(crate) fn exec_in_overlay(mut self) -> Result<()> {
+    ///
+    /// This function never returns on success - it replaces the current process.
+    pub(crate) fn exec_in_overlay(mut self) -> Result<Infallible> {
         // Set PATH if not already set (use cntr's PATH or default)
         let default_path =
             OsString::from("/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin");
@@ -135,7 +138,9 @@ impl Cmd {
     ///
     /// For exec (direct mode) and daemon exec, we chroot to the actual container
     /// root since we don't have the overlay.
-    pub(crate) fn exec_in_container(mut self) -> Result<()> {
+    ///
+    /// This function never returns on success - it replaces the current process.
+    pub(crate) fn exec_in_container(mut self) -> Result<Infallible> {
         // Set PATH only if not already present in container environment
         // Avoid using host's PATH which may point to binaries not present after chroot
         if !self.environment.contains_key(OsStr::new("PATH")) {

@@ -49,12 +49,9 @@ pub(crate) fn exec(
         }
         ForkResult::Child => {
             // Child: Setup PTY slave, enter container, exec command
-            if let Err(e) = exec_child(&ctx, exe, args, &pty_master) {
-                eprintln!("exec child failed: {}", e);
-                process::exit(1);
-            }
-            // Should not reach here - exec_child calls process::exit
-            unreachable!()
+            let Err(e) = exec_child(&ctx, exe, args, &pty_master);
+            eprintln!("exec child failed: {}", e);
+            process::exit(1);
         }
     }
 }
@@ -98,12 +95,14 @@ fn exec_parent(child_pid: nix::unistd::Pid, pty_master: &nix::pty::PtyMaster) ->
 }
 
 /// Child process for exec: Enter container and exec command
+///
+/// This function never returns on success - it replaces the current process.
 fn exec_child(
     ctx: &ContainerContext,
     exe: Option<String>,
     args: Vec<String>,
     pty_master: &nix::pty::PtyMaster,
-) -> Result<()> {
+) -> Result<std::convert::Infallible> {
     // Attach PTY slave
     pty::attach_pts(pty_master).context("failed to setup pty slave")?;
 
@@ -117,9 +116,7 @@ fn exec_child(
     container_setup::enter_container(ctx.process_status.global_pid, &ctx.process_status)?;
 
     // Execute the command in the container (chroots to container root and execs)
-    // This will NOT return - it replaces the current process
+    // This will NOT return on success - it replaces the current process
     cmd.exec_in_container()
-        .context("failed to execute command in container")?;
-
-    Ok(())
+        .context("failed to execute command in container")
 }
