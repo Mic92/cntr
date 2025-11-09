@@ -5,20 +5,16 @@ use nix::sys::signal::{Signal, kill};
 use nix::sys::wait::waitpid;
 use std::{env, path::Path};
 
-/// Integration test for attach flow
+/// Check test prerequisites: CNTR_TEST_SHELL environment variable and mount API support
 ///
-/// This test creates a fake container process with a chroot and tests that:
-/// 1. cntr attach mounts the container filesystem at the configured base directory
-/// 2. The container's files are accessible via the base directory
-/// 3. Namespace isolation works correctly
-#[test]
-fn test_attach_integration() {
+/// Returns Some(shell_path) if all prerequisites are met, None otherwise.
+fn check_test_prerequisites() -> Option<String> {
     // Check for static shell environment variable
-    let static_shell = match env::var("CNTR_TEST_SHELL") {
-        Ok(path) => path,
-        Err(_) => {
+    let static_shell = match env::var("CNTR_TEST_SHELL").ok() {
+        Some(path) => path,
+        None => {
             eprintln!("Skipping test: CNTR_TEST_SHELL environment variable not set");
-            return;
+            return None;
         }
     };
 
@@ -27,14 +23,30 @@ fn test_attach_integration() {
             "Skipping test: CNTR_TEST_SHELL path does not exist: {}",
             static_shell
         );
-        return;
+        return None;
     }
 
     // Check for mount API support
     if !cntr::syscalls::capability::has_mount_api() {
         eprintln!("Skipping test: mount API not available on this kernel");
-        return;
+        return None;
     }
+
+    Some(static_shell)
+}
+
+/// Integration test for attach flow
+///
+/// This test creates a fake container process with a chroot and tests that:
+/// 1. cntr attach mounts the container filesystem at the configured base directory
+/// 2. The container's files are accessible via the base directory
+/// 3. Namespace isolation works correctly
+#[test]
+fn test_attach_integration() {
+    let static_shell = match check_test_prerequisites() {
+        Some(shell) => shell,
+        None => return,
+    };
 
     run_in_userns(|| {
         let container = start_fake_container();
@@ -85,28 +97,10 @@ fn test_attach_integration() {
 /// access it with container parameters (no daemon involved).
 #[test]
 fn test_exec_direct() {
-    // Check for static shell environment variable
-    let static_shell = match env::var("CNTR_TEST_SHELL") {
-        Ok(path) => path,
-        Err(_) => {
-            eprintln!("Skipping test: CNTR_TEST_SHELL environment variable not set");
-            return;
-        }
+    let _static_shell = match check_test_prerequisites() {
+        Some(shell) => shell,
+        None => return,
     };
-
-    if !Path::new(&static_shell).exists() {
-        eprintln!(
-            "Skipping test: CNTR_TEST_SHELL path does not exist: {}",
-            static_shell
-        );
-        return;
-    }
-
-    // Check for mount API support
-    if !cntr::syscalls::capability::has_mount_api() {
-        eprintln!("Skipping test: mount API not available on this kernel");
-        return;
-    }
 
     run_in_userns(|| {
         let container = start_fake_container();
