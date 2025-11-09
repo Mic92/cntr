@@ -48,13 +48,14 @@ pub(crate) fn run(
     // Step 4: Wait for child to exit and propagate exit status
     loop {
         match waitpid(child_pid, Some(WaitPidFlag::WUNTRACED)) {
-            Ok(WaitStatus::Signaled(child, Signal::SIGSTOP, _)) => {
-                // Child was stopped - stop ourselves and resume child when we resume
+            Ok(WaitStatus::Stopped(child, _)) => {
+                // Child was stopped (SIGSTOP, SIGTSTP, SIGTTIN, SIGTTOU, etc.)
+                // Stop ourselves and resume child when we resume
                 let _ = signal::kill(unistd::getpid(), Signal::SIGSTOP);
                 let _ = signal::kill(child, Signal::SIGCONT);
             }
             Ok(WaitStatus::Signaled(_, sig, _)) => {
-                // Child received a signal - propagate it to ourselves
+                // Child was terminated by a signal - propagate it to ourselves
                 signal::kill(unistd::getpid(), sig)
                     .with_context(|| format!("failed to send signal {:?} to own process", sig))?;
             }
