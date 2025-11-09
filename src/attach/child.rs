@@ -392,10 +392,9 @@ pub(crate) fn run(options: &mut ChildOptions) -> Result<std::convert::Infallible
     }
 
     // Step 6: Enter other container namespaces and apply security context
-    let in_user_ns = other_namespaces.iter().any(|_ns| {
-        // Check if any namespace is a USER namespace
-        // We can't directly check the type, so we rely on whether USER was opened
-        supported_namespaces.contains(namespace::USER.name)
+    let in_user_ns = other_namespaces.iter().any(|ns| {
+        // Check if any namespace in the collection is a USER namespace
+        ns.kind.name == namespace::USER.name
     });
 
     for ns in other_namespaces {
