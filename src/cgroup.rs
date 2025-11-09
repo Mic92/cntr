@@ -1,5 +1,5 @@
 use anyhow::Context;
-use log::warn;
+use log::{debug, warn};
 use nix::unistd;
 use std::collections::HashMap;
 use std::fs::File;
@@ -32,6 +32,9 @@ struct HybridCgroupManager {
     v1: CgroupV1Manager,
     v2: CgroupV2Manager,
 }
+
+/// Null manager for systems without cgroup support
+struct NullCgroupManager;
 
 // Helper functions for cgroup v1
 
@@ -210,6 +213,14 @@ impl CgroupManager for HybridCgroupManager {
     }
 }
 
+// Null implementation - no-op when cgroups are unavailable
+impl CgroupManager for NullCgroupManager {
+    fn move_to(&self, _pid: unistd::Pid, _target_pid: unistd::Pid) -> Result<()> {
+        debug!("cgroup support not detected, skipping cgroup migration");
+        Ok(())
+    }
+}
+
 /// Factory function to create the appropriate CgroupManager
 fn create_manager() -> Result<Box<dyn CgroupManager>> {
     let path = "/proc/self/mountinfo";
@@ -259,11 +270,8 @@ fn create_manager() -> Result<Box<dyn CgroupManager>> {
             }))
         }
         (false, None) => {
-            // No cgroups found, return v2 with default path
-            Ok(Box::new(CgroupV2Manager {
-                mount_path: PathBuf::from("/sys/fs/cgroup"),
-                procfs_path,
-            }))
+            // No cgroups found, use null manager
+            Ok(Box::new(NullCgroupManager))
         }
     }
 }
