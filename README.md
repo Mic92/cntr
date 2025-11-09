@@ -6,7 +6,7 @@ This is done by mounting the file system from one container or the host into the
 by creating a nested container with the help of the Linux mount API.
 This allows to ship minimal runtime image in production and limit the surface for exploits.
 
-**Requirements**: Linux kernel 6.8 or later (uses fsopen/fsmount mount API).
+**Requirements**: Linux kernel 5.2 or later (uses fsopen/fsmount mount API, added in 5.2).
 
 Cntr was also published in [Usenix ATC 2018](https://www.usenix.org/conference/atc18/presentation/thalheim).
 See [bibtex](#bibtex) for citation.
@@ -66,7 +66,7 @@ In this two minute recording you learn all the basics of cntr:
 Cntr by design is only able to run on Linux.
 
 **System Requirements:**
-- Linux kernel 6.8 or later
+- Linux kernel 5.2 or later
 
 ### Pre-build static-linked binary
 
