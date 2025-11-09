@@ -5,7 +5,6 @@ use std::collections::HashMap;
 use std::env;
 use std::ffi::{OsStr, OsString};
 use std::fs::File;
-use std::io;
 use std::io::{BufRead, BufReader};
 use std::os::unix::ffi::OsStringExt;
 use std::os::unix::process::CommandExt;
@@ -156,7 +155,7 @@ impl Cmd {
                 .pre_exec(move || {
                     if let Err(e) = unistd::chroot(&container_root) {
                         warn!("failed to chroot to {}: {}", container_root.display(), e);
-                        return Err(io::Error::from_raw_os_error(e as i32));
+                        return Err(e.into());
                     }
 
                     if let Err(e) = env::set_current_dir("/") {
