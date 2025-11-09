@@ -119,7 +119,7 @@ unsafe fn mount_setattr(
 
 /// RAII wrapper for mount file descriptor
 ///
-/// Represents a detached mount created by fsmount() or open_tree().
+/// Represents a detached mount created by open_tree().
 /// The fd is automatically closed when this struct is dropped.
 pub(crate) struct MountFd {
     fd: OwnedFd,
