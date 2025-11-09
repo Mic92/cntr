@@ -14,6 +14,7 @@
           enable = true;
           edition = "2024";
         };
+        programs.actionlint.enable = true;
       };
     };
 }
