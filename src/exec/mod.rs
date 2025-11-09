@@ -73,7 +73,8 @@ fn exec_child(
     let cmd = Cmd::new(exe.clone(), args, process_status.global_pid, None)
         .with_context(|| format!("failed to prepare command {:?}", exe))?;
 
-    // Enter container: cgroup, namespaces, security context (LSM, UID/GID, capabilities)
+    // Enter container: cgroup, namespaces, security context (UID/GID, capabilities)
+    // Note: AppArmor is NOT applied yet - we do it in pre_exec after chroot
     container_setup::enter_container(process_status).with_context(|| {
         format!(
             "failed to enter container with PID {}",
@@ -81,8 +82,15 @@ fn exec_child(
         )
     })?;
 
+    // Extract LSM profile info for pre_exec hook
+    let lsm_profile = process_status
+        .lsm_profile
+        .as_ref()
+        .map(|p| (p.own_path.clone(), p.label.clone()));
+
     // Execute the command in the container (chroots to container root and execs)
+    // AppArmor will be applied in pre_exec after chroot
     // This will NOT return on success - it replaces the current process
-    cmd.exec_in_container()
+    cmd.exec_in_container(lsm_profile)
         .context("failed to execute command in container")
 }

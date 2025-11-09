@@ -98,13 +98,6 @@ pub(crate) fn apply_security_context(
     )
     .context("failed to apply capabilities")?;
 
-    // Inherit LSM profile
-    if let Some(profile) = &mut process_status.lsm_profile {
-        profile
-            .inherit_profile()
-            .context("failed to inherit lsm profile")?;
-    }
-
     Ok(())
 }
 

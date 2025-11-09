@@ -170,11 +170,8 @@ in
     nodes.server =
       { pkgs, lib, ... }:
       {
-        imports = [ ociTest ];
-        virtualisation.oci-containers.backend = "docker";
-
         environment.systemPackages = [
-          pkgs.apparmor-bin-utils
+          cntr
           pkgs.jq
         ];
 
@@ -182,50 +179,32 @@ in
         security.apparmor = {
           enable = true;
 
-          # Custom AppArmor profile for Docker containers
-          policies.docker-default = {
+          # AppArmor profile for our test service
+          policies.test-sleep = {
             state = "enforce";
             profile = ''
               abi <abi/4.0>,
               include <tunables/global>
 
-              profile docker-default flags=(attach_disconnected,mediate_deleted) {
+              profile test-sleep ${pkgs.pkgsStatic.busybox}/bin/sleep {
                 include <abstractions/base>
 
-                network,
-                capability,
-                file,
-                umount,
-
-                # Deny access to /tmp/restricted specifically
-                deny /tmp/restricted/** rwklx,
-
-                # Allow everything else in /tmp
-                /tmp/** rw,
-
-                # Allow nix store access
-                /nix/store/** mr,
-
-                # Allow proc/sys access
-                /proc/** r,
-                /sys/** r,
+                ${pkgs.pkgsStatic.busybox}/bin/sleep mr,
+                /nix/store/** mrix,
               }
             '';
           };
         };
 
-        # Add a second container with AppArmor profile applied
-        virtualisation.oci-containers.containers.busybox-apparmor = {
-          image = "busybox-test:latest";
-          imageFile = busyboxImage;
-          cmd = [
-            "${pkgs.busybox}/bin/sleep"
-            "infinity"
-          ];
-          extraOptions = [
-            "--security-opt"
-            "apparmor=docker-default"
-          ];
+        # Systemd service that runs under AppArmor
+        systemd.services.apparmor-test = {
+          description = "Test service with AppArmor profile";
+          serviceConfig = {
+            Type = "simple";
+            ExecStart = "${pkgs.pkgsStatic.busybox}/bin/sleep infinity";
+            AppArmorProfile = "test-sleep";
+          };
+          wantedBy = [ "multi-user.target" ];
         };
       };
 
@@ -234,25 +213,19 @@ in
 
       with subtest("AppArmor is enabled and profile is loaded"):
           server.wait_for_unit("apparmor.service")
-          server.succeed("systemctl status apparmor.service")
-          server.succeed("aa-status --json | jq -e '.profiles.\"docker-default\" == \"enforce\"'")
+          server.succeed("aa-status --json | jq -e '.profiles.\"test-sleep\" == \"enforce\"'")
 
-      with subtest("Regular container without AppArmor works"):
-          server.wait_for_unit("docker-busybox.service")
-          server.succeed("cntr attach busybox true")
-          server.succeed("cntr exec busybox -- /bin/sh -c 'echo exec test passed'")
+      with subtest("Service is running under AppArmor"):
+          server.wait_for_unit("apparmor-test.service")
 
-      with subtest("Container with AppArmor profile works with cntr"):
-          server.wait_for_unit("docker-busybox-apparmor.service")
+          # Verify the process is running under AppArmor
+          service_pid = server.succeed("systemctl show -p MainPID --value apparmor-test.service").strip()
+          profile = server.succeed(f"cat /proc/{service_pid}/attr/apparmor/current").strip()
+          assert "test-sleep" in profile, f"Expected test-sleep profile, got: {profile}"
 
-          # Verify AppArmor profile is applied to the container
-          apparmor_profile = server.succeed("docker inspect -f '{{.AppArmorProfile}}' busybox-apparmor").strip()
-          print(f"AppArmor profile on container: {apparmor_profile}")
-          assert apparmor_profile == "docker-default", f"Expected docker-default, got {apparmor_profile}"
-
-          # cntr should work with AppArmor-confined container
-          server.succeed("cntr attach busybox-apparmor true")
-          server.succeed("cntr exec busybox-apparmor -- /bin/sh -c 'echo exec test passed'")
+      with subtest("cntr can attach and exec to AppArmor-confined process"):
+          server.succeed("cntr attach -t command 'sleep infinity' true")
+          server.succeed("cntr exec -t command 'sleep infinity' -- /bin/sh -c 'echo exec test passed'")
     '';
   };
 

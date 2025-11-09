@@ -261,15 +261,7 @@ fn capture_and_attach_container_trees(
 ///
 /// This function never returns on success - it replaces the current process.
 pub(crate) fn run(options: &mut ChildOptions) -> Result<std::convert::Infallible> {
-    // Step 1: Get mount label from LSM profile
-    let mount_label = if let Some(ref p) = options.process_status.lsm_profile {
-        p.mount_label(options.process_status.global_pid)
-            .context("failed to read mount options")?
-    } else {
-        None
-    };
-
-    // Step 2: Move to container's cgroup
+    // Step 1: Move to container's cgroup
     cgroup::move_to(unistd::getpid(), options.process_status.global_pid)
         .context("failed to change cgroup")?;
 
@@ -384,13 +376,6 @@ pub(crate) fn run(options: &mut ChildOptions) -> Result<std::convert::Infallible
     )
     .context("failed to capture and attach container trees")?;
 
-    // Apply mount label if needed
-    if let Some(label) = mount_label {
-        // TODO: Apply mount label using mount_setattr if needed
-        // For now, we skip this as it's primarily for SELinux contexts
-        let _ = label; // Silence unused warning
-    }
-
     // Step 6: Enter other container namespaces and apply security context
     let in_user_ns = other_namespaces.iter().any(|ns| {
         // Check if any namespace in the collection is a USER namespace
@@ -401,14 +386,14 @@ pub(crate) fn run(options: &mut ChildOptions) -> Result<std::convert::Infallible
         ns.apply().context("failed to apply namespace")?;
     }
 
-    // Step 7-8: Apply security context (UID/GID, capabilities, LSM)
-    crate::container_setup::apply_security_context(&mut options.process_status, in_user_ns)?;
-
-    // Step 9: Setup PTY
+    // Step 7: Setup PTY (before applying AppArmor profile)
     let pty_master = pty::open_ptm().context("failed to open pty master")?;
     pty::attach_pts(&pty_master).context("failed to setup pty slave")?;
 
-    // Step 10: Send ready signal + PTY fd to parent
+    // Step 8: Apply security context (UID/GID, capabilities) - NOT AppArmor yet
+    crate::container_setup::apply_security_context(&mut options.process_status, in_user_ns)?;
+
+    // Step 9: Send ready signal + PTY fd to parent
     let ready_msg = b"R";
     let pty_fd = pty_master.as_fd();
     options
@@ -416,13 +401,20 @@ pub(crate) fn run(options: &mut ChildOptions) -> Result<std::convert::Infallible
         .send(&[ready_msg], &[&pty_fd])
         .context("failed to send ready signal and pty fd to parent")?;
 
-    // Step 11: Change to base_dir
+    // Step 10: Change to base_dir
     if let Err(e) = env::set_current_dir(&base_dir) {
         warn!(
             "failed to change directory to {}: {}",
             base_dir.display(),
             e
         );
+    }
+
+    // Step 11: Apply AppArmor profile just before exec
+    if let Some(profile) = &mut options.process_status.lsm_profile {
+        profile
+            .inherit_profile()
+            .context("failed to inherit AppArmor profile")?;
     }
 
     // Step 12: Execute the command
