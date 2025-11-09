@@ -33,6 +33,101 @@ pub(crate) struct ChildOptions<'a> {
     pub(crate) gid: Gid,
 }
 
+/// Apply idmapped mounts to all supported filesystems
+///
+/// This makes all files created on the host appear as owned by the effective user.
+/// Requires kernel 5.12+ and --effective-user option.
+fn apply_idmapped_mounts(userns_fd: BorrowedFd, base_dir: &Path) -> Result<()> {
+    use std::io::BufRead;
+
+    // Read /proc/mounts to get all mount points
+    let mounts_file = std::fs::File::open("/proc/mounts").context("failed to open /proc/mounts")?;
+    let reader = std::io::BufReader::new(mounts_file);
+
+    // Skip virtual/special filesystems that don't support idmapped mounts
+    let skip_fstypes = [
+        "proc",
+        "sysfs",
+        "devtmpfs",
+        "devpts",
+        "cgroup",
+        "cgroup2",
+        "securityfs",
+        "debugfs",
+        "tracefs",
+        "pstore",
+        "efivarfs",
+        "mqueue",
+        "hugetlbfs",
+        "autofs",
+        "fusectl",
+        "configfs",
+        "rpc_pipefs",
+        "binfmt_misc",
+        "overlay",
+    ];
+
+    for line in reader.lines() {
+        let line = match line {
+            Ok(l) => l,
+            Err(_) => continue,
+        };
+
+        // Parse: device mountpoint fstype options
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() < 3 {
+            continue;
+        }
+
+        let mount_point = parts[1];
+        let fstype = parts[2];
+
+        // Skip virtual filesystems
+        if skip_fstypes.contains(&fstype) {
+            continue;
+        }
+
+        // Skip the base_dir itself (we'll mount container stuff there)
+        if Path::new(mount_point).starts_with(base_dir) {
+            continue;
+        }
+
+        // Try to apply idmap to this mount
+        let mount_cstr = match CString::new(mount_point) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+
+        // Clone the mount with open_tree
+        let tree = match MountFd::open_tree_at(&mount_cstr, OPEN_TREE_CLONE | AT_RECURSIVE) {
+            Ok(t) => t,
+            Err(e) => {
+                warn!("Failed to open_tree {}: {}", mount_point, e);
+                continue;
+            }
+        };
+
+        // Apply idmap
+        if let Err(e) = tree.apply_idmap(userns_fd) {
+            warn!(
+                "Failed to apply idmap to {} ({}): {}",
+                mount_point, fstype, e
+            );
+            continue;
+        }
+
+        // Move back to original location
+        if let Err(e) = tree.attach_to(None, &mount_cstr, 0) {
+            warn!("Failed to attach idmapped {} back: {}", mount_point, e);
+            continue;
+        }
+
+        debug!("Applied idmap to {} ({})", mount_point, fstype);
+    }
+
+    Ok(())
+}
+
 /// Child process logic for mount API attach
 ///
 /// The child assembles a mount hierarchy where:
@@ -147,96 +242,9 @@ pub(crate) fn run(options: &ChildOptions) -> Result<()> {
     // Apply idmapped mount to all supported filesystems if --effective-user was specified
     // This makes all files created on the host appear as owned by the effective user
     if let Some(userns_fd) = options.userns_fd {
-        use crate::syscalls::mount_api::{AT_RECURSIVE, MountFd, OPEN_TREE_CLONE};
-        use std::io::BufRead;
-
         let userns_borrowed = unsafe { BorrowedFd::borrow_raw(userns_fd) };
-
-        // Read /proc/mounts to get all mount points
-        let mounts_file =
-            std::fs::File::open("/proc/mounts").context("failed to open /proc/mounts")?;
-        let reader = std::io::BufReader::new(mounts_file);
-
-        // Skip virtual/special filesystems that don't support idmapped mounts
-        let skip_fstypes = [
-            "proc",
-            "sysfs",
-            "devtmpfs",
-            "devpts",
-            "cgroup",
-            "cgroup2",
-            "securityfs",
-            "debugfs",
-            "tracefs",
-            "pstore",
-            "efivarfs",
-            "mqueue",
-            "hugetlbfs",
-            "autofs",
-            "fusectl",
-            "configfs",
-            "rpc_pipefs",
-            "binfmt_misc",
-            "overlay",
-        ];
-
-        for line in reader.lines() {
-            let line = match line {
-                Ok(l) => l,
-                Err(_) => continue,
-            };
-
-            // Parse: device mountpoint fstype options
-            let parts: Vec<&str> = line.split_whitespace().collect();
-            if parts.len() < 3 {
-                continue;
-            }
-
-            let mount_point = parts[1];
-            let fstype = parts[2];
-
-            // Skip virtual filesystems
-            if skip_fstypes.contains(&fstype) {
-                continue;
-            }
-
-            // Skip the base_dir itself (we'll mount container stuff there)
-            if Path::new(mount_point).starts_with(&base_dir) {
-                continue;
-            }
-
-            // Try to apply idmap to this mount
-            let mount_cstr = match CString::new(mount_point) {
-                Ok(c) => c,
-                Err(_) => continue,
-            };
-
-            // Clone the mount with open_tree
-            let tree = match MountFd::open_tree_at(&mount_cstr, OPEN_TREE_CLONE | AT_RECURSIVE) {
-                Ok(t) => t,
-                Err(e) => {
-                    warn!("Failed to open_tree {}: {}", mount_point, e);
-                    continue;
-                }
-            };
-
-            // Apply idmap
-            if let Err(e) = tree.apply_idmap(userns_borrowed) {
-                warn!(
-                    "Failed to apply idmap to {} ({}): {}",
-                    mount_point, fstype, e
-                );
-                continue;
-            }
-
-            // Move back to original location
-            if let Err(e) = tree.attach_to(None, &mount_cstr, 0) {
-                warn!("Failed to attach idmapped {} back: {}", mount_point, e);
-                continue;
-            }
-
-            debug!("Applied idmap to {} ({})", mount_point, fstype);
-        }
+        apply_idmapped_mounts(userns_borrowed, &base_dir)
+            .context("failed to apply idmapped mounts")?;
     }
 
     // Save our own mount namespace FD
