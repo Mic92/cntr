@@ -3,6 +3,7 @@ use log::debug;
 use nix::sys::wait::waitpid;
 use nix::unistd::{ForkResult, Gid, Pid, Uid, fork};
 use std::fs::File;
+use std::io::Write;
 use std::os::unix::io::AsRawFd;
 
 /// Helper process that creates and maintains a user namespace for idmapped mounts
@@ -70,8 +71,11 @@ impl IdmapHelper {
                 }
 
                 // Signal parent we're ready
-                nix::unistd::write(&write_fd, b"R").ok();
-                drop(write_fd);
+                let mut write_file = File::from(write_fd);
+                if let Err(e) = write_file.write_all(b"R") {
+                    eprintln!("idmap helper failed to signal parent: {}", e);
+                    unsafe { libc::_exit(1) };
+                }
 
                 // Keep running (parent holds FD, but this is safer)
                 loop {
