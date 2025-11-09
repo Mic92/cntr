@@ -126,14 +126,20 @@ pub(crate) struct MountFd {
 }
 
 impl MountFd {
-    /// Create a detached copy of a mount tree using AT_FDCWD
+    /// Create a detached copy of a mount tree
     ///
     /// # Arguments
-    /// * `path` - Path to the mount point
+    /// * `dirfd` - Optional directory file descriptor to use as base (None = AT_FDCWD)
+    /// * `path` - Path to the mount point (absolute if dirfd is None, relative otherwise)
     /// * `flags` - Flags (typically OPEN_TREE_CLONE | AT_RECURSIVE)
-    pub(crate) fn open_tree_at(path: &CStr, flags: u32) -> Result<Self, std::io::Error> {
+    pub(crate) fn open_tree_at(
+        dirfd: Option<BorrowedFd>,
+        path: &CStr,
+        flags: u32,
+    ) -> Result<Self, std::io::Error> {
         unsafe {
-            let mount_fd = open_tree(AT_FDCWD, path.as_ptr(), flags);
+            let dfd = dirfd.map(|fd| fd.as_raw_fd()).unwrap_or(AT_FDCWD);
+            let mount_fd = open_tree(dfd, path.as_ptr(), flags);
             if mount_fd < 0 {
                 return Err(std::io::Error::last_os_error());
             }
