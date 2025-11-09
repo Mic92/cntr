@@ -118,17 +118,8 @@ pub(crate) fn apply_security_context(
             .map(|s| s.trim() == "deny")
             .unwrap_or(false);
 
-        let dropped_groups = if !setgroups_denied {
-            unistd::setgroups(&[]).is_ok()
-        } else {
-            setgroups_denied
-        };
-
-        if !setgroups_denied
-            && let Err(e) = unistd::setgroups(&[])
-            && !dropped_groups
-        {
-            Err(e).context("could not set groups")?;
+        if !setgroups_denied {
+            unistd::setgroups(&[]).context("could not set groups")?;
         }
         unistd::setgid(ctx.gid).context("could not set group id")?;
         unistd::setuid(ctx.uid).context("could not set user id")?;
