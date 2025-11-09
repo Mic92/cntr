@@ -40,9 +40,19 @@ fn translate_id(map_path: &Path, outer_id: u32) -> Result<u32> {
             .with_context(|| format!("failed to parse length in {:?}", map_path))?;
 
         // Check if outer_id falls within this mapping range
-        if outer_id >= outer_start && outer_id < outer_start + length {
-            let offset = outer_id - outer_start;
-            return Ok(inner_start + offset);
+        // Use checked arithmetic to avoid overflow
+        if let Some(offset) = outer_id.checked_sub(outer_start)
+            && offset < length
+        {
+            let inner = inner_start.checked_add(offset).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "integer overflow computing inner ID in {:?}: {} + {} would overflow",
+                    map_path,
+                    inner_start,
+                    offset
+                )
+            })?;
+            return Ok(inner);
         }
     }
 
