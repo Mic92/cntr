@@ -16,6 +16,7 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd};
 use std::os::unix::prelude::*;
+use std::sync::atomic::{AtomicI32, Ordering};
 
 use crate::result::Result;
 
@@ -201,13 +202,13 @@ fn shovel(pairs: &mut [FilePair]) {
 }
 
 extern "C" fn handle_sigwinch(_: i32) {
-    let fd = unsafe { PTY_MASTER_FD };
+    let fd = PTY_MASTER_FD.load(Ordering::Relaxed);
     if fd != -1 {
         resize_pty(fd);
     }
 }
 
-static mut PTY_MASTER_FD: i32 = -1;
+static PTY_MASTER_FD: AtomicI32 = AtomicI32::new(-1);
 
 pub(crate) fn forward<T: AsRawFd + AsFd>(pty: &T) -> Result<()> {
     let mut raw_tty = None;
@@ -221,7 +222,7 @@ pub(crate) fn forward<T: AsRawFd + AsFd>(pty: &T) -> Result<()> {
         )
     };
 
-    unsafe { PTY_MASTER_FD = pty.as_raw_fd() };
+    PTY_MASTER_FD.store(pty.as_raw_fd(), Ordering::Relaxed);
     let sig_action = SigAction::new(
         SigHandler::Handler(handle_sigwinch),
         SaFlags::empty(),
@@ -246,9 +247,7 @@ pub(crate) fn forward<T: AsRawFd + AsFd>(pty: &T) -> Result<()> {
         FilePair::new(&pty_file, &stdout),
     ]);
 
-    // Files will be automatically closed when dropped (they own duplicated FDs)
-
-    unsafe { PTY_MASTER_FD = -1 };
+    PTY_MASTER_FD.store(-1, Ordering::Relaxed);
 
     if let Some(_raw_tty) = raw_tty {
         drop(_raw_tty)
