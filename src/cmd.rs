@@ -129,8 +129,7 @@ impl Cmd {
             .args(self.arguments)
             .envs(self.environment)
             .exec();
-        Err(err).with_context(|| format!("failed to execute command: {}", self.command))?;
-        Ok(())
+        Err(err).with_context(|| format!("failed to execute command: {}", self.command))
     }
 
     /// Execute in container - chroot to container root
@@ -169,7 +168,6 @@ impl Cmd {
                 })
                 .exec()
         };
-        Err(err).with_context(|| format!("failed to execute command: {}", self.command))?;
-        Ok(())
+        Err(err).with_context(|| format!("failed to execute command: {}", self.command))
     }
 }
