@@ -22,7 +22,7 @@ jobs:
           #- armv7-unknown-linux-musleabihf
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
       - name: Install rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -48,7 +48,7 @@ jobs:
     needs: build
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
       - name: Install rust
         uses: dtolnay/rust-toolchain@stable
       - name: Create vendored source tarball
