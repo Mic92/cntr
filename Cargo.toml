@@ -10,7 +10,7 @@ license = "MIT"
 
 [dependencies]
 log = "0.4.28"
-libc = "0.2.177"
+libc = "0.2.178"
 nix = { version = "0.30.1", features = [
   "dir",
   "fs",
