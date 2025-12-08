@@ -9,7 +9,7 @@ repository = "https://github.com/Mic92/cntr"
 license = "MIT"
 
 [dependencies]
-log = "0.4.28"
+log = "0.4.29"
 libc = "0.2.178"
 nix = { version = "0.30.1", features = [
   "dir",
