@@ -18,7 +18,7 @@ LICENSE+=" MIT"
 SLOT="0"
 KEYWORDS="~amd64 ~arm64"
 
-BDEPEND=">=dev-lang/rust-1.85
+BDEPEND=">=dev-lang/rust-bin-1.85
 	app-text/scdoc"
 
 QA_FLAGS_IGNORED="usr/bin/cntr"
