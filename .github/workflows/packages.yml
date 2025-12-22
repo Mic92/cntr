@@ -146,13 +146,12 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Restore portage cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache@v4
         with:
           path: |
             portage-cache/distfiles
             portage-cache/repos
-          key: gentoo-portage-${{ github.run_id }}
-          restore-keys: gentoo-portage-
+          key: gentoo-portage-v1
 
       - name: Build package
         run: |
@@ -182,11 +181,3 @@ jobs:
             -v "$PWD/portage-cache/repos:/var/db/repos/gentoo" \
             gentoo/stage3:latest bash /src/contrib/gentoo/build.sh
 
-      - name: Save portage cache
-        if: always()
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            portage-cache/distfiles
-            portage-cache/repos
-          key: gentoo-portage-${{ github.run_id }}
