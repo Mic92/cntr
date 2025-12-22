@@ -3,20 +3,15 @@
 
 EAPI=8
 
-CRATES=""
-
 inherit cargo
 
 DESCRIPTION="A container debugging tool based on Linux mount API"
 HOMEPAGE="https://github.com/Mic92/cntr"
-SRC_URI="https://github.com/Mic92/cntr/archive/refs/tags/${PV}.tar.gz -> ${P}.tar.gz
-	${CARGO_CRATE_URIS}"
+SRC_URI="https://github.com/Mic92/cntr/archive/refs/tags/${PV}.tar.gz -> ${P}.tar.gz"
 
 LICENSE="MIT"
-# Dependent crate licenses
-LICENSE+=" MIT"
 SLOT="0"
-KEYWORDS="~amd64 ~arm64"
+KEYWORDS="amd64 arm64"
 
 BDEPEND=">=dev-lang/rust-bin-1.85
 	app-text/scdoc"
@@ -24,12 +19,13 @@ BDEPEND=">=dev-lang/rust-bin-1.85
 QA_FLAGS_IGNORED="usr/bin/cntr"
 
 src_compile() {
-	cargo_src_compile
+	# Use vendored crates from tarball
+	cargo build --release --offline || die "cargo build failed"
 	scdoc < doc/cntr.1.scd > cntr.1
 }
 
 src_install() {
-	cargo_src_install
+	dobin target/release/cntr
 	dodoc README.md
 	newdoc LICENSE.md LICENSE
 	doman cntr.1

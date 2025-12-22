@@ -14,11 +14,7 @@ env:
 jobs:
   arch:
     runs-on: ubuntu-latest
-    container: archlinux:latest
     steps:
-      - name: Install base tools
-        run: pacman -Syu --noconfirm base-devel git
-
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -34,8 +30,6 @@ jobs:
 
       - name: Build package
         run: |
-          useradd -m builder
-          echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
           version=$(grep '^version' Cargo.toml | head -1 | cut -d'"' -f2)
           mkdir -p "/tmp/cntr-${version}"
           cp -r . "/tmp/cntr-${version}/"
@@ -44,8 +38,7 @@ jobs:
           cd contrib/arch
           sed -i "s|source=.*|source=(\"cntr-${version}.tar.gz\")|" PKGBUILD
           sed -i "s|sha256sums=.*|sha256sums=('SKIP')|" PKGBUILD
-          chown -R builder:builder .
-          su builder -c 'makepkg -sf --noconfirm --syncdeps'
+          docker run --rm -v "$PWD:/src" -w /src archlinux:latest bash /src/build.sh
 
       - name: Upload package
         uses: actions/upload-artifact@v4
@@ -55,11 +48,7 @@ jobs:
 
   fedora:
     runs-on: ubuntu-latest
-    container: fedora:latest
     steps:
-      - name: Install base tools
-        run: dnf install -y rpm-build rpmdevtools dnf-plugins-core git
-
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -69,37 +58,30 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            ~/rpmbuild/BUILD/cntr-*/target
+            rpmbuild
           key: fedora-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: fedora-cargo-
 
       - name: Build package
         run: |
-          rpmdev-setuptree
-          cp contrib/fedora/cntr.spec ~/rpmbuild/SPECS/
-          dnf builddep -y ~/rpmbuild/SPECS/cntr.spec
           version=$(grep '^version' Cargo.toml | head -1 | cut -d'"' -f2)
           mkdir -p "/tmp/cntr-${version}"
           cp -r . "/tmp/cntr-${version}/"
-          tar czf ~/rpmbuild/SOURCES/"cntr-${version}.tar.gz" -C /tmp "cntr-${version}"
+          mkdir -p rpmbuild/{SOURCES,SPECS,RPMS}
+          tar czf "rpmbuild/SOURCES/cntr-${version}.tar.gz" -C /tmp "cntr-${version}"
           rm -rf "/tmp/cntr-${version}"
-          rpmbuild -ba ~/rpmbuild/SPECS/cntr.spec
+          cp contrib/fedora/cntr.spec rpmbuild/SPECS/
+          docker run --rm -v "$PWD/rpmbuild:/root/rpmbuild" -v "$PWD/contrib/fedora:/src" fedora:latest bash /src/build.sh
 
       - name: Upload package
         uses: actions/upload-artifact@v4
         with:
           name: fedora-package
-          path: ~/rpmbuild/RPMS/**/*.rpm
+          path: rpmbuild/RPMS/**/*.rpm
 
   debian:
     runs-on: ubuntu-latest
-    container: debian:trixie
     steps:
-      - name: Install base tools
-        run: |
-          apt-get update
-          apt-get install -y devscripts equivs git
-
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -116,12 +98,7 @@ jobs:
       - name: Build package
         run: |
           cp -r contrib/debian .
-          mk-build-deps --install --remove --tool 'apt-get -y' debian/control
-          rustc --version
-          cargo --version
-          dpkg-buildpackage -us -uc -b
-          mkdir -p dist
-          cp ../*.deb dist/
+          docker run --rm -v "$PWD:/src" -w /src debian:trixie bash /src/contrib/debian/build.sh
 
       - name: Upload package
         uses: actions/upload-artifact@v4
@@ -131,19 +108,7 @@ jobs:
 
   alpine:
     runs-on: ubuntu-latest
-    container: alpine:latest
     steps:
-      - name: Install base tools
-        run: apk add --no-cache alpine-sdk sudo git
-
-      - name: Setup build user
-        run: |
-          adduser -D builder
-          addgroup builder abuild
-          echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
-          mkdir -p /var/cache/distfiles
-          chmod a+w /var/cache/distfiles
-
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -159,76 +124,69 @@ jobs:
 
       - name: Build package
         run: |
-          apk update
           version=$(grep '^version' Cargo.toml | head -1 | cut -d'"' -f2)
-          workdir="$PWD/contrib/alpine"
           mkdir -p "/tmp/cntr-${version}"
           cp -r . "/tmp/cntr-${version}/"
-          tar czf "$workdir/cntr-${version}.tar.gz" -C /tmp "cntr-${version}"
+          tar czf "contrib/alpine/cntr-${version}.tar.gz" -C /tmp "cntr-${version}"
           rm -rf "/tmp/cntr-${version}"
-          cd "$workdir"
+          cd contrib/alpine
           sed -i "s|source=.*|source=\"cntr-${version}.tar.gz\"|" APKBUILD
-          chown -R builder:builder "$workdir"
-          su builder -c "abuild-keygen -an"
-          cp /home/builder/.abuild/*.pub /etc/apk/keys/
-          su builder -c "cd $workdir && abuild checksum"
-          su builder -c "cd $workdir && abuild -r"
+          docker run --rm -v "$PWD:/src" -w /src alpine:latest sh /src/build.sh
 
       - name: Upload package
         uses: actions/upload-artifact@v4
         with:
           name: alpine-package
-          path: ~/packages/**/*.apk
+          path: contrib/alpine/dist/*.apk
 
   gentoo:
     runs-on: ubuntu-latest
-    container: gentoo/stage3:latest
     steps:
-      - name: Cache portage
-        uses: actions/cache@v4
-        with:
-          path: |
-            /var/cache/distfiles
-            /var/db/repos/gentoo
-          key: gentoo-portage-${{ github.run_id }}
-          restore-keys: gentoo-portage-
-
-      - name: Install base tools
-        run: |
-          if [ ! -d /var/db/repos/gentoo/metadata ]; then
-            emerge-webrsync
-          fi
-          emerge --oneshot dev-vcs/git
-
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Cache cargo
-        uses: actions/cache@v4
+      - name: Restore portage cache
+        uses: actions/cache/restore@v4
         with:
           path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: gentoo-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: gentoo-cargo-
+            portage-cache/distfiles
+            portage-cache/repos
+          key: gentoo-portage-${{ github.run_id }}
+          restore-keys: gentoo-portage-
 
       - name: Build package
         run: |
           version=$(grep '^version' Cargo.toml | head -1 | cut -d'"' -f2)
-          mkdir -p /var/db/repos/local/{metadata,profiles,app-containers/cntr}
-          echo "local" > /var/db/repos/local/profiles/repo_name
-          echo "masters = gentoo" > /var/db/repos/local/metadata/layout.conf
-          mkdir -p /etc/portage/repos.conf
-          cat > /etc/portage/repos.conf/local.conf <<EOF
-          [local]
-          location = /var/db/repos/local
-          EOF
-          cp contrib/gentoo/app-containers/cntr/*.ebuild /var/db/repos/local/app-containers/cntr/
-          mkdir -p /var/cache/distfiles
+          srcdir="$PWD"
           mkdir -p "/tmp/cntr-${version}"
           cp -r . "/tmp/cntr-${version}/"
-          tar czf "/var/cache/distfiles/cntr-${version}.tar.gz" -C /tmp "cntr-${version}"
+          # Vendor cargo dependencies
+          cd "/tmp/cntr-${version}"
+          cargo vendor
+          mkdir -p .cargo
+          cat > .cargo/config.toml <<'EOF'
+          [source.crates-io]
+          replace-with = "vendored-sources"
+
+          [source.vendored-sources]
+          directory = "vendor"
+          EOF
+          cd /tmp
+          mkdir -p "${srcdir}/portage-cache/distfiles" "${srcdir}/portage-cache/repos"
+          tar czf "${srcdir}/portage-cache/distfiles/cntr-${version}.tar.gz" "cntr-${version}"
           rm -rf "/tmp/cntr-${version}"
-          cd /var/db/repos/local/app-containers/cntr
-          ebuild "cntr-${version}.ebuild" manifest
-          ebuild "cntr-${version}.ebuild" compile install
+          cd "${srcdir}"
+          docker run --rm \
+            -v "$PWD:/src" \
+            -v "$PWD/portage-cache/distfiles:/var/cache/distfiles" \
+            -v "$PWD/portage-cache/repos:/var/db/repos/gentoo" \
+            gentoo/stage3:latest bash /src/contrib/gentoo/build.sh
+
+      - name: Save portage cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            portage-cache/distfiles
+            portage-cache/repos
+          key: gentoo-portage-${{ github.run_id }}
