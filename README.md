@@ -12,7 +12,7 @@ Cntr was also published in [Usenix ATC 2018](https://www.usenix.org/conference/a
 See [bibtex](#bibtex) for citation.
 
 **Note:** The academic paper describes the original FUSE-based architecture.
-As of version 1.6.0, cntr has been rewritten to use the Linux mount API instead of FUSE,
+As of version 2.0.0, cntr has been rewritten to use the Linux mount API instead of FUSE,
 significantly improving performance and security while maintaining the same user interface and capabilities.
 
 ## What you get
