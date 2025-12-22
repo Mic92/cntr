@@ -1,0 +1,43 @@
+# Maintainer: Jörg Thalheim <joerg@thalheim.io>
+pkgname=cntr
+pkgver=2.0.0
+pkgrel=1
+pkgdesc="A container debugging tool based on Linux mount API"
+arch=('x86_64' 'aarch64')
+url="https://github.com/Mic92/cntr"
+license=('MIT')
+makedepends=('cargo' 'scdoc')
+source=("$pkgname-$pkgver.tar.gz::https://github.com/Mic92/cntr/archive/refs/tags/$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+    cd "$pkgname-$pkgver"
+    export RUSTUP_TOOLCHAIN=stable
+    export CARGO_TARGET_DIR=target
+    cargo build --release --locked
+
+    # Generate manpage
+    scdoc < doc/cntr.1.scd > cntr.1
+}
+
+check() {
+    cd "$pkgname-$pkgver"
+    export RUSTUP_TOOLCHAIN=stable
+    cargo test --release --locked
+}
+
+package() {
+    cd "$pkgname-$pkgver"
+    install -Dm755 "target/release/cntr" "$pkgdir/usr/bin/cntr"
+    install -Dm644 "LICENSE.md" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+    install -Dm644 "README.md" "$pkgdir/usr/share/doc/$pkgname/README.md"
+
+    # Shell completions
+    install -Dm644 "completions/cntr.bash" "$pkgdir/usr/share/bash-completion/completions/cntr"
+    install -Dm644 "completions/cntr.zsh" "$pkgdir/usr/share/zsh/site-functions/_cntr"
+    install -Dm644 "completions/cntr.fish" "$pkgdir/usr/share/fish/vendor_completions.d/cntr.fish"
+    install -Dm644 "completions/cntr.nu" "$pkgdir/usr/share/nushell/completions/cntr.nu"
+
+    # Manpage
+    install -Dm644 "cntr.1" "$pkgdir/usr/share/man/man1/cntr.1"
+}

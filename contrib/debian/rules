@@ -1,0 +1,28 @@
+#!/usr/bin/make -f
+
+export CARGO_HOME = $(CURDIR)/debian/cargo_home
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	cargo build --release --locked
+	scdoc < doc/cntr.1.scd > cntr.1
+
+override_dh_auto_test:
+	cargo test --release --locked
+
+override_dh_auto_install:
+	install -Dm755 target/release/cntr debian/cntr/usr/bin/cntr
+	# Shell completions
+	install -Dm644 completions/cntr.bash debian/cntr/usr/share/bash-completion/completions/cntr
+	install -Dm644 completions/cntr.zsh debian/cntr/usr/share/zsh/vendor-completions/_cntr
+	install -Dm644 completions/cntr.fish debian/cntr/usr/share/fish/vendor_completions.d/cntr.fish
+	install -Dm644 completions/cntr.nu debian/cntr/usr/share/nushell/completions/cntr.nu
+	# Manpage
+	install -Dm644 cntr.1 debian/cntr/usr/share/man/man1/cntr.1
+
+override_dh_auto_clean:
+	cargo clean
+	rm -rf debian/cargo_home
