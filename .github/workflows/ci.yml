@@ -20,6 +20,27 @@ jobs:
           - target: aarch64-unknown-linux-musl
             os: ubuntu-24.04-arm
             rust: stable
+          # Cross-compiled targets
+          - target: armv7-unknown-linux-musleabihf
+            os: ubuntu-latest
+            rust: stable
+            cross: true
+          - target: i686-unknown-linux-musl
+            os: ubuntu-latest
+            rust: stable
+            cross: true
+          - target: powerpc64le-unknown-linux-gnu
+            os: ubuntu-latest
+            rust: stable
+            cross: true
+          - target: s390x-unknown-linux-gnu
+            os: ubuntu-latest
+            rust: stable
+            cross: true
+          - target: riscv64gc-unknown-linux-gnu
+            os: ubuntu-latest
+            rust: stable
+            cross: true
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -29,5 +50,12 @@ jobs:
           targets: ${{ matrix.target }}
       - name: Ready cache
         run: sudo chown -R "$(whoami):$(id -ng)" ~/.cargo/
-      - name: Test
+      - name: Install cross
+        if: matrix.cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
+      - name: Test (native)
+        if: ${{ !matrix.cross }}
         run: cargo test --target ${{ matrix.target }}
+      - name: Test (cross)
+        if: matrix.cross
+        run: cross test --target ${{ matrix.target }}
