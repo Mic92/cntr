@@ -120,12 +120,14 @@ jobs:
           rustc --version
           cargo --version
           dpkg-buildpackage -us -uc -b
+          mkdir -p dist
+          cp ../*.deb dist/
 
       - name: Upload package
         uses: actions/upload-artifact@v4
         with:
           name: debian-package
-          path: ../*.deb
+          path: dist/*.deb
 
   alpine:
     runs-on: ubuntu-latest
