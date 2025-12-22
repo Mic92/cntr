@@ -282,11 +282,33 @@ where
     Ok(std::process::ExitCode::SUCCESS)
 }
 
+/// Enable dumpable mode if CNTR_ALLOW_SETCAP=1 is set.
+///
+/// When running cntr with file capabilities (setcap), the process becomes
+/// non-dumpable which prevents access to /proc/self/ns. Setting dumpable=1
+/// re-enables this access but has security implications:
+/// - Core dumps may expose privileged memory
+/// - Other processes running as the same user can ptrace this process
+///
+/// Only enable this if you understand the security tradeoffs.
+fn maybe_set_dumpable() {
+    if env::var("CNTR_ALLOW_SETCAP").as_deref() == Ok("1") {
+        use crate::syscalls::prctl::prctl;
+        // PR_SET_DUMPABLE = 4, SUID_DUMP_USER = 1
+        if let Err(e) = prctl(4, 1, 0, 0, 0) {
+            log::warn!("failed to set PR_SET_DUMPABLE: {}", e);
+        }
+    }
+}
+
 pub fn run_with_args<I, T>(args: I) -> Result<std::process::ExitCode, Box<dyn std::error::Error>>
 where
     I: IntoIterator<Item = T>,
     T: Into<std::ffi::OsString> + Clone,
 {
+    // Must be called early, before any /proc/self access
+    maybe_set_dumpable();
+
     let args: Vec<String> = args
         .into_iter()
         .map(|s| {

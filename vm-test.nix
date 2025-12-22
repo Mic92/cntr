@@ -58,6 +58,107 @@ in
     '';
   };
 
+  # Test for rootless podman - reproduces issue #428 with cgroup permissions
+  podman-rootless = testers.nixosTest {
+    name = "podman-rootless";
+    nodes.server =
+      { pkgs, ... }:
+      {
+        environment.systemPackages = [
+          cntr
+          pkgs.podman
+        ];
+
+        # Use virtualisation.podman which sets up policy.json and other config
+        virtualisation.podman.enable = true;
+
+        # Create a test user for rootless podman
+        users.users.testuser = {
+          isNormalUser = true;
+          uid = 1000;
+          group = "testuser";
+          # Enable linger so user systemd services start on boot
+          linger = true;
+        };
+        users.groups.testuser = { };
+
+        # Enable unprivileged user namespaces for rootless containers
+        security.unprivilegedUsernsClone = true;
+
+        # Configure subuid/subgid for rootless podman
+        users.users.testuser.subUidRanges = [
+          {
+            startUid = 100000;
+            count = 65536;
+          }
+        ];
+        users.users.testuser.subGidRanges = [
+          {
+            startGid = 100000;
+            count = 65536;
+          }
+        ];
+
+        # Enable cgroup v2 delegation for rootless containers
+        systemd.services."user@".serviceConfig.Delegate = "yes";
+      };
+
+    testScript = ''
+      start_all()
+
+      # Wait for the test user's systemd session
+      server.wait_for_unit("user@1000.service")
+
+      # Load the test image into the user's podman
+      server.succeed(
+          "su - testuser -c 'podman load -i ${busyboxImage}'"
+      )
+
+      # Start a rootless container
+      server.succeed(
+          "su - testuser -c 'podman run -d --name testcontainer busybox-test:latest'"
+      )
+
+      # Verify container is running
+      server.succeed("su - testuser -c 'podman ps | grep testcontainer'")
+
+      # Get the container's PID
+      container_pid = server.succeed(
+          "su - testuser -c 'podman inspect -f \"{{.State.Pid}}\" testcontainer'"
+      ).strip()
+      print(f"Container PID: {container_pid}")
+
+      # Show the cgroup of the container process
+      cgroup = server.succeed(f"cat /proc/{container_pid}/cgroup")
+      print(f"Container cgroup: {cgroup}")
+
+      # Show the cgroup permissions
+      cgroup_path = cgroup.strip().split("::")[1]
+      server.succeed(f"ls -la /sys/fs/cgroup{cgroup_path}/")
+
+      # Copy cntr to a persistent location (not /tmp which may have nosuid)
+      # This tests the scenario from issue #428 where users want to run cntr
+      # without sudo but with minimal capabilities
+      server.succeed("mkdir -p /usr/local/bin")
+      server.succeed("cp $(which cntr) /usr/local/bin/cntr-caps")
+      server.succeed("chmod 755 /usr/local/bin/cntr-caps")
+      # Grant minimal capabilities needed for cntr to work
+      # CAP_SYS_ADMIN: for unshare(CLONE_NEWNS) and mount operations
+      # CAP_SYS_CHROOT: for chroot (exec mode)
+      server.succeed("setcap 'cap_sys_admin,cap_sys_chroot=ep' /usr/local/bin/cntr-caps")
+
+      # Verify capabilities are set
+      server.succeed("getcap /usr/local/bin/cntr-caps")
+
+      # Try to attach with cntr as the same user using capabilities
+      # CNTR_ALLOW_SETCAP=1 enables PR_SET_DUMPABLE to work around /proc/self/ns restrictions
+      server.succeed(f"su - testuser -c 'CNTR_ALLOW_SETCAP=1 /usr/local/bin/cntr-caps attach -t process_id {container_pid} true'")
+
+      # Test exec mode as well (requires CAP_SYS_CHROOT)
+      server.succeed(f"su - testuser -c 'CNTR_ALLOW_SETCAP=1 /usr/local/bin/cntr-caps exec -t process_id {container_pid} -- /bin/echo exec test passed'")
+    '';
+  };
+
   nspawn = testers.nixosTest {
     name = "nspawn";
     nodes.server =

@@ -59,6 +59,7 @@
               })
               docker
               podman
+              podman-rootless
               nspawn
               k3s
               builder

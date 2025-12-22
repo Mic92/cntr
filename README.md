@@ -422,6 +422,45 @@ $ cntr exec --apparmor off mycontainer -- /bin/sh
 
 **Note:** On systems without AppArmor enabled, this flag has no effect. The flag is available for both `attach` and `exec` commands.
 
+### Running with File Capabilities (setcap)
+
+By default, cntr requires root privileges. However, you can use Linux file capabilities
+to run cntr without full root access:
+
+```console
+# Grant required capabilities to cntr binary
+$ sudo setcap 'cap_sys_admin,cap_sys_chroot=ep' /usr/local/bin/cntr
+
+# Enable setcap mode (required due to Linux security restrictions)
+$ export CNTR_ALLOW_SETCAP=1
+
+# Now run cntr as a regular user
+$ cntr attach mycontainer
+```
+
+**Required capabilities:**
+| Capability | Purpose |
+|------------|---------|
+| `CAP_SYS_ADMIN` | Namespace operations (`unshare`, `setns`), mount operations |
+| `CAP_SYS_CHROOT` | `chroot()` for `cntr exec` command |
+| `CAP_SYS_PTRACE` | Only needed when attaching to containers owned by a different user |
+
+**Why `CNTR_ALLOW_SETCAP=1` is required:**
+
+When Linux runs a binary with file capabilities, it marks the process as "non-dumpable"
+for security. This prevents the process from accessing `/proc/self/ns/*`, which cntr
+needs to function. Setting `CNTR_ALLOW_SETCAP=1` tells cntr to re-enable dumpable mode
+via `prctl(PR_SET_DUMPABLE, 1)`.
+
+**Security considerations:**
+
+Enabling dumpable mode has security implications:
+- Core dumps may expose privileged memory contents
+- Other processes running as the same user can `ptrace()` the cntr process
+
+The risk is mitigated by cntr's short-lived nature (attach → exec → exit), but you
+should understand these tradeoffs before using this feature.
+
 # How it works
 
 Cntr is container-agnostic: Instead of interfacing with container engines, it

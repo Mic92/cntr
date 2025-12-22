@@ -181,12 +181,15 @@ impl CgroupManager for CgroupV2Manager {
 
         match File::options().append(true).open(&procs_path) {
             Ok(mut file) => {
-                write!(file, "{}", pid).with_context(|| {
-                    format!(
-                        "failed to write PID to cgroup.procs at {}",
-                        procs_path.display()
-                    )
-                })?;
+                if let Err(err) = write!(file, "{}", pid) {
+                    // Writing to cgroup.procs requires CAP_SYS_ADMIN or root.
+                    // For unprivileged users (e.g., rootless podman), warn and continue.
+                    warn!(
+                        "failed to write PID to cgroup.procs at {}: {} (try running as root or with CAP_SYS_ADMIN)",
+                        procs_path.display(),
+                        err
+                    );
+                }
             }
             Err(err) => {
                 warn!(
