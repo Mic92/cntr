@@ -2,7 +2,7 @@
 name = "cntr"
 edition = "2024"
 description = "A container debugging tool based on Linux mount API"
-version = "1.6.1"
+version = "2.0.0"
 authors = ["Jörg Thalheim <joerg@thalheim.io>"]
 categories = ["development-tools::debugging", "os::unix-apis"]
 repository = "https://github.com/Mic92/cntr"
