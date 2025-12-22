@@ -48,6 +48,9 @@
                 withClippy = true;
               }
             );
+            shell-completions = pkgs.callPackage ./shell-completion-test.nix {
+              inherit (config.packages) cntr;
+            };
           }
           // lib.optionalAttrs (!pkgs.stdenv.hostPlatform.isRiscV64) {
             inherit
