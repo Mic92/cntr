@@ -92,6 +92,8 @@ jobs:
           tag: ${{ github.ref }}
           overwrite: true
           file_glob: true
+      - name: Clean up source tarball
+        run: rm -rf cntr-src-* vendor
       - name: Publish to crates.io
         uses: katyo/publish-crates@v2
         with:
