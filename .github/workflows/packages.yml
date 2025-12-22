@@ -1,0 +1,192 @@
+name: Package builds
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+    tags: ['*']
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_NET_RETRY: 10
+  RUSTUP_MAX_RETRIES: 10
+
+jobs:
+  arch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: arch-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: arch-cargo-
+
+      - name: Build package
+        run: |
+          version=$(grep '^version' Cargo.toml | head -1 | cut -d'"' -f2)
+          mkdir -p "/tmp/cntr-${version}"
+          cp -r . "/tmp/cntr-${version}/"
+          tar czf "contrib/arch/cntr-${version}.tar.gz" -C /tmp "cntr-${version}"
+          rm -rf "/tmp/cntr-${version}"
+          cd contrib/arch
+          sed -i "s|source=.*|source=(\"cntr-${version}.tar.gz\")|" PKGBUILD
+          sed -i "s|sha256sums=.*|sha256sums=('SKIP')|" PKGBUILD
+          docker run --rm -v "$PWD:/src" -w /src archlinux:latest bash /src/build.sh
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: arch-package
+          path: contrib/arch/*.pkg.tar.zst
+
+  fedora:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rpmbuild
+          key: fedora-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: fedora-cargo-
+
+      - name: Build package
+        run: |
+          version=$(grep '^version' Cargo.toml | head -1 | cut -d'"' -f2)
+          mkdir -p "/tmp/cntr-${version}"
+          cp -r . "/tmp/cntr-${version}/"
+          mkdir -p rpmbuild/{SOURCES,SPECS,RPMS}
+          tar czf "rpmbuild/SOURCES/cntr-${version}.tar.gz" -C /tmp "cntr-${version}"
+          rm -rf "/tmp/cntr-${version}"
+          cp contrib/fedora/cntr.spec rpmbuild/SPECS/
+          docker run --rm -v "$PWD/rpmbuild:/root/rpmbuild" -v "$PWD/contrib/fedora:/src" fedora:latest bash /src/build.sh
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: fedora-package
+          path: rpmbuild/RPMS/**/*.rpm
+
+  debian:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: debian-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: debian-cargo-
+
+      - name: Build package
+        run: |
+          cp -r contrib/debian .
+          docker run --rm -v "$PWD:/src" -w /src debian:trixie bash /src/contrib/debian/build.sh
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: debian-package
+          path: dist/*.deb
+
+  alpine:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: alpine-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: alpine-cargo-
+
+      - name: Build package
+        run: |
+          version=$(grep '^version' Cargo.toml | head -1 | cut -d'"' -f2)
+          mkdir -p "/tmp/cntr-${version}"
+          cp -r . "/tmp/cntr-${version}/"
+          tar czf "contrib/alpine/cntr-${version}.tar.gz" -C /tmp "cntr-${version}"
+          rm -rf "/tmp/cntr-${version}"
+          cd contrib/alpine
+          sed -i "s|source=.*|source=\"cntr-${version}.tar.gz\"|" APKBUILD
+          docker run --rm -v "$PWD:/src" -w /src alpine:latest sh /src/build.sh
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: alpine-package
+          path: contrib/alpine/dist/*.apk
+
+  gentoo:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Restore portage cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            portage-cache/distfiles
+            portage-cache/repos
+          key: gentoo-portage-${{ github.run_id }}
+          restore-keys: gentoo-portage-
+
+      - name: Build package
+        run: |
+          version=$(grep '^version' Cargo.toml | head -1 | cut -d'"' -f2)
+          srcdir="$PWD"
+          mkdir -p "/tmp/cntr-${version}"
+          cp -r . "/tmp/cntr-${version}/"
+          # Vendor cargo dependencies
+          cd "/tmp/cntr-${version}"
+          cargo vendor
+          mkdir -p .cargo
+          cat > .cargo/config.toml <<'EOF'
+          [source.crates-io]
+          replace-with = "vendored-sources"
+
+          [source.vendored-sources]
+          directory = "vendor"
+          EOF
+          cd /tmp
+          mkdir -p "${srcdir}/portage-cache/distfiles" "${srcdir}/portage-cache/repos"
+          tar czf "${srcdir}/portage-cache/distfiles/cntr-${version}.tar.gz" "cntr-${version}"
+          rm -rf "/tmp/cntr-${version}"
+          cd "${srcdir}"
+          docker run --rm \
+            -v "$PWD:/src" \
+            -v "$PWD/portage-cache/distfiles:/var/cache/distfiles" \
+            -v "$PWD/portage-cache/repos:/var/db/repos/gentoo" \
+            gentoo/stage3:latest bash /src/contrib/gentoo/build.sh
+
+      - name: Save portage cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            portage-cache/distfiles
+            portage-cache/repos
+          key: gentoo-portage-${{ github.run_id }}

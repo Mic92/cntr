@@ -1,0 +1,6 @@
+cntr (2.0.0-1) unstable; urgency=medium
+
+  * Rewrite to use Linux mount API instead of FUSE
+  * Requires Linux kernel 5.2 or later
+
+ -- Jörg Thalheim <joerg@thalheim.io>  Sun, 22 Dec 2024 00:00:00 +0000

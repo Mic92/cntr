@@ -69,6 +69,8 @@ Cntr by design is only able to run on Linux.
 **System Requirements:**
 - Linux kernel 5.2 or later
 
+**For distribution packagers:** See [PACKAGING.md](PACKAGING.md) for packaging guidelines and examples.
+
 ### Pre-build static-linked binary
 
 For linux x86_64 we build static binaries for every release. More platforms can added on request.

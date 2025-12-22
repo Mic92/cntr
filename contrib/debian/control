@@ -1,0 +1,23 @@
+Source: cntr
+Section: admin
+Priority: optional
+Maintainer: Jörg Thalheim <joerg@thalheim.io>
+Build-Depends: debhelper-compat (= 13), cargo, rustc (>= 1.85), scdoc
+Standards-Version: 4.6.2
+Homepage: https://github.com/Mic92/cntr
+Vcs-Browser: https://github.com/Mic92/cntr
+Vcs-Git: https://github.com/Mic92/cntr.git
+Rules-Requires-Root: no
+
+Package: cntr
+Architecture: linux-any
+Depends: ${misc:Depends}, ${shlibs:Depends}
+Description: Container debugging tool based on Linux mount API
+ cntr is a replacement for docker exec that brings all your developer
+ tools with you by mounting the file system from one container or the
+ host into the target container.
+ .
+ This allows shipping minimal runtime images in production while still
+ having access to debugging tools when needed.
+ .
+ Requires Linux kernel 5.2 or later.

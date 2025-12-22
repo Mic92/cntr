@@ -42,18 +42,18 @@ fn translate_id(map_path: &Path, outer_id: u32) -> Result<u32> {
 
         // Check if outer_id falls within this mapping range
         // Use checked arithmetic to avoid overflow
-        if let Some(offset) = outer_id.checked_sub(outer_start)
-            && offset < length
-        {
-            let inner = inner_start.checked_add(offset).ok_or_else(|| {
-                anyhow::anyhow!(
-                    "integer overflow computing inner ID in {:?}: {} + {} would overflow",
-                    map_path,
-                    inner_start,
-                    offset
-                )
-            })?;
-            return Ok(inner);
+        if let Some(offset) = outer_id.checked_sub(outer_start) {
+            if offset < length {
+                let inner = inner_start.checked_add(offset).ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "integer overflow computing inner ID in {:?}: {} + {} would overflow",
+                        map_path,
+                        inner_start,
+                        offset
+                    )
+                })?;
+                return Ok(inner);
+            }
         }
     }
 
@@ -90,17 +90,17 @@ pub(crate) fn status(target_pid: Pid, apparmor_mode: ApparmorMode) -> Result<Pro
                 line
             );
         }
-        if columns[0] == "CapEff:"
-            && let Some(cap_string) = columns.last()
-        {
-            let cap = c_ulong::from_str_radix(cap_string, 16).with_context(|| {
-                format!(
-                    "failed to parse capability '{}' from {}",
-                    cap_string,
-                    path.display()
-                )
-            })?;
-            effective_caps = Some(cap);
+        if columns[0] == "CapEff:" {
+            if let Some(cap_string) = columns.last() {
+                let cap = c_ulong::from_str_radix(cap_string, 16).with_context(|| {
+                    format!(
+                        "failed to parse capability '{}' from {}",
+                        cap_string,
+                        path.display()
+                    )
+                })?;
+                effective_caps = Some(cap);
+            }
         }
     }
 
