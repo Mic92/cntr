@@ -1,7 +1,7 @@
 name: Update Flake Inputs
 on:
   schedule:
-    - cron: "0 2 * * *"
+    - cron: "0 2 * * 1"
   workflow_dispatch:
 jobs:
   update-flake-inputs:
