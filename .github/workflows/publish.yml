@@ -46,7 +46,7 @@ jobs:
           targets: ${{ matrix.target }}
       - name: Install cross
         if: matrix.cross
-        run: cargo install cross --git https://github.com/cross-rs/cross
+        uses: taiki-e/install-action@cross
       - name: Build (native)
         if: ${{ !matrix.cross }}
         run: cargo build --release --target ${{ matrix.target }} --locked
