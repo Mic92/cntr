@@ -41,7 +41,7 @@ jobs:
           docker run --rm -v "$PWD:/src" -w /src archlinux:latest bash /src/build.sh
 
       - name: Upload package
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: arch-package
           path: contrib/arch/*.pkg.tar.zst
@@ -74,7 +74,7 @@ jobs:
           docker run --rm -v "$PWD/rpmbuild:/root/rpmbuild" -v "$PWD/contrib/fedora:/src" fedora:latest bash /src/build.sh
 
       - name: Upload package
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: fedora-package
           path: rpmbuild/RPMS/**/*.rpm
@@ -101,7 +101,7 @@ jobs:
           docker run --rm -v "$PWD:/src" -w /src debian:trixie bash /src/contrib/debian/build.sh
 
       - name: Upload package
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: debian-package
           path: dist/*.deb
@@ -134,7 +134,7 @@ jobs:
           docker run --rm -v "$PWD:/src" -w /src alpine:latest sh /src/build.sh
 
       - name: Upload package
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: alpine-package
           path: contrib/alpine/dist/*.apk
