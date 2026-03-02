@@ -12,7 +12,7 @@ license = "MIT"
 [dependencies]
 log = "0.4.29"
 libc = "0.2.180"
-nix = { version = "0.31.1", features = [
+nix = { version = "0.31.2", features = [
   "dir",
   "fs",
   "mount",
