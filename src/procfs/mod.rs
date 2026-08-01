@@ -1,3 +1,4 @@
+use rustix::io::Errno;
 use rustix::process::{Gid, Pid, Uid};
 use thiserror::Error;
 use typed_path::{UnixPath, UnixPathBuf};
@@ -12,7 +13,7 @@ pub(crate) enum ProcfsError {
     Read {
         path: UnixPathBuf,
         #[source]
-        source: std::io::Error,
+        source: Errno,
     },
     #[error("failed to parse {what} in {}: '{value}'", path.display())]
     Parse {
@@ -46,7 +47,7 @@ pub(crate) enum ProcfsError {
     Metadata {
         path: UnixPathBuf,
         #[source]
-        source: std::io::Error,
+        source: Errno,
     },
     #[error("failed to read LSM profile")]
     Lsm(#[from] LsmError),

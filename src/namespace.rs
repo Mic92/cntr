@@ -12,12 +12,12 @@ use crate::procfs;
 #[derive(Debug, Error)]
 pub(crate) enum NamespaceError {
     #[error("failed to read directory /proc/self/ns")]
-    ListNamespaces(#[source] std::io::Error),
+    ListNamespaces(#[source] Errno),
     #[error("failed to open namespace file '{}'", path.display())]
     OpenNamespaceFile {
         path: UnixPathBuf,
         #[source]
-        source: std::io::Error,
+        source: Errno,
     },
     #[error("failed to set namespace '{name}'")]
     SetNamespace {

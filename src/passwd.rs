@@ -6,6 +6,7 @@
 //!    systemd-userdb, resolved in a separate process)
 //! 3. a numeric `uid[:gid]` spec as an escape hatch
 
+use rustix::io::Errno;
 use rustix::process::{Gid, Uid};
 use thiserror::Error;
 use typed_path::UnixPathBuf;
@@ -15,7 +16,7 @@ use crate::spawn;
 #[derive(Debug, Error)]
 pub(crate) enum PasswdError {
     #[error("failed to read /etc/passwd")]
-    ReadPasswd(#[source] std::io::Error),
+    ReadPasswd(#[source] Errno),
     #[error("getent returned invalid UTF-8")]
     GetentUtf8(#[source] std::string::FromUtf8Error),
     #[error("invalid {field} '{value}' in passwd entry for {user}")]

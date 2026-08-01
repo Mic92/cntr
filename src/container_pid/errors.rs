@@ -1,3 +1,4 @@
+use rustix::io::Errno;
 use thiserror::Error;
 use typed_path::UnixPathBuf;
 
@@ -17,7 +18,7 @@ pub enum Error {
     CommandFailedToRun {
         command: String,
         #[source]
-        source: std::io::Error,
+        source: Errno,
     },
     /// The runtime CLI ran but exited with an error.
     #[error("{command} failed (exit status {status}): {stderr}")]
@@ -49,7 +50,7 @@ pub enum Error {
     Io {
         path: UnixPathBuf,
         #[source]
-        source: std::io::Error,
+        source: Errno,
     },
     /// The given container ID is not a valid process ID.
     #[error("'{0}' is not a valid PID (process ID)")]

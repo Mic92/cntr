@@ -1,6 +1,6 @@
 //! Helpers for reporting errors to the user.
 
-use std::error::Error;
+use core::error::Error;
 use std::fmt::Write;
 
 /// Format an error together with its full source chain, e.g.

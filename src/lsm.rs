@@ -1,5 +1,5 @@
+use rustix::io::Errno;
 use rustix::process::Pid;
-use std::io::ErrorKind;
 use thiserror::Error;
 use typed_path::UnixPathBuf;
 
@@ -15,19 +15,19 @@ pub(crate) enum LsmError {
     ReadEnabled {
         path: &'static str,
         #[source]
-        source: std::io::Error,
+        source: Errno,
     },
     #[error("failed to read AppArmor profile from {}", path.display())]
     ReadProfile {
         path: UnixPathBuf,
         #[source]
-        source: std::io::Error,
+        source: Errno,
     },
     #[error("failed to write '{attr}' to AppArmor profile")]
     WriteProfile {
         attr: String,
         #[source]
-        source: std::io::Error,
+        source: Errno,
     },
 }
 
@@ -40,7 +40,7 @@ fn is_apparmor_enabled() -> Result<bool, LsmError> {
     let aa_path = "/sys/module/apparmor/parameters/enabled";
     match fsutil::read_to_string(aa_path) {
         Ok(contents) => Ok(contents == "Y\n"),
-        Err(err) if err.kind() == ErrorKind::NotFound => Ok(false),
+        Err(Errno::NOENT) => Ok(false),
         Err(source) => Err(LsmError::ReadEnabled {
             path: aa_path,
             source,

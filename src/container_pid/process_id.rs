@@ -1,4 +1,4 @@
-use std::io::ErrorKind;
+use rustix::io::Errno;
 
 use crate::container_pid::Container;
 use crate::container_pid::Error;
@@ -18,7 +18,7 @@ impl Container for ProcessId {
         let proc_path = get_path().join(pid.to_string());
         match fsutil::metadata(&proc_path) {
             Err(e) => {
-                if e.kind() == ErrorKind::NotFound {
+                if e == Errno::NOENT {
                     Err(Error::NoSuchProcess(pid))
                 } else {
                     Err(Error::Io {

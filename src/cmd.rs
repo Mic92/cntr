@@ -1,5 +1,6 @@
 use hashbrown::HashMap;
 use log::warn;
+use rustix::io::Errno;
 use rustix::process::{Pid, chdir, chroot};
 use std::convert::Infallible;
 use thiserror::Error;
@@ -16,19 +17,19 @@ pub(crate) enum CmdError {
     OpenEnviron {
         path: UnixPathBuf,
         #[source]
-        source: std::io::Error,
+        source: Errno,
     },
     #[error("failed to read container root from {path}")]
     ReadContainerRoot {
         path: String,
         #[source]
-        source: std::io::Error,
+        source: Errno,
     },
     #[error("failed to execute command: {command}")]
     Exec {
         command: String,
         #[source]
-        source: std::io::Error,
+        source: Errno,
     },
 }
 
@@ -165,15 +166,15 @@ impl Cmd {
         // that will become the container command, so no extra fork is needed.
         // container_root was already resolved in new() before entering namespaces
         let container_root = self.container_root;
-        let err = (|| -> std::io::Error {
+        let err = (|| -> Errno {
             if let Err(e) = chroot(container_root.as_bytes()) {
                 warn!("failed to chroot to {}: {}", container_root.display(), e);
-                return e.into();
+                return e;
             }
 
             if let Err(e) = chdir("/") {
                 warn!("failed to change directory to /");
-                return e.into();
+                return e;
             }
 
             // Apply AppArmor profile after chroot

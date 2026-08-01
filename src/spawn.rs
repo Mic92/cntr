@@ -15,7 +15,6 @@ use rustix::runtime::{Fork, execve, exit_group, kernel_fork};
 use rustix::stdio::{dup2_stderr, dup2_stdin, dup2_stdout};
 use std::convert::Infallible;
 use std::ffi::CString;
-use std::io;
 use std::os::fd::OwnedFd;
 use typed_path::UnixPath;
 
@@ -44,8 +43,8 @@ impl Output {
     }
 }
 
-fn cstring<S: AsRef<[u8]>>(s: S) -> io::Result<CString> {
-    CString::new(s.as_ref()).map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))
+fn cstring<S: AsRef<[u8]>>(s: S) -> Result<CString, Errno> {
+    CString::new(s.as_ref()).map_err(|_| Errno::INVAL)
 }
 
 /// Argv/envp marshalled into CStrings, so that no allocation is needed
@@ -58,7 +57,7 @@ struct ExecArgs {
 
 impl ExecArgs {
     /// Replace the current process image. Only returns on error.
-    fn exec(&self) -> io::Error {
+    fn exec(&self) -> Errno {
         let null_terminated = |strings: &[CString]| -> Vec<*const u8> {
             let mut ptrs: Vec<*const u8> = strings.iter().map(|s| s.as_ptr().cast()).collect();
             ptrs.push(std::ptr::null());
@@ -66,12 +65,12 @@ impl ExecArgs {
         };
         let argv = null_terminated(&self.argv);
         let envp = null_terminated(&self.envp);
-        io::Error::from(unsafe { execve(&self.path, argv.as_ptr(), envp.as_ptr()) })
+        unsafe { execve(&self.path, argv.as_ptr(), envp.as_ptr()) }
     }
 }
 
 /// Look up `program` in the given PATH value unless it already contains a slash.
-fn resolve_program(program: &str, path_var: Option<&Vec<u8>>) -> io::Result<CString> {
+fn resolve_program(program: &str, path_var: Option<&Vec<u8>>) -> Result<CString, Errno> {
     // No let-chain here to stay compatible with Rust < 1.88 (Debian).
     if !program.contains('/') {
         if let Some(paths) = path_var.and_then(|p| std::str::from_utf8(p).ok()) {
@@ -94,7 +93,7 @@ pub(crate) fn exec(
     program: &str,
     args: &[String],
     env: &HashMap<Vec<u8>, Vec<u8>>,
-) -> Result<Infallible, io::Error> {
+) -> Result<Infallible, Errno> {
     let mut argv = vec![cstring(program)?];
     for arg in args {
         argv.push(cstring(arg)?);
@@ -116,9 +115,9 @@ pub(crate) fn exec(
 
 /// Run `program args...` with the current environment, capturing stdout and
 /// stderr. Stdin is redirected from /dev/null.
-pub(crate) fn run(program: &str, args: &[&str]) -> io::Result<Output> {
+pub(crate) fn run(program: &str, args: &[&str]) -> Result<Output, Errno> {
     let Some(path) = which(program) else {
-        return Err(io::Error::from(io::ErrorKind::NotFound));
+        return Err(Errno::NOENT);
     };
     let mut argv = vec![cstring(program)?];
     for arg in args {
@@ -132,20 +131,20 @@ pub(crate) fn run(program: &str, args: &[&str]) -> io::Result<Output> {
             entry.extend_from_slice(value);
             cstring(entry)
         })
-        .collect::<io::Result<Vec<CString>>>()?;
+        .collect::<Result<Vec<CString>, Errno>>()?;
     let exec_args = ExecArgs {
         path: cstring(path.as_bytes())?,
         argv,
         envp,
     };
 
-    let (stdout_read, stdout_write) = pipe().map_err(io::Error::from)?;
-    let (stderr_read, stderr_write) = pipe().map_err(io::Error::from)?;
-    let devnull = open("/dev/null", OFlags::RDONLY, Mode::empty()).map_err(io::Error::from)?;
+    let (stdout_read, stdout_write) = pipe()?;
+    let (stderr_read, stderr_write) = pipe()?;
+    let devnull = open("/dev/null", OFlags::RDONLY, Mode::empty())?;
 
     // SAFETY: between fork and execve we only call async-signal-safe rustix
     // wrappers; all allocations were done above.
-    match unsafe { kernel_fork() }.map_err(io::Error::from)? {
+    match unsafe { kernel_fork() }? {
         Fork::Child(_) => {
             let ok = dup2_stdin(&devnull).is_ok()
                 && dup2_stdout(&stdout_write).is_ok()
@@ -165,7 +164,7 @@ pub(crate) fn run(program: &str, args: &[&str]) -> io::Result<Output> {
                 match waitpid(Some(child), WaitOptions::empty()) {
                     Ok(Some((_, status))) => break status,
                     Ok(None) | Err(Errno::INTR) => continue,
-                    Err(e) => return Err(io::Error::from(e)),
+                    Err(e) => return Err(e),
                 }
             };
 
@@ -180,11 +179,11 @@ pub(crate) fn run(program: &str, args: &[&str]) -> io::Result<Output> {
 
 /// Drain both pipes concurrently to avoid deadlocks when the child fills one
 /// of them while we are blocked on the other.
-fn read_outputs(stdout: OwnedFd, stderr: OwnedFd) -> io::Result<(Vec<u8>, Vec<u8>)> {
+fn read_outputs(stdout: OwnedFd, stderr: OwnedFd) -> Result<(Vec<u8>, Vec<u8>), Errno> {
     // Non-blocking reads let us drain both fds after each poll wakeup without
     // tracking which one is actually ready.
-    fcntl_setfl(&stdout, OFlags::NONBLOCK).map_err(io::Error::from)?;
-    fcntl_setfl(&stderr, OFlags::NONBLOCK).map_err(io::Error::from)?;
+    fcntl_setfl(&stdout, OFlags::NONBLOCK)?;
+    fcntl_setfl(&stderr, OFlags::NONBLOCK)?;
     let mut fds = [Some(stdout), Some(stderr)];
     let mut bufs = [Vec::new(), Vec::new()];
     let mut chunk = [0u8; 8192];
@@ -198,7 +197,7 @@ fn read_outputs(stdout: OwnedFd, stderr: OwnedFd) -> io::Result<(Vec<u8>, Vec<u8
         match poll(&mut poll_fds, None) {
             Ok(_) => {}
             Err(Errno::INTR) => continue,
-            Err(e) => return Err(io::Error::from(e)),
+            Err(e) => return Err(e),
         }
         drop(poll_fds);
 
@@ -208,7 +207,7 @@ fn read_outputs(stdout: OwnedFd, stderr: OwnedFd) -> io::Result<(Vec<u8>, Vec<u8
                 Ok(0) => *fd_slot = None,
                 Ok(n) => buf.extend_from_slice(&chunk[..n]),
                 Err(Errno::INTR) | Err(Errno::AGAIN) => {}
-                Err(e) => return Err(io::Error::from(e)),
+                Err(e) => return Err(e),
             }
         }
     }

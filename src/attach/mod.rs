@@ -58,20 +58,20 @@ pub(crate) enum AttachError {
     CreateBaseDir {
         path: UnixPathBuf,
         #[source]
-        source: std::io::Error,
+        source: Errno,
     },
     #[error("failed to open container root at {path}")]
     OpenContainerRoot {
         path: String,
         #[source]
-        source: std::io::Error,
+        source: Errno,
     },
     #[error("failed to unshare mount namespace")]
     UnshareMountNamespace(#[source] Errno),
     #[error("failed to make mounts private")]
     MakeMountsPrivate(#[source] Errno),
     #[error("failed to read /proc/mounts")]
-    OpenProcMounts(#[source] std::io::Error),
+    OpenProcMounts(#[source] Errno),
     #[error("failed to mount tmpfs at {}", path.display())]
     MountTmpfs {
         path: UnixPathBuf,

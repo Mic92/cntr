@@ -1,5 +1,6 @@
 use hashbrown::HashMap;
 use log::{debug, warn};
+use rustix::io::Errno;
 use rustix::process::Pid;
 use thiserror::Error;
 use typed_path::UnixPathBuf;
@@ -14,7 +15,7 @@ pub(crate) enum CgroupError {
     Read {
         path: UnixPathBuf,
         #[source]
-        source: std::io::Error,
+        source: Errno,
     },
 }
 

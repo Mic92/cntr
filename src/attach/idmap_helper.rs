@@ -25,7 +25,7 @@ pub(crate) enum IdmapError {
     OpenUserns {
         path: String,
         #[source]
-        source: std::io::Error,
+        source: Errno,
     },
     #[error("failed to unshare user namespace")]
     UnshareUserns(#[source] Errno),
@@ -33,7 +33,7 @@ pub(crate) enum IdmapError {
     WriteIdMap {
         path: &'static str,
         #[source]
-        source: std::io::Error,
+        source: Errno,
     },
 }
 
