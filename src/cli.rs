@@ -9,7 +9,7 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 const AUTHORS: &str = env!("CARGO_PKG_AUTHORS");
 
 /// Parse container types from comma-separated string
-fn parse_container_types(s: &str) -> Result<Vec<Box<dyn container_pid::Container>>, String> {
+fn parse_container_types(s: &str) -> Result<Vec<Box<dyn crate::container_pid::Container>>, String> {
     let mut valid_types = Vec::new();
     let mut unknown_names = Vec::new();
 
@@ -125,7 +125,7 @@ where
     I: Iterator<Item = String>,
 {
     let mut container_id: Option<String> = None;
-    let mut container_types: Vec<Box<dyn container_pid::Container>> = vec![];
+    let mut container_types: Vec<Box<dyn crate::container_pid::Container>> = vec![];
     let mut effective_user: Option<User> = None;
     let mut apparmor_mode = ApparmorMode::Auto;
     let mut command_parts: Vec<String> = vec![];
@@ -225,7 +225,7 @@ where
     I: Iterator<Item = String>,
 {
     let mut container_id: Option<String> = None;
-    let mut container_types: Vec<Box<dyn container_pid::Container>> = vec![];
+    let mut container_types: Vec<Box<dyn crate::container_pid::Container>> = vec![];
     let mut apparmor_mode = ApparmorMode::Auto;
     let mut command_parts: Vec<String> = vec![];
     let mut in_command = false;

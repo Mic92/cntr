@@ -1,0 +1,76 @@
+use std::fmt::Write;
+use std::path::PathBuf;
+use thiserror::Error;
+
+use crate::container_pid::RawPid;
+
+/// Errors that can occur while resolving a container name to a PID.
+#[derive(Debug, Error)]
+pub enum Error {
+    /// The container runtime CLI needed for this backend is not installed.
+    #[error("{runtime} runtime not found: '{tool}' command is not available")]
+    RuntimeNotFound {
+        runtime: &'static str,
+        tool: &'static str,
+    },
+    /// Spawning the runtime CLI failed.
+    #[error("failed to execute command: {command}")]
+    CommandFailedToRun {
+        command: String,
+        #[source]
+        source: std::io::Error,
+    },
+    /// The runtime CLI ran but exited with an error.
+    #[error("{command} failed (exit status {status}): {stderr}")]
+    CommandFailed {
+        command: String,
+        status: String,
+        stderr: String,
+    },
+    /// The runtime CLI produced output we could not parse.
+    #[error("unexpected output from {command}: {message}")]
+    UnexpectedOutput { command: String, message: String },
+    /// The runtime reported a PID that is not a number.
+    #[error("invalid PID '{pid}' reported by {runtime} for container '{container}'")]
+    InvalidPid {
+        pid: String,
+        runtime: &'static str,
+        container: String,
+        #[source]
+        source: std::num::ParseIntError,
+    },
+    /// The container exists but is not running.
+    #[error("container '{0}' is not running")]
+    NotRunning(String),
+    /// No container matched the given name/ID for this backend.
+    #[error("container '{container}' not found: {message}")]
+    ContainerNotFound { container: String, message: String },
+    /// Reading a file or directory failed.
+    #[error("failed to read {path}")]
+    Io {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    /// The given container ID is not a valid process ID.
+    #[error("'{0}' is not a valid PID (process ID)")]
+    InvalidProcessId(String, #[source] std::num::ParseIntError),
+    /// No process with the given PID exists.
+    #[error("no process with PID {0} found")]
+    NoSuchProcess(RawPid),
+
+    /// None of the tried container runtimes could resolve the container.
+    #[error("failed to find container '{container}' - tried the following runtimes:{tried}")]
+    NoRuntimeMatched { container: String, tried: String },
+}
+
+/// Format an error together with its full source chain.
+pub(crate) fn format_chain(err: &dyn std::error::Error) -> String {
+    let mut msg = err.to_string();
+    let mut source = err.source();
+    while let Some(cause) = source {
+        let _ = write!(msg, ": {}", cause);
+        source = cause.source();
+    }
+    msg
+}

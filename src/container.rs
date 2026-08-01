@@ -26,11 +26,11 @@ pub(crate) enum ContainerError {
 /// * `apparmor_mode` - AppArmor mode configuration
 pub(crate) fn lookup_container(
     container_name: &str,
-    container_types: &[Box<dyn container_pid::Container>],
+    container_types: &[Box<dyn crate::container_pid::Container>],
     apparmor_mode: ApparmorMode,
 ) -> Result<procfs::ProcStatus, ContainerError> {
     // Lookup container PID
-    let pid_raw = container_pid::lookup_container_pid(container_name, container_types)
+    let pid_raw = crate::container_pid::lookup_container_pid(container_name, container_types)
         .map_err(|e| ContainerError::Lookup(e.to_string()))?;
     let pid = Pid::from_raw(pid_raw).ok_or_else(|| ContainerError::InvalidPid {
         pid: pid_raw,

@@ -1,3 +1,4 @@
+pub(crate) mod container_pid;
 pub(crate) use container_pid::lookup_container_type;
 
 pub mod test_utils;

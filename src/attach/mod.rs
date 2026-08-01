@@ -90,7 +90,7 @@ pub(crate) struct AttachOptions {
     pub(crate) command: Option<String>,
     pub(crate) arguments: Vec<String>,
     pub(crate) container_name: String,
-    pub(crate) container_types: Vec<Box<dyn container_pid::Container>>,
+    pub(crate) container_types: Vec<Box<dyn crate::container_pid::Container>>,
     pub(crate) effective_user: Option<User>,
     pub(crate) apparmor_mode: ApparmorMode,
 }
