@@ -1,5 +1,3 @@
-use std::process::Command;
-
 use crate::container_pid::Container;
 use crate::container_pid::Error;
 use crate::container_pid::RawPid;
@@ -10,24 +8,12 @@ pub(crate) struct Lxc {}
 
 impl Container for Lxc {
     fn lookup(&self, container_id: &str) -> Result<RawPid, Error> {
-        let output = Command::new("lxc-info")
-            .args(["--no-humanize", "--pid", "--name", container_id])
-            .output()
-            .map_err(|source| Error::CommandFailedToRun {
-                command: "lxc-info".to_string(),
-                source,
-            })?;
+        let stdout = cmd::output(
+            "lxc-info",
+            &["--no-humanize", "--pid", "--name", container_id],
+        )?;
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(Error::CommandFailed {
-                command: "lxc-info".to_string(),
-                status: output.status.to_string(),
-                stderr: stderr.trim_start().to_string(),
-            });
-        }
-
-        let pid = String::from_utf8_lossy(&output.stdout);
+        let pid = String::from_utf8_lossy(&stdout);
 
         pid.trim_start()
             .parse::<RawPid>()

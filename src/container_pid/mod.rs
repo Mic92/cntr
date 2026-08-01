@@ -4,7 +4,7 @@ use std::fmt::Write;
 /// A raw process ID as used by the kernel.
 pub type RawPid = i32;
 
-mod cmd;
+pub(crate) mod cmd;
 mod command;
 mod containerd;
 mod docker;

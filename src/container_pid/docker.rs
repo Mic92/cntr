@@ -1,5 +1,3 @@
-use std::process::Command;
-
 use crate::container_pid::Container;
 use crate::container_pid::Error;
 use crate::container_pid::RawPid;
@@ -14,24 +12,9 @@ pub(crate) fn parse_docker_output(
     container_id: &str,
 ) -> Result<RawPid, Error> {
     let cmd_str = cmd.join(" ");
-    let output = Command::new(cmd[0])
-        .args(&cmd[1..])
-        .output()
-        .map_err(|source| Error::CommandFailedToRun {
-            command: cmd_str.clone(),
-            source,
-        })?;
+    let stdout = cmd::output(cmd[0], &cmd[1..])?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(Error::CommandFailed {
-            command: cmd_str,
-            status: output.status.to_string(),
-            stderr: stderr.trim_end().to_string(),
-        });
-    }
-
-    let fields: Vec<&[u8]> = output.stdout.splitn(2, |c| *c == b';').collect();
+    let fields: Vec<&[u8]> = stdout.splitn(2, |c| *c == b';').collect();
     if fields.len() != 2 {
         return Err(Error::UnexpectedOutput {
             command: cmd_str,

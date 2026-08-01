@@ -5,13 +5,12 @@ use std::convert::Infallible;
 use std::env;
 use std::ffi::{OsStr, OsString};
 use std::os::unix::ffi::OsStringExt;
-use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use thiserror::Error;
 
 use crate::fsutil;
 use crate::procfs;
+use crate::spawn;
 
 #[derive(Debug, Error)]
 pub(crate) enum CmdError {
@@ -142,10 +141,8 @@ impl Cmd {
         }
 
         // Execute without chroot - we're already in the overlay
-        let err = Command::new(&self.command)
-            .args(self.arguments)
-            .envs(self.environment)
-            .exec();
+        let err = spawn::exec(&self.command, &self.arguments, &self.environment)
+            .expect_err("exec only returns on error");
         Err(CmdError::Exec {
             command: self.command,
             source: err,
@@ -171,35 +168,32 @@ impl Cmd {
             self.environment.insert(OsString::from("PATH"), path);
         }
 
-        // Chroot to container's root and exec
+        // Chroot to container's root and exec. We are already the process
+        // that will become the container command, so no extra fork is needed.
         // container_root was already resolved in new() before entering namespaces
         let container_root = self.container_root;
-        let err = unsafe {
-            Command::new(&self.command)
-                .args(self.arguments)
-                .envs(self.environment)
-                .pre_exec(move || {
-                    // First do chroot
-                    if let Err(e) = chroot(&container_root) {
-                        warn!("failed to chroot to {}: {}", container_root.display(), e);
-                        return Err(e.into());
-                    }
+        let err = (|| -> std::io::Error {
+            if let Err(e) = chroot(&container_root) {
+                warn!("failed to chroot to {}: {}", container_root.display(), e);
+                return e.into();
+            }
 
-                    if let Err(e) = env::set_current_dir("/") {
-                        warn!("failed to change directory to /");
-                        return Err(e);
-                    }
+            if let Err(e) = env::set_current_dir("/") {
+                warn!("failed to change directory to /");
+                return e;
+            }
 
-                    // Apply AppArmor profile after chroot
-                    if let Some((path, label)) = &lsm_profile {
-                        let attr = format!("changeprofile {}", label);
-                        crate::fsutil::write_existing(path, attr)?;
-                    }
+            // Apply AppArmor profile after chroot
+            if let Some((path, label)) = &lsm_profile {
+                let attr = format!("changeprofile {}", label);
+                if let Err(e) = fsutil::write_existing(path, attr) {
+                    return e;
+                }
+            }
 
-                    Ok(())
-                })
-                .exec()
-        };
+            spawn::exec(&self.command, &self.arguments, &self.environment)
+                .expect_err("exec only returns on error")
+        })();
         Err(CmdError::Exec {
             command: self.command,
             source: err,

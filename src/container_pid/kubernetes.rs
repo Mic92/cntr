@@ -15,7 +15,6 @@ use std::ffi::OsString;
 
 use crate::fsutil;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::str::FromStr;
 use std::str::from_utf8;
 
@@ -72,29 +71,9 @@ pub(crate) fn get_containerd_id(
         "jsonpath='{{range .items[?(@.metadata.name==\"{}\")].status.containerStatuses[*]}}{{.name}}{{\"\\t\"}}{{.containerID}}{{\"\\n\"}}{{end}}'",
         pod_name
     );
-    let result = Command::new("kubectl")
-        .arg("get")
-        .arg("pod")
-        .arg("-o")
-        .arg(jsonpath)
-        .arg("-n")
-        .arg(namespace)
-        .output()
-        .map_err(|source| Error::CommandFailedToRun {
-            command: "kubectl get pod".to_string(),
-            source,
-        })?;
+    let stdout = cmd::output("kubectl", &["get", "pod", "-o", &jsonpath, "-n", namespace])?;
 
-    if !result.status.success() {
-        let stderr = String::from_utf8_lossy(&result.stderr);
-        return Err(Error::CommandFailed {
-            command: "kubectl get pod".to_string(),
-            status: result.status.to_string(),
-            stderr: stderr.to_string(),
-        });
-    }
-
-    let containers = from_utf8(&result.stdout).map_err(|_| Error::UnexpectedOutput {
+    let containers = from_utf8(&stdout).map_err(|_| Error::UnexpectedOutput {
         command: "kubectl get pod".to_string(),
         message: "response contains non-UTF8 data".to_string(),
     })?;

@@ -8,8 +8,9 @@
 
 use rustix::process::{Gid, Uid};
 use std::path::PathBuf;
-use std::process::Command;
 use thiserror::Error;
+
+use crate::spawn;
 
 #[derive(Debug, Error)]
 pub(crate) enum PasswdError {
@@ -56,12 +57,12 @@ pub(crate) fn lookup(spec: &str) -> Result<Option<User>, PasswdError> {
 /// (sssd/LDAP, systemd-userdb, ...) in its own process so we don't have to
 /// link against libc/NSS ourselves.
 fn getent(username: &str) -> Result<Option<User>, PasswdError> {
-    let output = match Command::new("getent").args(["passwd", username]).output() {
+    let output = match spawn::run("getent", &["passwd", username]) {
         Ok(output) => output,
         // getent not installed - fall through to other lookup methods
         Err(_) => return Ok(None),
     };
-    if !output.status.success() {
+    if !output.success() {
         return Ok(None);
     }
     let stdout = String::from_utf8(output.stdout).map_err(PasswdError::GetentUtf8)?;

@@ -1,5 +1,3 @@
-use std::process::Command;
-
 use crate::container_pid::Container;
 use crate::container_pid::Error;
 use crate::container_pid::RawPid;
@@ -10,28 +8,13 @@ pub(crate) struct Containerd {}
 
 impl Container for Containerd {
     fn lookup(&self, container_id: &str) -> Result<RawPid, Error> {
-        let output = Command::new("ctr")
-            .args(["task", "list"])
-            .output()
-            .map_err(|source| Error::CommandFailedToRun {
-                command: "ctr task list".to_string(),
-                source,
-            })?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(Error::CommandFailed {
-                command: "ctr task list".to_string(),
-                status: output.status.to_string(),
-                stderr: stderr.trim_end().to_string(),
-            });
-        }
+        let stdout = cmd::output("ctr", &["task", "list"])?;
 
         // $ ctr task list
         // TASK    PID      STATUS
         // v2      17515    RUNNING
         // v1      14602    RUNNING
-        let mut lines = output.stdout.split(|&c| c == b'\n');
+        let mut lines = stdout.split(|&c| c == b'\n');
         lines.next(); // skip header
         let pid_str = lines.find_map(|line| {
             let line_str = String::from_utf8_lossy(line);

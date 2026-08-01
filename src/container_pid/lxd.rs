@@ -1,5 +1,3 @@
-use std::process::Command;
-
 use crate::container_pid::Container;
 use crate::container_pid::Error;
 use crate::container_pid::RawPid;
@@ -10,24 +8,9 @@ pub(crate) struct Lxd {}
 
 impl Container for Lxd {
     fn lookup(&self, container_id: &str) -> Result<RawPid, Error> {
-        let output = Command::new("lxc")
-            .args(["info", container_id])
-            .output()
-            .map_err(|source| Error::CommandFailedToRun {
-                command: "lxc info".to_string(),
-                source,
-            })?;
+        let stdout = cmd::output("lxc", &["info", container_id])?;
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(Error::CommandFailed {
-                command: "lxc info".to_string(),
-                status: output.status.to_string(),
-                stderr: stderr.trim_end().to_string(),
-            });
-        }
-
-        let lines = output.stdout.split(|&c| c == b'\n');
+        let lines = stdout.split(|&c| c == b'\n');
         let mut rows = lines.map(|line| {
             let cols: Vec<&[u8]> = line.splitn(2, |&c| c == b':').collect();
             cols

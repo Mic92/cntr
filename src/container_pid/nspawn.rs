@@ -1,5 +1,3 @@
-use std::process::Command;
-
 use crate::container_pid::Container;
 use crate::container_pid::Error;
 use crate::container_pid::RawPid;
@@ -10,24 +8,9 @@ pub(crate) struct Nspawn {}
 
 impl Container for Nspawn {
     fn lookup(&self, container_id: &str) -> Result<RawPid, Error> {
-        let output = Command::new("machinectl")
-            .args(["show", "--property=Leader", container_id])
-            .output()
-            .map_err(|source| Error::CommandFailedToRun {
-                command: "machinectl show".to_string(),
-                source,
-            })?;
+        let stdout = cmd::output("machinectl", &["show", "--property=Leader", container_id])?;
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(Error::CommandFailed {
-                command: "machinectl show".to_string(),
-                status: output.status.to_string(),
-                stderr: stderr.trim_end().to_string(),
-            });
-        }
-
-        let fields: Vec<&[u8]> = output.stdout.splitn(2, |c| *c == b'=').collect();
+        let fields: Vec<&[u8]> = stdout.splitn(2, |c| *c == b'=').collect();
         if fields.len() != 2 {
             return Err(Error::UnexpectedOutput {
                 command: "machinectl show".to_string(),

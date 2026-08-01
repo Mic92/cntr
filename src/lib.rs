@@ -19,6 +19,7 @@ mod passwd;
 pub(crate) mod paths;
 mod procfs;
 mod pty;
+mod spawn;
 pub mod syscalls;
 pub(crate) use attach::{AttachOptions, attach};
 
