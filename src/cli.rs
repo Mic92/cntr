@@ -1,5 +1,6 @@
-use nix::unistd::User;
 use std::env;
+
+use crate::passwd::{self, User};
 
 use crate::{ApparmorMode, AttachOptions, attach, exec};
 
@@ -59,7 +60,8 @@ fn print_attach_help() {
         "                                 [possible: process_id,podman,docker,nspawn,lxc,lxd,containerd,command,kubernetes]"
     );
     eprintln!("                                 [default: all but command]");
-    eprintln!("    --effective-user <USER>      Effective username for new files on host");
+    eprintln!("    --effective-user <USER>      Effective user for new files on host");
+    eprintln!("                                 (username or numeric uid[:gid])");
     eprintln!("    --apparmor <MODE>            AppArmor profile mode");
     eprintln!("                                 [possible: auto, off]");
     eprintln!("                                 [default: auto]");
@@ -150,9 +152,16 @@ where
             }
             "--effective-user" => {
                 let username = args.next().ok_or("--effective-user requires an argument")?;
-                match User::from_name(&username) {
+                match passwd::lookup(&username) {
                     Ok(Some(user)) => effective_user = Some(user),
-                    Ok(None) => return Err(format!("user '{}' not found", username).into()),
+                    Ok(None) => {
+                        return Err(format!(
+                            "user '{}' not found in /etc/passwd or via getent; \
+                             a numeric uid[:gid] can be used instead",
+                            username
+                        )
+                        .into());
+                    }
                     Err(e) => {
                         return Err(format!("failed to lookup user '{}': {}", username, e).into());
                     }

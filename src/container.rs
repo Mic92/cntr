@@ -7,7 +7,7 @@ use crate::ApparmorMode;
 use crate::procfs;
 use crate::result::Result;
 use anyhow::bail;
-use nix::unistd::Pid;
+use rustix::process::Pid;
 
 /// Lookup a container by name/ID and get its process status
 ///
@@ -25,7 +25,9 @@ pub(crate) fn lookup_container(
         Ok(pid) => pid,
         Err(e) => bail!("{}", e),
     };
-    let pid = Pid::from_raw(pid_raw);
+    let Some(pid) = Pid::from_raw(pid_raw) else {
+        bail!("invalid PID {} for container '{}'", pid_raw, container_name);
+    };
 
     // Get process status (includes uid, gid, capabilities, lsm_profile)
     procfs::status(pid, apparmor_mode)

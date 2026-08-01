@@ -1,10 +1,11 @@
 use crate::ApparmorMode;
 use crate::ipc;
+use crate::passwd::User;
 use crate::result::Result;
 use crate::syscalls::capability;
 use anyhow::{Context, bail};
-use nix::unistd::{self, ForkResult, User};
-use std::os::unix::io::AsRawFd;
+use rustix::process::{getgid, getuid};
+use rustix::runtime::{Fork, kernel_fork};
 use std::process;
 
 mod child;
@@ -40,8 +41,8 @@ pub(crate) fn attach(opts: &AttachOptions) -> Result<std::convert::Infallible> {
     // Create idmap helper if --effective-user is specified
     // This creates a user namespace with the mapping for idmapped mounts
     let idmap_helper = if let Some(ref user) = opts.effective_user {
-        let current_uid = unistd::getuid(); // Our actual UID (0 when running with sudo)
-        let current_gid = unistd::getgid();
+        let current_uid = getuid(); // Our actual UID (0 when running with sudo)
+        let current_gid = getgid();
         let target_uid = user.uid; // Target UID for files on host
         let target_gid = user.gid;
 
@@ -58,16 +59,17 @@ pub(crate) fn attach(opts: &AttachOptions) -> Result<std::convert::Infallible> {
     };
 
     // Get userns FD and home dir if we have an idmap helper
-    let userns_fd = idmap_helper.as_ref().map(|h| h.userns_fd().as_raw_fd());
+    let userns_fd = idmap_helper.as_ref().map(|h| h.userns_fd());
     let effective_home = opts.effective_user.as_ref().map(|u| u.dir.clone());
 
     // Two-process dance for cross-namespace mount operations
     // Parent stays in host namespace, child assembles mount hierarchy
     let (parent_sock, child_sock) = ipc::socket_pair().context("failed to set up ipc")?;
 
-    let res = unsafe { unistd::fork() };
-    match res.context("failed to fork")? {
-        ForkResult::Parent { child } => {
+    // SAFETY: cntr is single-threaded and uses a rustix-based global allocator,
+    // so allocating and calling into std in the child is fine.
+    match unsafe { kernel_fork() }.context("failed to fork")? {
+        Fork::ParentOf(child) => {
             // Close child's socket in parent to ensure proper EOF detection
             drop(child_sock);
             // Keep idmap_helper alive for the duration of attach
@@ -75,7 +77,7 @@ pub(crate) fn attach(opts: &AttachOptions) -> Result<std::convert::Infallible> {
             drop(idmap_helper);
             result
         }
-        ForkResult::Child => {
+        Fork::Child(_) => {
             // Close parent's socket in child
             drop(parent_sock);
             let mut child_opts = child::ChildOptions {

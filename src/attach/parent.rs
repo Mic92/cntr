@@ -1,7 +1,5 @@
 use anyhow::{Context, bail};
-use nix::cmsg_space;
-use nix::unistd::Pid;
-use std::os::fd::RawFd;
+use rustix::process::Pid;
 
 use crate::procfs::ProcStatus;
 
@@ -23,9 +21,8 @@ pub(crate) fn run(
 ) -> Result<std::convert::Infallible> {
     // Step 1: Wait for child to assemble mount hierarchy and signal completion
     // The child will send: ready signal + PTY fd
-    let mut cmsgspace = cmsg_space!([RawFd; 1]);
     let (msg_buf, mut fds) = socket
-        .receive::<std::fs::File>(1, &mut cmsgspace)
+        .receive::<std::fs::File>(1)
         .context("failed to receive ready signal from child")?;
 
     if msg_buf.is_empty() || msg_buf[0] != b'R' {

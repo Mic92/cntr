@@ -7,12 +7,11 @@
 //! 2. Syscall numbers may vary by architecture
 //! 3. SELinux/seccomp policies may block syscalls
 
-use nix::errno::Errno;
-use std::ffi::CString;
-use std::sync::Once;
+use rustix::io::Errno;
+use rustix::mount::{FsOpenFlags, fsopen};
+use std::sync::OnceLock;
 
-static INIT: Once = Once::new();
-static mut MOUNT_API_AVAILABLE: bool = false;
+static MOUNT_API_AVAILABLE: OnceLock<bool> = OnceLock::new();
 
 /// Checks if the mount API syscalls are available on this system
 ///
@@ -26,12 +25,7 @@ static mut MOUNT_API_AVAILABLE: bool = false;
 /// * `true` if mount API syscalls are available
 /// * `false` if not available (ENOSYS)
 pub fn has_mount_api() -> bool {
-    unsafe {
-        INIT.call_once(|| {
-            MOUNT_API_AVAILABLE = probe_mount_api();
-        });
-        MOUNT_API_AVAILABLE
-    }
+    *MOUNT_API_AVAILABLE.get_or_init(probe_mount_api)
 }
 
 /// Probe the kernel for mount API support
@@ -41,26 +35,10 @@ pub fn has_mount_api() -> bool {
 /// - ENODEV = device not found → mount API available, just bad fs name
 /// - Any other error = assume mount API is available
 fn probe_mount_api() -> bool {
-    // Use a deliberately non-existent filesystem type to probe
-    let probe_fs = CString::new("__cntr_probe__").expect("CString::new failed");
-
-    // Use architecture-specific syscall numbers from libc
-    // MIPS uses different offsets: o32=4430, n64=5430, n32=6430
-    // Other architectures typically use 430
-    unsafe {
-        let fd = libc::syscall(libc::SYS_fsopen, probe_fs.as_ptr(), 0) as libc::c_int;
-
-        if fd >= 0 {
-            libc::close(fd);
-            return true;
-        }
-
-        // Check errno to determine if syscall exists
-        match Errno::last() {
-            Errno::ENOSYS => false,               // Syscall not implemented
-            Errno::ENODEV => true,                // Device/fs not found - syscall exists!
-            Errno::EPERM | Errno::EACCES => true, // Permission denied - syscall exists
-            _ => true,                            // Any other error - assume syscall exists
-        }
+    match fsopen("__cntr_probe__", FsOpenFlags::empty()) {
+        Ok(_) => true,
+        Err(Errno::NOSYS) => false, // Syscall not implemented
+        // Any other error (ENODEV, EPERM, EACCES, ...) - the syscall exists
+        Err(_) => true,
     }
 }

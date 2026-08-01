@@ -1,5 +1,12 @@
 pub(crate) use container_pid::lookup_container_type;
 
+// Use a pure-Rust, mmap-based allocator (built on rustix) instead of libc
+// malloc. This keeps heap allocations safe in children created via the raw
+// fork syscall (rustix::runtime::kernel_fork), which bypasses libc's
+// pthread_atfork handling.
+#[global_allocator]
+static GLOBAL_ALLOCATOR: rustix_dlmalloc::GlobalDlmalloc = rustix_dlmalloc::GlobalDlmalloc;
+
 pub mod test_utils;
 
 mod attach;
@@ -12,6 +19,7 @@ pub(crate) mod exec;
 mod ipc;
 mod lsm;
 pub(crate) mod namespace;
+mod passwd;
 pub(crate) mod paths;
 mod procfs;
 mod pty;

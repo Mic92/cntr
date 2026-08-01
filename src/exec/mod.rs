@@ -1,5 +1,6 @@
 use anyhow::{Context, bail};
-use nix::unistd::{self, ForkResult};
+use rustix::runtime::{Fork, kernel_fork};
+use std::os::fd::OwnedFd;
 use std::process;
 
 use crate::ApparmorMode;
@@ -41,13 +42,14 @@ pub(crate) fn exec(opts: &ExecOptions) -> Result<std::convert::Infallible> {
     let pty_master = pty::open_ptm().context("failed to open pty master")?;
 
     // Fork: child enters container and execs, parent forwards PTY I/O
-    let res = unsafe { unistd::fork() };
-    match res.context("failed to fork")? {
-        ForkResult::Parent { child } => {
+    // SAFETY: cntr is single-threaded and uses a rustix-based global allocator,
+    // so allocating and calling into std in the child is fine.
+    match unsafe { kernel_fork() }.context("failed to fork")? {
+        Fork::ParentOf(child) => {
             // Parent: Forward PTY I/O and wait for child
             pty::forward_pty_and_wait(&pty_master, child)
         }
-        ForkResult::Child => {
+        Fork::Child(_) => {
             // Child: Setup PTY slave, enter container, exec command
             let Err(e) = exec_child(
                 &mut process_status,
@@ -68,7 +70,7 @@ fn exec_child(
     process_status: &mut crate::procfs::ProcStatus,
     exe: Option<String>,
     args: Vec<String>,
-    pty_master: &nix::pty::PtyMaster,
+    pty_master: &OwnedFd,
 ) -> Result<std::convert::Infallible> {
     // Attach PTY slave
     pty::attach_pts(pty_master).context("failed to setup pty slave")?;

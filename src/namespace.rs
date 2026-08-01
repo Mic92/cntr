@@ -1,6 +1,6 @@
 use anyhow::Context;
-use nix::sched;
-use nix::unistd;
+use rustix::process::Pid;
+use rustix::thread::{LinkNameSpaceType, move_into_link_name_space};
 use std::collections::HashSet;
 use std::fs::{self, File};
 use std::os::unix::prelude::*;
@@ -35,14 +35,14 @@ pub(crate) fn supported_namespaces() -> Result<HashSet<String>> {
 }
 
 impl Kind {
-    pub(crate) fn open(&'static self, pid: unistd::Pid) -> Result<Namespace> {
+    pub(crate) fn open(&'static self, pid: Pid) -> Result<Namespace> {
         let buf = self.path(pid);
         let file = File::open(&buf)
             .with_context(|| format!("failed to open namespace file '{}'", buf.display()))?;
         Ok(Namespace { kind: self, file })
     }
 
-    pub(crate) fn is_same(&self, pid: unistd::Pid) -> bool {
+    pub(crate) fn is_same(&self, pid: Pid) -> bool {
         let path = self.path(pid);
         match fs::read_link(path) {
             Ok(dest) => match fs::read_link(self.own_path()) {
@@ -52,7 +52,7 @@ impl Kind {
             _ => false,
         }
     }
-    fn path(&self, pid: unistd::Pid) -> PathBuf {
+    fn path(&self, pid: Pid) -> PathBuf {
         procfs::get_path()
             .join(pid.to_string())
             .join("ns")
@@ -71,7 +71,7 @@ pub(crate) struct Namespace {
 
 impl Namespace {
     pub(crate) fn apply(&self) -> Result<()> {
-        sched::setns(self.file.as_fd(), sched::CloneFlags::empty())
+        move_into_link_name_space(self.file.as_fd(), None::<LinkNameSpaceType>)
             .with_context(|| format!("failed to set namespace '{}'", self.kind.name))?;
         Ok(())
     }

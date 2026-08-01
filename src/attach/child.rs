@@ -1,11 +1,12 @@
 use anyhow::{Context, bail};
 use log::{debug, warn};
-use nix::fcntl::AtFlags;
-use nix::sys::stat::{SFlag, fstatat};
-use nix::unistd;
+use rustix::fs::{AtFlags, Dir, FileType, statat};
+use rustix::mount::{MountFlags, MountPropagationFlags, mount, mount_change};
+use rustix::process::{Pid, getpid};
+use rustix::thread::{UnshareFlags, unshare_unsafe};
 use std::env;
 use std::ffi::CString;
-use std::os::unix::io::{AsFd, BorrowedFd, OwnedFd, RawFd};
+use std::os::unix::io::{AsFd, BorrowedFd};
 use std::os::unix::prelude::*;
 use std::path::{Path, PathBuf};
 
@@ -18,7 +19,6 @@ use crate::procfs::ProcStatus;
 use crate::pty;
 use crate::result::Result;
 use crate::syscalls::mount_api::{AT_RECURSIVE, MountFd, OPEN_TREE_CLONE};
-use nix::sched::{CloneFlags, unshare};
 
 /// Options for child process
 pub(crate) struct ChildOptions<'a> {
@@ -26,7 +26,7 @@ pub(crate) struct ChildOptions<'a> {
     pub(crate) arguments: Vec<String>,
     pub(crate) process_status: ProcStatus,
     pub(crate) socket: &'a ipc::Socket,
-    pub(crate) userns_fd: Option<RawFd>,
+    pub(crate) userns_fd: Option<BorrowedFd<'a>>,
     pub(crate) effective_home: Option<PathBuf>,
 }
 
@@ -134,7 +134,7 @@ fn apply_idmapped_mounts(userns_fd: BorrowedFd, base_dir: &Path) -> Result<()> {
 /// 4. Attaches the captured trees to base_dir
 fn capture_and_attach_container_trees(
     container_root_fd: std::fs::File,
-    container_pid: unistd::Pid,
+    container_pid: Pid,
     our_mount_ns: namespace::Namespace,
     base_dir: &Path,
 ) -> Result<()> {
@@ -145,25 +145,22 @@ fn capture_and_attach_container_trees(
         .apply()
         .context("failed to enter container mount namespace")?;
 
-    // Open container root directory
-    let mut dir = nix::dir::Dir::from_fd(OwnedFd::from(container_root_fd))
+    // Open container root directory (Dir::read_from duplicates the FD, so we
+    // can keep using container_root_fd for *at() calls below)
+    let dir = Dir::read_from(&container_root_fd)
         .context("failed to create Dir from container root FD")?;
 
-    // Collect entries first to avoid borrow conflicts when using dir.as_fd() later
+    // Collect entries first to avoid borrow conflicts
     let entries: Vec<_> = dir
-        .iter()
         .filter_map(|entry| entry.ok())
         .filter(|entry| {
             let name = entry.file_name().to_bytes();
             name != b"." && name != b".."
         })
-        .filter_map(|entry| {
-            let name = CString::new(entry.file_name().to_bytes()).ok()?;
-            Some((name, entry.file_type()))
-        })
+        .map(|entry| (entry.file_name().to_owned(), entry.file_type()))
         .collect();
 
-    let dir_fd = dir.as_fd();
+    let dir_fd = container_root_fd.as_fd();
 
     // Capture each entry as a mount tree
     let captured_trees: Vec<_> = entries
@@ -171,22 +168,18 @@ fn capture_and_attach_container_trees(
         .filter_map(|(name, file_type)| {
             // Determine if entry is a directory
             let is_dir = match file_type {
-                Some(nix::dir::Type::Directory) => true,
-                Some(_) => false,
-                None => fstatat(dir_fd, name.as_c_str(), AtFlags::AT_SYMLINK_NOFOLLOW)
-                    .map(|stat| SFlag::from_bits_truncate(stat.st_mode).contains(SFlag::S_IFDIR))
+                FileType::Directory => true,
+                FileType::Unknown => statat(dir_fd, name, AtFlags::SYMLINK_NOFOLLOW)
+                    .map(|stat| FileType::from_raw_mode(stat.st_mode) == FileType::Directory)
                     .unwrap_or_else(|e| {
                         warn!("Failed to stat {:?}, assuming non-directory: {}", name, e);
                         false
                     }),
+                _ => false,
             };
 
             // Capture tree
-            match MountFd::open_tree_at(
-                Some(dir_fd),
-                name.as_c_str(),
-                OPEN_TREE_CLONE | AT_RECURSIVE,
-            ) {
+            match MountFd::open_tree_at(Some(dir_fd), name, OPEN_TREE_CLONE | AT_RECURSIVE) {
                 Ok(tree) => {
                     let name_os = std::ffi::OsStr::from_bytes(name.as_bytes()).to_owned();
                     Some((name_os, tree, is_dir))
@@ -262,7 +255,7 @@ fn capture_and_attach_container_trees(
 /// This function never returns on success - it replaces the current process.
 pub(crate) fn run(options: &mut ChildOptions) -> Result<std::convert::Infallible> {
     // Step 1: Move to container's cgroup
-    cgroup::move_to(unistd::getpid(), options.process_status.global_pid)
+    cgroup::move_to(getpid(), options.process_status.global_pid)
         .context("failed to change cgroup")?;
 
     // Step 3: Prepare command to execute
@@ -332,38 +325,33 @@ pub(crate) fn run(options: &mut ChildOptions) -> Result<std::convert::Infallible
         .with_context(|| format!("failed to open container root at {}", proc_root_path))?;
 
     // Create private mount namespace
-    unshare(CloneFlags::CLONE_NEWNS).context("failed to unshare mount namespace")?;
+    unsafe { unshare_unsafe(UnshareFlags::NEWNS) }.context("failed to unshare mount namespace")?;
 
     // Make all mounts private (required before applying idmap)
-    nix::mount::mount(
-        None::<&str>,
+    mount_change(
         "/",
-        None::<&str>,
-        nix::mount::MsFlags::MS_REC | nix::mount::MsFlags::MS_PRIVATE,
-        None::<&str>,
+        MountPropagationFlags::REC | MountPropagationFlags::PRIVATE,
     )
     .context("failed to make mounts private")?;
 
     // Apply idmapped mount to all supported filesystems if --effective-user was specified
     if let Some(userns_fd) = options.userns_fd {
-        let userns_borrowed = unsafe { BorrowedFd::borrow_raw(userns_fd) };
-        apply_idmapped_mounts(userns_borrowed, &base_dir)
-            .context("failed to apply idmapped mounts")?;
+        apply_idmapped_mounts(userns_fd, &base_dir).context("failed to apply idmapped mounts")?;
     }
 
     // Save our own mount namespace FD
     let our_mount_ns = namespace::MOUNT
-        .open(unistd::getpid())
+        .open(getpid())
         .context("failed to open our own mount namespace")?;
 
     // Mount tmpfs at base_dir (for socket and mount points)
     // Note: base_dir was already created earlier before entering the namespace
-    nix::mount::mount(
-        Some("tmpfs"),
+    mount(
+        "tmpfs",
         base_dir.as_path(),
-        Some("tmpfs"),
-        nix::mount::MsFlags::empty(),
-        None::<&str>,
+        "tmpfs",
+        MountFlags::empty(),
+        None::<&std::ffi::CStr>,
     )
     .with_context(|| format!("failed to mount tmpfs at {}", base_dir.display()))?;
 

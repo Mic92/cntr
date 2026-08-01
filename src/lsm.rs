@@ -1,5 +1,5 @@
 use anyhow::Context;
-use nix::unistd::Pid;
+use rustix::process::Pid;
 use std::fs::File;
 use std::io::ErrorKind;
 use std::io::prelude::*;

@@ -1,6 +1,6 @@
 use anyhow::Context;
 use log::{debug, warn};
-use nix::unistd;
+use rustix::process::Pid;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
@@ -13,7 +13,7 @@ use crate::result::Result;
 /// Trait for cgroup operations, supporting both v1 and v2
 trait CgroupManager {
     /// Move a process into the cgroup of another process
-    fn move_to(&self, pid: unistd::Pid, target_pid: unistd::Pid) -> Result<()>;
+    fn move_to(&self, pid: Pid, target_pid: Pid) -> Result<()>;
 }
 
 /// Cgroup v1 (legacy) manager
@@ -99,7 +99,7 @@ fn cgroup_v1_path(cgroup: &str, mountpoints: &HashMap<String, String>) -> Option
 
 // Cgroup v1 implementation
 impl CgroupV1Manager {
-    fn get_cgroups(&self, pid: unistd::Pid) -> Result<Vec<String>> {
+    fn get_cgroups(&self, pid: Pid) -> Result<Vec<String>> {
         let path = self.procfs_path.join(format!("{}/cgroup", pid));
         let f = File::open(&path)
             .with_context(|| format!("failed to open cgroup file {}", path.display()))?;
@@ -117,7 +117,7 @@ impl CgroupV1Manager {
 }
 
 impl CgroupManager for CgroupV1Manager {
-    fn move_to(&self, pid: unistd::Pid, target_pid: unistd::Pid) -> Result<()> {
+    fn move_to(&self, pid: Pid, target_pid: Pid) -> Result<()> {
         let cgroups = self
             .get_cgroups(target_pid)
             .with_context(|| format!("failed to get cgroups for PID {}", target_pid))?;
@@ -143,7 +143,7 @@ impl CgroupManager for CgroupV1Manager {
 
 // Cgroup v2 implementation
 impl CgroupV2Manager {
-    fn get_cgroup_path(&self, pid: unistd::Pid) -> Result<Option<String>> {
+    fn get_cgroup_path(&self, pid: Pid) -> Result<Option<String>> {
         let path = self.procfs_path.join(format!("{}/cgroup", pid));
         let f = File::open(&path)
             .with_context(|| format!("failed to open cgroup file {}", path.display()))?;
@@ -161,7 +161,7 @@ impl CgroupV2Manager {
 }
 
 impl CgroupManager for CgroupV2Manager {
-    fn move_to(&self, pid: unistd::Pid, target_pid: unistd::Pid) -> Result<()> {
+    fn move_to(&self, pid: Pid, target_pid: Pid) -> Result<()> {
         let target_cgroup = self
             .get_cgroup_path(target_pid)
             .with_context(|| format!("failed to get cgroup v2 path for PID {}", target_pid))?;
@@ -206,7 +206,7 @@ impl CgroupManager for CgroupV2Manager {
 
 // Hybrid implementation - tries v2 first, falls back to v1
 impl CgroupManager for HybridCgroupManager {
-    fn move_to(&self, pid: unistd::Pid, target_pid: unistd::Pid) -> Result<()> {
+    fn move_to(&self, pid: Pid, target_pid: Pid) -> Result<()> {
         // Try v2 first
         if let Err(e) = self.v2.move_to(pid, target_pid) {
             warn!("cgroup v2 migration failed: {}, trying v1", e);
@@ -218,7 +218,7 @@ impl CgroupManager for HybridCgroupManager {
 
 // Null implementation - no-op when cgroups are unavailable
 impl CgroupManager for NullCgroupManager {
-    fn move_to(&self, _pid: unistd::Pid, _target_pid: unistd::Pid) -> Result<()> {
+    fn move_to(&self, _pid: Pid, _target_pid: Pid) -> Result<()> {
         debug!("cgroup support not detected, skipping cgroup migration");
         Ok(())
     }
@@ -280,7 +280,7 @@ fn create_manager() -> Result<Box<dyn CgroupManager>> {
 }
 
 /// Move a process into the cgroup of another process
-pub(crate) fn move_to(pid: unistd::Pid, target_pid: unistd::Pid) -> Result<()> {
+pub(crate) fn move_to(pid: Pid, target_pid: Pid) -> Result<()> {
     let manager = create_manager().context("failed to create cgroup manager")?;
     manager.move_to(pid, target_pid)
 }
@@ -325,7 +325,7 @@ mod tests {
         };
 
         let result = manager
-            .get_cgroup_path(unistd::Pid::from_raw(12345))
+            .get_cgroup_path(Pid::from_raw(12345).unwrap())
             .unwrap();
 
         // Clean up
@@ -356,7 +356,7 @@ mod tests {
         };
 
         let result = manager
-            .get_cgroup_path(unistd::Pid::from_raw(12346))
+            .get_cgroup_path(Pid::from_raw(12346).unwrap())
             .unwrap();
 
         fs::remove_dir_all(&temp_dir).unwrap();

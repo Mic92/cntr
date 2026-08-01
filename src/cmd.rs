@@ -1,6 +1,6 @@
 use anyhow::Context;
 use log::warn;
-use nix::{self, unistd};
+use rustix::process::{Pid, chroot};
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::env;
@@ -23,7 +23,7 @@ pub(crate) struct Cmd {
     container_root: PathBuf,
 }
 
-fn read_environment(pid: unistd::Pid) -> Result<HashMap<OsString, OsString>> {
+fn read_environment(pid: Pid) -> Result<HashMap<OsString, OsString>> {
     let path = procfs::get_path().join(pid.to_string()).join("environ");
     let f = File::open(&path)
         .with_context(|| format!("failed to open environment file {}", path.display()))?;
@@ -75,7 +75,7 @@ impl Cmd {
     pub(crate) fn new(
         command: Option<String>,
         args: Vec<String>,
-        pid: unistd::Pid,
+        pid: Pid,
         home: Option<PathBuf>,
     ) -> Result<Cmd> {
         let arguments = if command.is_none() {
@@ -162,7 +162,7 @@ impl Cmd {
                 .envs(self.environment)
                 .pre_exec(move || {
                     // First do chroot
-                    if let Err(e) = unistd::chroot(&container_root) {
+                    if let Err(e) = chroot(&container_root) {
                         warn!("failed to chroot to {}: {}", container_root.display(), e);
                         return Err(e.into());
                     }

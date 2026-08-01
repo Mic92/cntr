@@ -1,6 +1,6 @@
 use anyhow::Context;
 use libc::c_ulong;
-use nix::unistd::{Gid, Pid, Uid};
+use rustix::process::{Gid, Pid, Uid};
 use std::env;
 use std::ffi::OsString;
 use std::fs::File;

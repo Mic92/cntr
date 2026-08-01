@@ -1,8 +1,12 @@
 //! Test utilities shared between unit and integration tests
 
-use nix::sys::signal::{Signal, kill};
-use nix::sys::wait::{WaitPidFlag, WaitStatus, waitpid};
-use nix::unistd::{ForkResult, Pid, fork, pipe, write};
+use rustix::io::write;
+use rustix::pipe::pipe;
+use rustix::process::{
+    Pid, Signal, WaitOptions, WaitStatus, getgid, getuid, kill_process, waitpid,
+};
+use rustix::runtime::{Fork, exit_group, kernel_fork};
+use rustix::thread::{UnshareFlags, unshare_unsafe};
 use std::backtrace::Backtrace;
 use std::fs::File;
 use std::io::Read;
@@ -30,14 +34,14 @@ fn wait_child_with_timeout(child: Pid, timeout: Duration) -> WaitStatus {
     let mut sigterm_time: Option<Instant> = None;
 
     loop {
-        match waitpid(child, Some(WaitPidFlag::WNOHANG)) {
-            Ok(WaitStatus::StillAlive) => {
+        match waitpid(Some(child), WaitOptions::NOHANG) {
+            Ok(None) => {
                 let elapsed = start.elapsed();
 
                 if elapsed >= timeout {
                     if !sent_sigterm {
                         // First, try SIGTERM for graceful shutdown
-                        if let Err(e) = kill(child, Signal::SIGTERM) {
+                        if let Err(e) = kill_process(child, Signal::TERM) {
                             panic!(
                                 "Test timeout: failed to send SIGTERM to child {}: {}",
                                 child, e
@@ -47,9 +51,9 @@ fn wait_child_with_timeout(child: Pid, timeout: Duration) -> WaitStatus {
                         sigterm_time = Some(Instant::now());
                     } else if sigterm_time.is_some_and(|t| t.elapsed() >= GRACE_PERIOD) {
                         // Grace period expired, forcefully kill with SIGKILL
-                        if let Err(e) = kill(child, Signal::SIGKILL) {
+                        if let Err(e) = kill_process(child, Signal::KILL) {
                             // ESRCH is OK - child may have exited after SIGTERM
-                            if e != nix::errno::Errno::ESRCH {
+                            if e != rustix::io::Errno::SRCH {
                                 panic!(
                                     "Test timeout: failed to send SIGKILL to child {}: {}",
                                     child, e
@@ -58,7 +62,7 @@ fn wait_child_with_timeout(child: Pid, timeout: Duration) -> WaitStatus {
                         }
 
                         // Reap the child process
-                        match waitpid(child, None) {
+                        match waitpid(Some(child), WaitOptions::empty()) {
                             Ok(_) => {
                                 panic!(
                                     "Test timed out after {:.2} seconds (child PID: {})",
@@ -80,7 +84,7 @@ fn wait_child_with_timeout(child: Pid, timeout: Duration) -> WaitStatus {
 
                 thread::sleep(POLL_INTERVAL);
             }
-            Ok(status) => {
+            Ok(Some((_, status))) => {
                 // Child has exited or terminated
                 return status;
             }
@@ -102,31 +106,32 @@ where
     // Create pipe for passing panic messages from child to parent
     let (read_fd, write_fd) = pipe().expect("Failed to create pipe for panic messages");
 
-    match unsafe { fork() } {
-        Ok(ForkResult::Child) => {
+    // SAFETY: forked child only execs or exits; allocations use the
+    // rustix-based global allocator, not libc malloc.
+    match unsafe { kernel_fork() } {
+        Ok(Fork::Child(_)) => {
             // Close read end - child only writes
             drop(read_fd);
 
             // Run the test - capture and propagate panic messages (including setup failures)
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 // Get current UID/GID before unshare
-                let uid = nix::unistd::getuid();
-                let gid = nix::unistd::getgid();
+                let uid = getuid();
+                let gid = getgid();
 
                 // Create user and mount namespaces
-                use nix::sched::{CloneFlags, unshare};
-                unshare(CloneFlags::CLONE_NEWUSER | CloneFlags::CLONE_NEWNS)
+                unsafe { unshare_unsafe(UnshareFlags::NEWUSER | UnshareFlags::NEWNS) }
                     .expect("Failed to create user/mount namespace");
 
                 // Set up UID/GID mappings
                 // Map our current UID to 0 (root) in the new namespace
                 std::fs::write("/proc/self/setgroups", b"deny").expect("Failed to write setgroups");
 
-                let uid_map = format!("0 {} 1\n", uid);
+                let uid_map = format!("0 {} 1\n", uid.as_raw());
                 std::fs::write("/proc/self/uid_map", uid_map.as_bytes())
                     .expect("Failed to write uid_map");
 
-                let gid_map = format!("0 {} 1\n", gid);
+                let gid_map = format!("0 {} 1\n", gid.as_raw());
                 std::fs::write("/proc/self/gid_map", gid_map.as_bytes())
                     .expect("Failed to write gid_map");
 
@@ -137,7 +142,7 @@ where
             match result {
                 Ok(_) => {
                     drop(write_fd);
-                    unsafe { libc::_exit(0) }
+                    exit_group(0)
                 }
                 Err(panic_payload) => {
                     // Extract panic message and backtrace
@@ -161,11 +166,11 @@ where
                     let msg_bytes = full_message.as_bytes();
                     let _ = write(&write_fd, msg_bytes);
                     drop(write_fd);
-                    unsafe { libc::_exit(1) }
+                    exit_group(1)
                 }
             }
         }
-        Ok(ForkResult::Parent { child }) => {
+        Ok(Fork::ParentOf(child)) => {
             // Close write end - parent only reads
             drop(write_fd);
 
@@ -182,25 +187,25 @@ where
                 String::new()
             };
 
-            match wait_result {
-                WaitStatus::Exited(_, 0) => {
+            match wait_result.exit_status() {
+                Some(0) => {
                     // Test passed
                 }
-                WaitStatus::Exited(_, code) => {
+                Some(code) => {
                     if !panic_message.is_empty() {
                         panic!("Test failed with exit code {}:\n{}", code, panic_message);
                     } else {
                         panic!("Test failed with exit code {}", code);
                     }
                 }
-                status => {
+                None => {
                     if !panic_message.is_empty() {
                         panic!(
                             "Test process terminated abnormally: {:?}\n{}",
-                            status, panic_message
+                            wait_result, panic_message
                         );
                     } else {
-                        panic!("Test process terminated abnormally: {:?}", status);
+                        panic!("Test process terminated abnormally: {:?}", wait_result);
                     }
                 }
             }

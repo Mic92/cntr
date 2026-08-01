@@ -4,7 +4,8 @@
 //! and setting up security context (LSM, cgroups, capabilities).
 
 use anyhow::{Context, bail};
-use nix::unistd::{self, Pid};
+use rustix::process::{Pid, getpid};
+use rustix::thread::{set_thread_gid, set_thread_groups, set_thread_uid};
 
 use crate::capabilities;
 use crate::cgroup;
@@ -86,9 +87,9 @@ pub(crate) fn apply_security_context(
     if in_user_namespace {
         // Try to clear supplementary groups, but ignore errors as this may fail
         // in some sandboxes even when not explicitly denied
-        let _ = unistd::setgroups(&[]);
-        unistd::setgid(process_status.gid).context("could not set group id")?;
-        unistd::setuid(process_status.uid).context("could not set user id")?;
+        let _ = set_thread_groups(&[]);
+        set_thread_gid(process_status.gid).context("could not set group id")?;
+        set_thread_uid(process_status.uid).context("could not set user id")?;
     }
 
     // Drop capabilities
@@ -109,8 +110,7 @@ pub(crate) fn apply_security_context(
 /// 3. Applies security context (UID/GID, capabilities, LSM)
 pub(crate) fn enter_container(process_status: &mut ProcStatus) -> Result<()> {
     // Move to container's cgroup
-    cgroup::move_to(unistd::getpid(), process_status.global_pid)
-        .context("failed to change cgroup")?;
+    cgroup::move_to(getpid(), process_status.global_pid).context("failed to change cgroup")?;
 
     // Enter namespaces
     let in_user_ns = enter_namespaces(process_status.global_pid).with_context(|| {
@@ -124,7 +124,8 @@ pub(crate) fn enter_container(process_status: &mut ProcStatus) -> Result<()> {
     apply_security_context(process_status, in_user_ns).with_context(|| {
         format!(
             "failed to apply security context (UID={}, GID={})",
-            process_status.uid, process_status.gid
+            process_status.uid.as_raw(),
+            process_status.gid.as_raw()
         )
     })?;
 

@@ -12,20 +12,22 @@ license = "MIT"
 [dependencies]
 log = "0.4.30"
 libc = "0.2.186"
-nix = { version = "0.31.3", features = [
-  "dir",
-  "fs",
-  "mount",
-  "poll",
-  "process",
-  "sched",
-  "signal",
-  "socket",
-  "user",
-  "term",
-] }
 container-pid = "1.0"
 anyhow = "1.0"
+rustix = { version = "1.1.4", features = [
+  "event",
+  "fs",
+  "mount",
+  "net",
+  "pipe",
+  "process",
+  "pty",
+  "runtime",
+  "stdio",
+  "termios",
+  "thread",
+] }
+rustix-dlmalloc = { version = "0.2.2", features = ["global"] }
 
 [[bin]]
 name = "cntr"
