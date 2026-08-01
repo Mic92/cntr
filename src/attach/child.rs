@@ -17,7 +17,7 @@ use crate::namespace;
 use crate::paths;
 use crate::procfs::ProcStatus;
 use crate::pty;
-use crate::syscalls::mount_api::{AT_RECURSIVE, MountFd, OPEN_TREE_CLONE};
+use crate::syscalls::mount_api::MountFd;
 
 /// Options for child process
 pub(crate) struct ChildOptions<'a> {
@@ -95,7 +95,7 @@ fn apply_idmapped_mounts(userns_fd: BorrowedFd, base_dir: &Path) -> Result<(), A
         };
 
         // Clone the mount with open_tree
-        let tree = match MountFd::open_tree_at(None, &mount_cstr, OPEN_TREE_CLONE | AT_RECURSIVE) {
+        let tree = match MountFd::open_tree_at(None, &mount_cstr) {
             Ok(t) => t,
             Err(e) => {
                 warn!("Failed to open_tree {}: {}", mount_point, e);
@@ -113,7 +113,7 @@ fn apply_idmapped_mounts(userns_fd: BorrowedFd, base_dir: &Path) -> Result<(), A
         }
 
         // Move back to original location
-        if let Err(e) = tree.attach_to(None, &mount_cstr, 0) {
+        if let Err(e) = tree.attach_to(None, &mount_cstr) {
             warn!("Failed to attach idmapped {} back: {}", mount_point, e);
             continue;
         }
@@ -173,7 +173,7 @@ fn capture_and_attach_container_trees(
             };
 
             // Capture tree
-            match MountFd::open_tree_at(Some(dir_fd), name, OPEN_TREE_CLONE | AT_RECURSIVE) {
+            match MountFd::open_tree_at(Some(dir_fd), name) {
                 Ok(tree) => {
                     let name_os = std::ffi::OsStr::from_bytes(name.as_bytes()).to_owned();
                     Some((name_os, tree, is_dir))
@@ -216,7 +216,7 @@ fn capture_and_attach_container_trees(
             }
         })?;
 
-        if let Err(e) = tree.attach_to(None, &target_cstr, 0) {
+        if let Err(e) = tree.attach_to(None, &target_cstr) {
             warn!("Failed to attach tree to {:?}: {}", target, e);
         }
     }
