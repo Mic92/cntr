@@ -1,3 +1,4 @@
+use core::convert::Infallible;
 use rustix::fd::OwnedFd;
 use rustix::process::Pid;
 
@@ -17,7 +18,7 @@ pub(crate) fn run(
     child_pid: Pid,
     _process_status: &ProcStatus,
     socket: &ipc::Socket,
-) -> Result<core::convert::Infallible, AttachError> {
+) -> Result<Infallible, AttachError> {
     // Step 1: Wait for child to assemble mount hierarchy and signal completion
     // The child will send: ready signal + PTY fd
     let (msg_buf, mut fds) = socket.receive::<OwnedFd>(1)?;

@@ -1,3 +1,4 @@
+use crate::errors::format_chain;
 use alloc::boxed::Box;
 use alloc::string::{String, ToString};
 use alloc::vec;
@@ -78,7 +79,7 @@ pub fn lookup_container_pid(
         match t.lookup(container_id) {
             Ok(pid) => return Ok(pid),
             Err(e) => {
-                let _ = write!(tried, "\n  - {:?}: {}", t, crate::errors::format_chain(&e));
+                let _ = write!(tried, "\n  - {:?}: {}", t, format_chain(&e));
             }
         };
     }

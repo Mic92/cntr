@@ -3,6 +3,7 @@ use crate::cgroup::CgroupError;
 use crate::cmd::CmdError;
 use crate::container::ContainerError;
 use crate::container_setup::SetupError;
+use crate::errors::format_chain;
 use crate::ipc::{self, IpcError};
 use crate::lsm::LsmError;
 use crate::namespace::NamespaceError;
@@ -13,6 +14,7 @@ use crate::syscalls::process::{Fork, fork};
 use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::vec::Vec;
+use core::convert::Infallible;
 use idmap_helper::IdmapError;
 use rustix::io::Errno;
 use rustix::process::{getgid, getuid};
@@ -98,7 +100,7 @@ pub(crate) struct AttachOptions {
     pub(crate) apparmor_mode: ApparmorMode,
 }
 
-pub(crate) fn attach(opts: &AttachOptions) -> Result<core::convert::Infallible, AttachError> {
+pub(crate) fn attach(opts: &AttachOptions) -> Result<Infallible, AttachError> {
     // Verify mount API capability - REQUIRED (no FUSE fallback)
     if !capability::has_mount_api() {
         return Err(AttachError::MountApiUnavailable);
@@ -164,7 +166,7 @@ pub(crate) fn attach(opts: &AttachOptions) -> Result<core::convert::Infallible, 
             };
             // child::run returns Result<Infallible>, so can only return Err
             let Err(e) = child::run(&mut child_opts);
-            crate::stderrln!("attach child failed: {}", crate::errors::format_chain(&e));
+            crate::stderrln!("attach child failed: {}", format_chain(&e));
             exit_group(1);
         }
     }

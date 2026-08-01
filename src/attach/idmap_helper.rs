@@ -3,12 +3,13 @@ use alloc::format;
 use alloc::string::String;
 use log::debug;
 use rustix::fd::{AsFd, BorrowedFd, OwnedFd};
-use rustix::io::read;
+use rustix::io::{read, write};
 use rustix::pipe::pipe;
 use rustix::process::{Gid, Pid, Signal, Uid, WaitOptions, kill_process, waitpid};
-use rustix::thread::{UnshareFlags, unshare_unsafe};
+use rustix::thread::{Timespec, UnshareFlags, nanosleep, unshare_unsafe};
 use thiserror::Error;
 
+use crate::errors::format_chain;
 use crate::fsutil;
 
 use rustix::io::Errno;
@@ -102,19 +103,19 @@ impl IdmapHelper {
 
                 // Create user namespace and set up mapping
                 if let Err(e) = Self::setup_userns(inner_uid, outer_uid, inner_gid, outer_gid) {
-                    crate::stderrln!("idmap helper failed: {}", crate::errors::format_chain(&e));
+                    crate::stderrln!("idmap helper failed: {}", format_chain(&e));
                     exit(1);
                 }
 
                 // Signal parent we're ready
-                if let Err(e) = rustix::io::write(&write_fd, b"R") {
+                if let Err(e) = write(&write_fd, b"R") {
                     crate::stderrln!("idmap helper failed to signal parent: {:?}", e);
                     exit(1);
                 }
 
                 // Keep running (parent holds FD, but this is safer)
                 loop {
-                    let _ = rustix::thread::nanosleep(&rustix::thread::Timespec {
+                    let _ = nanosleep(&Timespec {
                         tv_sec: 3600,
                         tv_nsec: 0,
                     });

@@ -6,6 +6,7 @@ extern crate alloc;
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::ffi::CStr;
+use origin::program;
 
 /// Entry point called by origin after program startup.
 ///
@@ -36,14 +37,14 @@ unsafe fn origin_main(argc: usize, argv: *mut *mut u8, envp: *mut *mut u8) -> i3
             1
         }
     };
-    origin::program::exit(status)
+    program::exit(status)
 }
 
 #[cfg(not(test))]
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
     cntr::stderrln!("panic: {}", info);
-    origin::program::trap()
+    program::trap()
 }
 
 // Referenced by the precompiled alloc rlib; unused with panic = "abort".

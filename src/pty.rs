@@ -1,11 +1,12 @@
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
+use core::convert::Infallible;
 use log::warn;
 use rustix::event::{PollFd, PollFlags, Timespec, poll};
 use rustix::fd::{AsFd, BorrowedFd, OwnedFd};
 use rustix::fs::{Mode, OFlags, open};
-use rustix::io::{Errno, dup};
+use rustix::io::{Errno, dup, read, write};
 use rustix::process::{
     Pid, Signal, WaitOptions, getpid, ioctl_tiocsctty, kill_process, setsid, waitpid,
 };
@@ -88,7 +89,7 @@ impl<'a> FilePair<'a> {
         }
     }
     fn read(&mut self) -> bool {
-        match rustix::io::read(self.from, &mut self.buf) {
+        match read(self.from, &mut self.buf) {
             Ok(read) => {
                 self.read_offset = read;
                 self.write()
@@ -97,7 +98,7 @@ impl<'a> FilePair<'a> {
         }
     }
     fn write(&mut self) -> bool {
-        match rustix::io::write(self.to, &self.buf[self.write_offset..self.read_offset]) {
+        match write(self.to, &self.buf[self.write_offset..self.read_offset]) {
             Ok(written) => {
                 self.write_offset += written;
                 if self.write_offset >= self.read_offset {
@@ -267,7 +268,7 @@ pub(crate) fn forward<T: AsFd>(pty: &T) -> Result<(), PtyError> {
 pub(crate) fn forward_pty_and_wait<T: AsFd>(
     pty: &T,
     child_pid: Pid,
-) -> Result<core::convert::Infallible, PtyError> {
+) -> Result<Infallible, PtyError> {
     // Forward PTY I/O between stdin/stdout and the PTY
     // This will block until child exits or PTY closes
     let _ = forward(pty);

@@ -1,6 +1,8 @@
 use alloc::string::{String, ToString};
 use typed_path::{UnixPath, UnixPathBuf};
 
+use rustix::process::getpid;
+
 use crate::fsutil;
 
 use crate::container_pid::Container;
@@ -17,7 +19,7 @@ impl Container for Command {
             path: UnixPathBuf::from("/proc"),
             source,
         })?;
-        let own_pid = rustix::process::getpid().as_raw_nonzero().get();
+        let own_pid = getpid().as_raw_nonzero().get();
 
         for name in names {
             let cmdline = UnixPath::new("/proc").join(&name).join("cmdline");

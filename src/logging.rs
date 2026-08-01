@@ -5,12 +5,15 @@
 
 use alloc::string::ToString;
 use log::{LevelFilter, Log, Metadata, Record};
+use rustix::stdio::stderr;
+
+use crate::fsutil::write_all;
 
 /// Write a formatted line to stderr, ignoring errors (like eprintln!).
 pub fn write_stderr(args: core::fmt::Arguments) {
     let mut line = args.to_string();
     line.push('\n');
-    let _ = crate::fsutil::write_all(unsafe { rustix::stdio::stderr() }, line.as_bytes());
+    let _ = write_all(unsafe { stderr() }, line.as_bytes());
 }
 
 /// eprintln! replacement that writes through rustix instead of std stdio.

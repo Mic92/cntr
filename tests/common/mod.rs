@@ -2,7 +2,7 @@
 
 use rustix::fd::OwnedFd;
 use rustix::pipe::pipe;
-use rustix::process::{Pid, Signal, WaitOptions, kill_process, waitpid};
+use rustix::process::{Pid, Signal, WaitOptions, chroot, kill_process, waitpid};
 use std::io::Read;
 use std::{env, path::Path, path::PathBuf};
 
@@ -235,7 +235,7 @@ fn fake_container_process_with_sync(sync_fd: OwnedFd, temp_dir: &std::path::Path
     }
 
     // Chroot to temp directory
-    if let Err(e) = rustix::process::chroot(temp_dir.as_os_str().as_encoded_bytes()) {
+    if let Err(e) = chroot(temp_dir.as_os_str().as_encoded_bytes()) {
         eprintln!("Failed to chroot: {}", e);
         exit(1);
     }

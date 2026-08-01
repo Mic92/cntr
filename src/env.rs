@@ -7,6 +7,7 @@
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::ptr;
+use core::str::from_utf8;
 use core::sync::atomic::{AtomicPtr, Ordering};
 
 static SNAPSHOT: AtomicPtr<Vec<(Vec<u8>, Vec<u8>)>> = AtomicPtr::new(ptr::null_mut());
@@ -54,7 +55,7 @@ pub(crate) fn var(name: &str) -> Option<&'static str> {
         .iter()
         .find(|(key, _)| key == name.as_bytes())
         .map(|(_, value)| value)?;
-    core::str::from_utf8(value).ok()
+    from_utf8(value).ok()
 }
 
 /// Split a PATH-style variable into its entries.

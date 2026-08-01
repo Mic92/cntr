@@ -11,6 +11,7 @@ use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::convert::Infallible;
+use core::str::from_utf8;
 use hashbrown::HashMap;
 use rustix::event::{PollFd, PollFlags, poll};
 use rustix::fd::OwnedFd;
@@ -77,7 +78,7 @@ impl ExecArgs {
 fn resolve_program(program: &str, path_var: Option<&Vec<u8>>) -> Result<CString, Errno> {
     // No let-chain here to stay compatible with Rust < 1.88 (Debian).
     if !program.contains('/') {
-        if let Some(paths) = path_var.and_then(|p| core::str::from_utf8(p).ok()) {
+        if let Some(paths) = path_var.and_then(|p| from_utf8(p).ok()) {
             for dir in env::split_paths(paths) {
                 let candidate = UnixPath::new(dir).join(program);
                 if access(candidate.as_bytes(), Access::EXEC_OK).is_ok() {

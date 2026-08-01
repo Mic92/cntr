@@ -2,6 +2,7 @@ use alloc::borrow::ToOwned;
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
+use core::convert::Infallible;
 use log::{debug, warn};
 use rustix::fd::{AsFd, BorrowedFd, OwnedFd};
 use rustix::fs::{AtFlags, CWD, Dir, FileType, statat};
@@ -245,7 +246,7 @@ fn capture_and_attach_container_trees(
 /// 8. Execute the command
 ///
 /// This function never returns on success - it replaces the current process.
-pub(crate) fn run(options: &mut ChildOptions) -> Result<core::convert::Infallible, AttachError> {
+pub(crate) fn run(options: &mut ChildOptions) -> Result<Infallible, AttachError> {
     // Step 1: Move to container's cgroup
     cgroup::move_to(getpid(), options.process_status.global_pid)?;
 

@@ -5,6 +5,7 @@ use rustix::io::Errno;
 use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::vec::Vec;
+use core::convert::Infallible;
 use rustix::fd::OwnedFd;
 use thiserror::Error;
 
@@ -12,6 +13,7 @@ use crate::ApparmorMode;
 use crate::cmd::{Cmd, CmdError};
 use crate::container::ContainerError;
 use crate::container_setup::{self, SetupError};
+use crate::errors::format_chain;
 use crate::pty::{self, PtyError};
 use crate::syscalls::capability;
 
@@ -49,7 +51,7 @@ pub(crate) struct ExecOptions {
 /// Execute a command in a container
 ///
 /// Directly accesses container by ID/name with PTY.
-pub(crate) fn exec(opts: &ExecOptions) -> Result<core::convert::Infallible, ExecError> {
+pub(crate) fn exec(opts: &ExecOptions) -> Result<Infallible, ExecError> {
     // Verify mount API capability
     if !capability::has_mount_api() {
         return Err(ExecError::MountApiUnavailable);
@@ -83,7 +85,7 @@ pub(crate) fn exec(opts: &ExecOptions) -> Result<core::convert::Infallible, Exec
                 opts.arguments.clone(),
                 &pty_master,
             );
-            crate::stderrln!("exec child failed: {}", crate::errors::format_chain(&e));
+            crate::stderrln!("exec child failed: {}", format_chain(&e));
             exit_group(1);
         }
     }
@@ -97,7 +99,7 @@ fn exec_child(
     exe: Option<String>,
     args: Vec<String>,
     pty_master: &OwnedFd,
-) -> Result<core::convert::Infallible, ExecError> {
+) -> Result<Infallible, ExecError> {
     // Attach PTY slave
     pty::attach_pts(pty_master)?;
 

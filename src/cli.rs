@@ -1,5 +1,6 @@
 use crate::errors::format_chain;
 use crate::passwd::{self, User};
+use crate::{env, logging};
 use alloc::boxed::Box;
 use alloc::format;
 use alloc::string::{String, ToString};
@@ -332,8 +333,8 @@ pub fn run_with_args(
     args: Vec<String>,
     environ: Vec<(Vec<u8>, Vec<u8>)>,
 ) -> Result<u8, Box<dyn core::error::Error>> {
-    crate::env::init(environ);
-    crate::logging::init();
+    env::init(environ);
+    logging::init();
 
     // Must be called early, before any /proc/self access
     maybe_set_dumpable();
