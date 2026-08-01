@@ -1,4 +1,3 @@
-use libc::c_ulong;
 use rustix::process::{Gid, Pid, Uid};
 use std::env;
 use std::ffi::OsString;
@@ -118,8 +117,8 @@ fn translate_id(map_path: &Path, outer_id: u32) -> Result<u32, ProcfsError> {
 
 pub(crate) struct ProcStatus {
     pub(crate) global_pid: Pid,
-    pub(crate) effective_capabilities: c_ulong,
-    pub(crate) last_cap: c_ulong,
+    pub(crate) effective_capabilities: u64,
+    pub(crate) last_cap: u64,
     pub(crate) uid: Uid,
     pub(crate) gid: Gid,
     pub(crate) lsm_profile: Option<LSMProfile>,
@@ -135,7 +134,7 @@ pub(crate) fn status(
         source,
     })?;
 
-    let mut effective_caps: Option<c_ulong> = None;
+    let mut effective_caps: Option<u64> = None;
 
     let reader = BufReader::new(file);
     for line in reader.lines() {
@@ -153,14 +152,13 @@ pub(crate) fn status(
         }
         if columns[0] == "CapEff:" {
             if let Some(cap_string) = columns.last() {
-                let cap = c_ulong::from_str_radix(cap_string, 16).map_err(|source| {
-                    ProcfsError::Parse {
+                let cap =
+                    u64::from_str_radix(cap_string, 16).map_err(|source| ProcfsError::Parse {
                         what: "capability",
                         path: path.clone(),
                         value: cap_string.to_string(),
                         source,
-                    }
-                })?;
+                    })?;
                 effective_caps = Some(cap);
             }
         }
@@ -177,15 +175,14 @@ pub(crate) fn status(
             source,
         })?;
     let cap_contents_trimmed = cap_contents.trim();
-    let last_cap =
-        cap_contents_trimmed
-            .parse::<c_ulong>()
-            .map_err(|source| ProcfsError::Parse {
-                what: "last capability value",
-                path: cap_last_cap_path.clone(),
-                value: cap_contents_trimmed.to_string(),
-                source,
-            })?;
+    let last_cap = cap_contents_trimmed
+        .parse::<u64>()
+        .map_err(|source| ProcfsError::Parse {
+            what: "last capability value",
+            path: cap_last_cap_path.clone(),
+            value: cap_contents_trimmed.to_string(),
+            source,
+        })?;
 
     // Get container uid/gid from process metadata (host perspective)
     use std::fs::metadata;
