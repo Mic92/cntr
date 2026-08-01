@@ -4,19 +4,18 @@ use std::collections::HashMap;
 use std::convert::Infallible;
 use std::env;
 use std::ffi::{OsStr, OsString};
-use std::fs::File;
-use std::io::{BufRead, BufReader};
 use std::os::unix::ffi::OsStringExt;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use thiserror::Error;
 
+use crate::fsutil;
 use crate::procfs;
 
 #[derive(Debug, Error)]
 pub(crate) enum CmdError {
-    #[error("failed to open environment file {path}")]
+    #[error("failed to read environment file {path}")]
     OpenEnviron {
         path: PathBuf,
         #[source]
@@ -46,16 +45,10 @@ pub(crate) struct Cmd {
 
 fn read_environment(pid: Pid) -> Result<HashMap<OsString, OsString>, CmdError> {
     let path = procfs::get_path().join(pid.to_string()).join("environ");
-    let f = File::open(&path).map_err(|source| CmdError::OpenEnviron { path, source })?;
-    let reader = BufReader::new(f);
-    let res: HashMap<OsString, OsString> = reader
-        .split(b'\0')
+    let contents = fsutil::read(&path).map_err(|source| CmdError::OpenEnviron { path, source })?;
+    let res: HashMap<OsString, OsString> = contents
+        .split(|b| *b == b'\0')
         .filter_map(|var| {
-            let var = match var {
-                Ok(var) => var,
-                Err(_) => return None,
-            };
-
             let tuple: Vec<&[u8]> = var.splitn(2, |b| *b == b'=').collect();
             if tuple.len() != 2 {
                 return None;
@@ -75,7 +68,7 @@ fn read_environment(pid: Pid) -> Result<HashMap<OsString, OsString>, CmdError> {
 /// Returns None if the file cannot be read or PATH is not found.
 fn read_container_path(container_root: &Path) -> Option<OsString> {
     let etc_environment = container_root.join("etc/environment");
-    let contents = std::fs::read_to_string(&etc_environment).ok()?;
+    let contents = fsutil::read_to_string(&etc_environment).ok()?;
 
     for line in contents.lines() {
         let trimmed = line.trim();
@@ -113,7 +106,7 @@ impl Cmd {
         // After entering PID namespace, /proc/{container_pid} won't be accessible
         let proc_root_path = format!("/proc/{}/root", pid);
         let container_root =
-            std::fs::read_link(&proc_root_path).map_err(|source| CmdError::ReadContainerRoot {
+            fsutil::read_link(&proc_root_path).map_err(|source| CmdError::ReadContainerRoot {
                 path: proc_root_path,
                 source,
             })?;
@@ -199,11 +192,8 @@ impl Cmd {
 
                     // Apply AppArmor profile after chroot
                     if let Some((path, label)) = &lsm_profile {
-                        use std::fs::File;
-                        use std::io::Write;
-                        let mut file = File::options().write(true).open(path)?;
                         let attr = format!("changeprofile {}", label);
-                        file.write_all(attr.as_bytes())?;
+                        crate::fsutil::write_existing(path, attr)?;
                     }
 
                     Ok(())

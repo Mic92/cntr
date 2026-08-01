@@ -70,7 +70,7 @@ pub(crate) enum AttachError {
     UnshareMountNamespace(#[source] Errno),
     #[error("failed to make mounts private")]
     MakeMountsPrivate(#[source] Errno),
-    #[error("failed to open /proc/mounts")]
+    #[error("failed to read /proc/mounts")]
     OpenProcMounts(#[source] std::io::Error),
     #[error("failed to mount tmpfs at {path}")]
     MountTmpfs {

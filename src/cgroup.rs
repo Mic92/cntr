@@ -1,31 +1,17 @@
 use log::{debug, warn};
 use rustix::process::Pid;
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::Write;
-use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use thiserror::Error;
 
 use crate::errors::format_chain;
+use crate::fsutil;
 use crate::procfs;
 
 #[derive(Debug, Error)]
 pub(crate) enum CgroupError {
-    #[error("failed to open {path}")]
-    Open {
-        path: PathBuf,
-        #[source]
-        source: std::io::Error,
-    },
-    #[error("failed to read line from {path}")]
+    #[error("failed to read {path}")]
     Read {
-        path: PathBuf,
-        #[source]
-        source: std::io::Error,
-    },
-    #[error("failed to write PID to cgroup {path}")]
-    WritePid {
         path: PathBuf,
         #[source]
         source: std::io::Error,
@@ -62,17 +48,12 @@ struct NullCgroupManager;
 
 fn get_subsystems() -> Result<Vec<String>, CgroupError> {
     let path = "/proc/cgroups";
-    let f = File::open(path).map_err(|source| CgroupError::Open {
+    let contents = fsutil::read_to_string(path).map_err(|source| CgroupError::Read {
         path: PathBuf::from(path),
         source,
     })?;
-    let reader = BufReader::new(f);
     let mut subsystems: Vec<String> = Vec::new();
-    for l in reader.lines() {
-        let line = l.map_err(|source| CgroupError::Read {
-            path: PathBuf::from(path),
-            source,
-        })?;
+    for line in contents.lines() {
         if line.starts_with('#') {
             continue;
         }
@@ -91,24 +72,19 @@ fn get_mounts() -> Result<HashMap<String, String>, CgroupError> {
     //
     // 36 35 98:0 /mnt1 /mnt2 rw,noatime master:1 - ext3 /dev/root rw,errors=continue
     // (1)(2)(3)   (4)   (5)      (6)      (7)   (8) (9)   (10)         (11)
-    let f = File::open(path).map_err(|source| CgroupError::Open {
+    let contents = fsutil::read_to_string(path).map_err(|source| CgroupError::Read {
         path: PathBuf::from(path),
         source,
     })?;
-    let reader = BufReader::new(f);
     let mut mountpoints: HashMap<String, String> = HashMap::new();
-    for l in reader.lines() {
-        let line = l.map_err(|source| CgroupError::Read {
-            path: PathBuf::from(path),
-            source,
-        })?;
+    for line in contents.lines() {
         let fields: Vec<&str> = line.split(' ').collect();
         if fields.len() < 11 || fields[9] != "cgroup" {
             continue;
         }
         for option in fields[10].split(',') {
             let name = option.strip_prefix("name=").unwrap_or(option).to_string();
-            // Fixed: only insert if name IS a valid subsystem
+            // Only mounts of real subsystems are useful for cgroup_v1_path()
             if subsystems.contains(&name) {
                 mountpoints.insert(name, fields[4].to_string());
             }
@@ -134,17 +110,12 @@ fn cgroup_v1_path(cgroup: &str, mountpoints: &HashMap<String, String>) -> Option
 impl CgroupV1Manager {
     fn get_cgroups(&self, pid: Pid) -> Result<Vec<String>, CgroupError> {
         let path = self.procfs_path.join(format!("{}/cgroup", pid));
-        let f = File::open(&path).map_err(|source| CgroupError::Open {
+        let contents = fsutil::read_to_string(&path).map_err(|source| CgroupError::Read {
             path: path.clone(),
             source,
         })?;
-        let reader = BufReader::new(f);
         let mut cgroups: Vec<String> = Vec::new();
-        for l in reader.lines() {
-            let line = l.map_err(|source| CgroupError::Read {
-                path: path.clone(),
-                source,
-            })?;
+        for line in contents.lines() {
             let fields: Vec<&str> = line.split(":/").collect();
             if fields.len() >= 2 {
                 cgroups.push(fields[1].to_string());
@@ -162,16 +133,8 @@ impl CgroupManager for CgroupV1Manager {
         for cgroup in cgroups {
             let p = cgroup_v1_path(&cgroup, &mountpoints);
             if let Some(path) = p {
-                match File::create(&path) {
-                    Ok(mut buffer) => {
-                        write!(buffer, "{}", pid).map_err(|source| CgroupError::WritePid {
-                            path: path.clone(),
-                            source,
-                        })?;
-                    }
-                    Err(err) => {
-                        warn!("failed to enter {} cgroup: {}", cgroup, err);
-                    }
+                if let Err(err) = fsutil::write(&path, pid.to_string()) {
+                    warn!("failed to enter {} cgroup: {}", cgroup, err);
                 }
             }
         }
@@ -183,17 +146,12 @@ impl CgroupManager for CgroupV1Manager {
 impl CgroupV2Manager {
     fn get_cgroup_path(&self, pid: Pid) -> Result<Option<String>, CgroupError> {
         let path = self.procfs_path.join(format!("{}/cgroup", pid));
-        let f = File::open(&path).map_err(|source| CgroupError::Open {
+        let contents = fsutil::read_to_string(&path).map_err(|source| CgroupError::Read {
             path: path.clone(),
             source,
         })?;
-        let reader = BufReader::new(f);
 
-        for l in reader.lines() {
-            let line = l.map_err(|source| CgroupError::Read {
-                path: path.clone(),
-                source,
-            })?;
+        for line in contents.lines() {
             // cgroup v2 format: "0::/path/to/cgroup"
             if let Some(stripped) = line.strip_prefix("0::") {
                 return Ok(Some(stripped.to_string()));
@@ -220,25 +178,14 @@ impl CgroupManager for CgroupV2Manager {
         procs_path.push(cgroup_path.trim_start_matches('/'));
         procs_path.push("cgroup.procs");
 
-        match File::options().append(true).open(&procs_path) {
-            Ok(mut file) => {
-                if let Err(err) = write!(file, "{}", pid) {
-                    // Writing to cgroup.procs requires CAP_SYS_ADMIN or root.
-                    // For unprivileged users (e.g., rootless podman), warn and continue.
-                    warn!(
-                        "failed to write PID to cgroup.procs at {}: {} (try running as root or with CAP_SYS_ADMIN)",
-                        procs_path.display(),
-                        err
-                    );
-                }
-            }
-            Err(err) => {
-                warn!(
-                    "failed to open cgroup.procs at {}: {}",
-                    procs_path.display(),
-                    err
-                );
-            }
+        if let Err(err) = fsutil::append(&procs_path, pid.to_string()) {
+            // Writing to cgroup.procs requires CAP_SYS_ADMIN or root.
+            // For unprivileged users (e.g., rootless podman), warn and continue.
+            warn!(
+                "failed to write PID to cgroup.procs at {}: {} (try running as root or with CAP_SYS_ADMIN)",
+                procs_path.display(),
+                err
+            );
         }
 
         Ok(())
@@ -271,20 +218,15 @@ impl CgroupManager for NullCgroupManager {
 /// Factory function to create the appropriate CgroupManager
 fn create_manager() -> Result<Box<dyn CgroupManager>, CgroupError> {
     let path = "/proc/self/mountinfo";
-    let f = File::open(path).map_err(|source| CgroupError::Open {
+    let contents = fsutil::read_to_string(path).map_err(|source| CgroupError::Read {
         path: PathBuf::from(path),
         source,
     })?;
-    let reader = BufReader::new(f);
 
     let mut has_v1 = false;
     let mut v2_mount: Option<PathBuf> = None;
 
-    for l in reader.lines() {
-        let line = l.map_err(|source| CgroupError::Read {
-            path: PathBuf::from(path),
-            source,
-        })?;
+    for line in contents.lines() {
         let fields: Vec<&str> = line.split(' ').collect();
         if fields.len() < 10 {
             continue;

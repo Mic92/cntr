@@ -11,6 +11,7 @@ mod container;
 mod container_setup;
 pub(crate) mod errors;
 pub(crate) mod exec;
+mod fsutil;
 mod ipc;
 mod lsm;
 pub(crate) mod namespace;

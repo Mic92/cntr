@@ -4,10 +4,10 @@ use rustix::io::read;
 use rustix::pipe::pipe;
 use rustix::process::{Gid, Pid, Signal, Uid, WaitOptions, kill_process, waitpid};
 use rustix::thread::{UnshareFlags, unshare_unsafe};
-use std::fs::File;
-use std::io::Write;
-use std::os::fd::{AsFd, BorrowedFd};
+use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
 use thiserror::Error;
+
+use crate::fsutil;
 
 use rustix::io::Errno;
 
@@ -40,7 +40,7 @@ pub(crate) enum IdmapError {
 /// Helper process that creates and maintains a user namespace for idmapped mounts
 pub(super) struct IdmapHelper {
     _pid: Pid,
-    userns_fd: File,
+    userns_fd: OwnedFd,
 }
 
 impl IdmapHelper {
@@ -75,7 +75,7 @@ impl IdmapHelper {
                 // Open child's user namespace
                 let userns_path = format!("/proc/{}/ns/user", child);
                 let userns_fd =
-                    File::open(&userns_path).map_err(|source| IdmapError::OpenUserns {
+                    fsutil::open_read(&userns_path).map_err(|source| IdmapError::OpenUserns {
                         path: userns_path.clone(),
                         source,
                     })?;
@@ -105,8 +105,7 @@ impl IdmapHelper {
                 }
 
                 // Signal parent we're ready
-                let mut write_file = File::from(write_fd);
-                if let Err(e) = write_file.write_all(b"R") {
+                if let Err(e) = rustix::io::write(&write_fd, b"R") {
                     eprintln!("idmap helper failed to signal parent: {:?}", e);
                     exit(1);
                 }
@@ -129,24 +128,20 @@ impl IdmapHelper {
         unsafe { unshare_unsafe(UnshareFlags::NEWUSER) }.map_err(IdmapError::UnshareUserns)?;
 
         // Disable setgroups
-        std::fs::write("/proc/self/setgroups", b"deny").ok();
+        fsutil::write("/proc/self/setgroups", b"deny").ok();
 
         // Write uid_map: inner_uid (inside userns) -> outer_uid (outside userns)
         let uid_map = format!("{} {} 1\n", inner_uid.as_raw(), outer_uid.as_raw());
-        std::fs::write("/proc/self/uid_map", uid_map.as_bytes()).map_err(|source| {
-            IdmapError::WriteIdMap {
-                path: "/proc/self/uid_map",
-                source,
-            }
+        fsutil::write("/proc/self/uid_map", uid_map).map_err(|source| IdmapError::WriteIdMap {
+            path: "/proc/self/uid_map",
+            source,
         })?;
 
         // Write gid_map: inner_gid (inside userns) -> outer_gid (outside userns)
         let gid_map = format!("{} {} 1\n", inner_gid.as_raw(), outer_gid.as_raw());
-        std::fs::write("/proc/self/gid_map", gid_map.as_bytes()).map_err(|source| {
-            IdmapError::WriteIdMap {
-                path: "/proc/self/gid_map",
-                source,
-            }
+        fsutil::write("/proc/self/gid_map", gid_map).map_err(|source| IdmapError::WriteIdMap {
+            path: "/proc/self/gid_map",
+            source,
         })?;
 
         Ok(())

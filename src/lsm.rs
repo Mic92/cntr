@@ -1,11 +1,10 @@
 use rustix::process::Pid;
-use std::fs::File;
 use std::io::ErrorKind;
-use std::io::prelude::*;
 use std::path::PathBuf;
 use thiserror::Error;
 
 use crate::ApparmorMode;
+use crate::fsutil;
 use crate::procfs;
 
 // TODO add support for SELinux
@@ -15,12 +14,6 @@ pub(crate) enum LsmError {
     #[error("failed to read {path}")]
     ReadEnabled {
         path: &'static str,
-        #[source]
-        source: std::io::Error,
-    },
-    #[error("failed to open AppArmor profile file {path}")]
-    OpenProfile {
-        path: PathBuf,
         #[source]
         source: std::io::Error,
     },
@@ -45,25 +38,13 @@ pub(crate) struct LSMProfile {
 
 fn is_apparmor_enabled() -> Result<bool, LsmError> {
     let aa_path = "/sys/module/apparmor/parameters/enabled";
-    match File::open(aa_path) {
-        Ok(mut file) => {
-            let mut contents = String::new();
-            file.read_to_string(&mut contents)
-                .map_err(|source| LsmError::ReadEnabled {
-                    path: aa_path,
-                    source,
-                })?;
-            Ok(contents == "Y\n")
-        }
-        Err(err) => {
-            if err.kind() != ErrorKind::NotFound {
-                return Err(LsmError::ReadEnabled {
-                    path: aa_path,
-                    source: err,
-                });
-            }
-            Ok(false)
-        }
+    match fsutil::read_to_string(aa_path) {
+        Ok(contents) => Ok(contents == "Y\n"),
+        Err(err) if err.kind() == ErrorKind::NotFound => Ok(false),
+        Err(source) => Err(LsmError::ReadEnabled {
+            path: aa_path,
+            source,
+        }),
     }
 }
 
@@ -75,16 +56,10 @@ fn apparmor_profile_path(pid: Option<Pid>) -> PathBuf {
 }
 
 fn read_apparmor_label(path: &PathBuf) -> Result<String, LsmError> {
-    let mut attr = String::new();
-    let mut file = File::open(path).map_err(|source| LsmError::OpenProfile {
+    let attr = fsutil::read_to_string(path).map_err(|source| LsmError::ReadProfile {
         path: path.clone(),
         source,
     })?;
-    file.read_to_string(&mut attr)
-        .map_err(|source| LsmError::ReadProfile {
-            path: path.clone(),
-            source,
-        })?;
 
     // AppArmor format is "profile_name (mode)", extract just the profile name
     let fields: Vec<&str> = attr.trim_end().splitn(2, ' ').collect();
@@ -124,17 +99,10 @@ pub(crate) fn read_profile(
 
 impl LSMProfile {
     pub(crate) fn inherit_profile(&mut self) -> Result<(), LsmError> {
-        // Open the file in the process that will write to it (not the parent)
-        let mut file = File::options()
-            .write(true)
-            .open(&self.own_path)
-            .map_err(|source| LsmError::OpenProfile {
-                path: self.own_path.clone(),
-                source,
-            })?;
-
+        // The profile file must be written by the same process that keeps it,
+        // so this runs in the attaching process, not the parent.
         let attr = format!("changeprofile {}", self.label);
-        file.write_all(attr.as_bytes())
+        fsutil::write_existing(&self.own_path, &attr)
             .map_err(|source| LsmError::WriteProfile { attr, source })?;
 
         Ok(())

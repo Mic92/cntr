@@ -2,11 +2,11 @@ use rustix::io::Errno;
 use rustix::process::Pid;
 use rustix::thread::{LinkNameSpaceType, move_into_link_name_space};
 use std::collections::HashSet;
-use std::fs::{self, File};
 use std::os::unix::prelude::*;
 use std::path::PathBuf;
 use thiserror::Error;
 
+use crate::fsutil;
 use crate::procfs;
 
 #[derive(Debug, Error)]
@@ -41,11 +41,9 @@ pub(crate) struct Kind {
 
 pub(crate) fn supported_namespaces() -> Result<HashSet<String>, NamespaceError> {
     let mut namespaces = HashSet::new();
-    let entries =
-        fs::read_dir(PathBuf::from("/proc/self/ns")).map_err(NamespaceError::ListNamespaces)?;
-    for entry in entries {
-        let entry = entry.map_err(NamespaceError::ListNamespaces)?;
-        if let Ok(name) = entry.file_name().into_string() {
+    let names = fsutil::read_dir_names("/proc/self/ns").map_err(NamespaceError::ListNamespaces)?;
+    for name in names {
+        if let Ok(name) = name.into_string() {
             namespaces.insert(name);
         }
     }
@@ -55,15 +53,15 @@ pub(crate) fn supported_namespaces() -> Result<HashSet<String>, NamespaceError> 
 impl Kind {
     pub(crate) fn open(&'static self, pid: Pid) -> Result<Namespace, NamespaceError> {
         let path = self.path(pid);
-        let file = File::open(&path)
+        let file = fsutil::open_read(&path)
             .map_err(|source| NamespaceError::OpenNamespaceFile { path, source })?;
         Ok(Namespace { kind: self, file })
     }
 
     pub(crate) fn is_same(&self, pid: Pid) -> bool {
         let path = self.path(pid);
-        match fs::read_link(path) {
-            Ok(dest) => match fs::read_link(self.own_path()) {
+        match fsutil::read_link(path) {
+            Ok(dest) => match fsutil::read_link(self.own_path()) {
                 Ok(dest2) => dest == dest2,
                 _ => false,
             },
@@ -84,7 +82,7 @@ impl Kind {
 
 pub(crate) struct Namespace {
     pub(crate) kind: &'static Kind,
-    file: File,
+    file: OwnedFd,
 }
 
 impl Namespace {

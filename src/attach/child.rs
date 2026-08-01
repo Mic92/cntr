@@ -15,6 +15,7 @@ use std::path::{Path, PathBuf};
 use crate::attach::AttachError;
 use crate::cgroup;
 use crate::cmd::Cmd;
+use crate::fsutil;
 use crate::ipc;
 use crate::namespace;
 use crate::paths;
@@ -51,11 +52,8 @@ pub(crate) struct ChildOptions<'a> {
 /// This makes all files created on the host appear as owned by the effective user.
 /// Requires kernel 5.12+ and --effective-user option.
 fn apply_idmapped_mounts(userns_fd: BorrowedFd, base_dir: &Path) -> Result<(), AttachError> {
-    use std::io::BufRead;
-
     // Read /proc/mounts to get all mount points
-    let mounts_file = std::fs::File::open("/proc/mounts").map_err(AttachError::OpenProcMounts)?;
-    let reader = std::io::BufReader::new(mounts_file);
+    let mounts = fsutil::read_to_string("/proc/mounts").map_err(AttachError::OpenProcMounts)?;
 
     // Skip virtual/special filesystems that don't support idmapped mounts
     let skip_fstypes = [
@@ -80,12 +78,7 @@ fn apply_idmapped_mounts(userns_fd: BorrowedFd, base_dir: &Path) -> Result<(), A
         "overlay",
     ];
 
-    for line in reader.lines() {
-        let line = match line {
-            Ok(l) => l,
-            Err(_) => continue,
-        };
-
+    for line in mounts.lines() {
         // Parse: device mountpoint fstype options
         let parts: Vec<&str> = line.split_whitespace().collect();
         if parts.len() < 3 {
@@ -143,7 +136,7 @@ fn apply_idmapped_mounts(userns_fd: BorrowedFd, base_dir: &Path) -> Result<(), A
 /// 3. Returns to our mount namespace
 /// 4. Attaches the captured trees to base_dir
 fn capture_and_attach_container_trees(
-    container_root_fd: std::fs::File,
+    container_root_fd: OwnedFd,
     container_pid: Pid,
     our_mount_ns: namespace::Namespace,
     base_dir: &Path,
@@ -206,13 +199,13 @@ fn capture_and_attach_container_trees(
 
         // Create mount point
         let mount_point_created = if is_dir {
-            std::fs::create_dir_all(&target).is_ok()
+            fsutil::create_dir_all(&target).is_ok()
         } else {
             target
                 .parent()
-                .map(|p| std::fs::create_dir_all(p).is_ok())
+                .map(|p| fsutil::create_dir_all(p).is_ok())
                 .unwrap_or(true)
-                && std::fs::File::create(&target).is_ok()
+                && fsutil::write(&target, b"").is_ok()
         };
 
         if !mount_point_created {
@@ -303,7 +296,7 @@ pub(crate) fn run(options: &mut ChildOptions) -> Result<std::convert::Infallible
 
     // Create base_dir BEFORE entering any namespaces
     // This ensures the directory exists in the host namespace
-    std::fs::create_dir_all(&base_dir).map_err(|source| AttachError::CreateBaseDir {
+    fsutil::create_dir_all(&base_dir).map_err(|source| AttachError::CreateBaseDir {
         path: base_dir.clone(),
         source,
     })?;
@@ -313,7 +306,7 @@ pub(crate) fn run(options: &mut ChildOptions) -> Result<std::convert::Infallible
     // allowing us to access the container's root even if /proc is not mounted inside
     let proc_root_path = format!("/proc/{}/root", options.process_status.global_pid);
     let container_root_fd =
-        std::fs::File::open(&proc_root_path).map_err(|source| AttachError::OpenContainerRoot {
+        fsutil::open_read(&proc_root_path).map_err(|source| AttachError::OpenContainerRoot {
             path: proc_root_path,
             source,
         })?;

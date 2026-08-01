@@ -1,23 +1,15 @@
 use rustix::process::{Gid, Pid, Uid};
 use std::env;
 use std::ffi::OsString;
-use std::fs::File;
-use std::io::BufReader;
-use std::io::prelude::*;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 use crate::ApparmorMode;
+use crate::fsutil;
 use crate::lsm::{LSMProfile, LsmError};
 
 #[derive(Debug, Error)]
 pub(crate) enum ProcfsError {
-    #[error("failed to open {path}")]
-    Open {
-        path: PathBuf,
-        #[source]
-        source: std::io::Error,
-    },
     #[error("failed to read {path}")]
     Read {
         path: PathBuf,
@@ -69,7 +61,7 @@ pub(crate) fn get_path() -> PathBuf {
 /// Format: `id-inside id-outside length`
 /// Example: `0 100000 65536` means container ID 0 maps to host ID 100000
 fn translate_id(map_path: &Path, outer_id: u32) -> Result<u32, ProcfsError> {
-    let contents = std::fs::read_to_string(map_path).map_err(|source| ProcfsError::Read {
+    let contents = fsutil::read_to_string(map_path).map_err(|source| ProcfsError::Read {
         path: map_path.to_path_buf(),
         source,
     })?;
@@ -129,25 +121,20 @@ pub(crate) fn status(
     apparmor_mode: ApparmorMode,
 ) -> Result<ProcStatus, ProcfsError> {
     let path = get_path().join(target_pid.to_string()).join("status");
-    let file = File::open(&path).map_err(|source| ProcfsError::Open {
+    let contents = fsutil::read_to_string(&path).map_err(|source| ProcfsError::Read {
         path: path.clone(),
         source,
     })?;
 
     let mut effective_caps: Option<u64> = None;
 
-    let reader = BufReader::new(file);
-    for line in reader.lines() {
-        let line = line.map_err(|source| ProcfsError::Read {
-            path: path.clone(),
-            source,
-        })?;
+    for line in contents.lines() {
         let columns: Vec<&str> = line.split('\t').collect();
         if columns.len() < 2 {
             return Err(ProcfsError::MalformedStatusLine {
                 path,
                 columns: columns.len(),
-                line,
+                line: line.to_string(),
             });
         }
         if columns[0] == "CapEff:" {
@@ -170,7 +157,7 @@ pub(crate) fn status(
     // Read cap_last_cap from the host namespace before entering the target namespace
     let cap_last_cap_path = get_path().join("sys/kernel/cap_last_cap");
     let cap_contents =
-        std::fs::read_to_string(&cap_last_cap_path).map_err(|source| ProcfsError::Read {
+        fsutil::read_to_string(&cap_last_cap_path).map_err(|source| ProcfsError::Read {
             path: cap_last_cap_path.clone(),
             source,
         })?;
@@ -185,16 +172,13 @@ pub(crate) fn status(
         })?;
 
     // Get container uid/gid from process metadata (host perspective)
-    use std::fs::metadata;
-    use std::os::unix::fs::MetadataExt;
-
     let proc_dir = get_path().join(target_pid.to_string());
-    let metadata = metadata(&proc_dir).map_err(|source| ProcfsError::Metadata {
+    let stat = fsutil::metadata(&proc_dir).map_err(|source| ProcfsError::Metadata {
         path: proc_dir.clone(),
         source,
     })?;
-    let host_uid = metadata.uid();
-    let host_gid = metadata.gid();
+    let host_uid = stat.st_uid;
+    let host_gid = stat.st_gid;
 
     // Translate host UID/GID to container namespace UID/GID
     let container_uid = translate_id(&proc_dir.join("uid_map"), host_uid)?;
