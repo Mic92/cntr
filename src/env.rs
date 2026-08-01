@@ -27,7 +27,7 @@ fn snapshot() -> &'static [(Vec<u8>, Vec<u8>)] {
     let ptr = SNAPSHOT.load(Ordering::Acquire);
     if ptr.is_null() {
         // Lazy fallback keeps unit tests working without an explicit init().
-        #[cfg(any(test, feature = "std"))]
+        #[cfg(test)]
         {
             use std::os::unix::ffi::OsStringExt;
             init(
@@ -37,7 +37,7 @@ fn snapshot() -> &'static [(Vec<u8>, Vec<u8>)] {
             );
             return snapshot();
         }
-        #[cfg(not(any(test, feature = "std")))]
+        #[cfg(not(test))]
         return &[];
     }
     unsafe { &*ptr }

@@ -9,14 +9,12 @@ categories = ["development-tools::debugging", "os::unix-apis"]
 repository = "https://github.com/Mic92/cntr"
 license = "MIT"
 
-[features]
-default = []
-std = []
-
 [dependencies]
 log = "0.4.30"
-thiserror = "2"
-rustix = { version = "1.1.4", features = [
+thiserror = { version = "2", default-features = false }
+rustix = { version = "1.1.4", default-features = false, features = [
+  "alloc",
+  "use-explicitly-provided-auxv",
   "event",
   "fs",
   "mount",
@@ -29,7 +27,8 @@ rustix = { version = "1.1.4", features = [
   "termios",
   "thread",
 ] }
-rustix-dlmalloc = { version = "0.2.2", features = ["global"] }
+rustix-dlmalloc = { version = "0.2.2", default-features = false, features = ["global"] }
+origin = { version = "0.26.2", default-features = false, features = ["origin-start"] }
 syscalls = { version = "0.8.1", default-features = false }
 linux-raw-sys = { version = "0.12.1", default-features = false, features = ["general", "no_std"] }
 typed-path = { version = "0.12.3", default-features = false }
@@ -38,7 +37,18 @@ hashbrown = { version = "0.17.1", default-features = false, features = ["default
 [[bin]]
 name = "cntr"
 path = "src/bin/main.rs"
+# no unit tests; a cfg(test) harness build would link std with the
+# libc-free link flags from build.rs
+test = false
+bench = false
 
-[dev-dependencies]
-# Enable the std feature (test_utils) when building the test crates.
-cntr = { path = ".", features = ["std"] }
+[patch.crates-io]
+# Errno: core::error::Error without the std feature; drop once released upstream.
+rustix = { git = "https://github.com/Mic92/rustix", branch = "errno-core-error" }
+
+# No unwinder without std.
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"

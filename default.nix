@@ -22,7 +22,12 @@ let
       ".fish"
       ".nu"
     ];
-    cargoLock.lockFile = ./Cargo.lock;
+    cargoLock = {
+      lockFile = ./Cargo.lock;
+      outputHashes = {
+        "rustix-1.1.4" = "sha256-OTCU9ZVzcQ3pHVeQgsUTA5BOYD4/LxISn5YFfw0ciQI=";
+      };
+    };
 
     nativeBuildInputs = [
       clippy

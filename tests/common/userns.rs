@@ -177,7 +177,9 @@ where
 
             // Read any panic message from the pipe
             let mut panic_data = Vec::new();
-            let _ = File::from(read_fd).read_to_end(&mut panic_data);
+            let raw_fd = rustix::fd::IntoRawFd::into_raw_fd(read_fd);
+            let mut file = unsafe { <File as std::os::fd::FromRawFd>::from_raw_fd(raw_fd) };
+            let _ = file.read_to_end(&mut panic_data);
 
             let panic_message = if !panic_data.is_empty() {
                 String::from_utf8_lossy(&panic_data).to_string()

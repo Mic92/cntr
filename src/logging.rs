@@ -10,7 +10,7 @@ use log::{LevelFilter, Log, Metadata, Record};
 pub fn write_stderr(args: core::fmt::Arguments) {
     let mut line = args.to_string();
     line.push('\n');
-    let _ = crate::fsutil::write_all(rustix::stdio::stderr(), line.as_bytes());
+    let _ = crate::fsutil::write_all(unsafe { rustix::stdio::stderr() }, line.as_bytes());
 }
 
 /// eprintln! replacement that writes through rustix instead of std stdio.

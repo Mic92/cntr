@@ -225,9 +225,9 @@ fn shovel(pairs: &mut [FilePair], resize: Option<BorrowedFd>) {
 }
 
 pub(crate) fn forward<T: AsFd>(pty: &T) -> Result<(), PtyError> {
-    let is_tty = isatty(stdin());
+    let is_tty = isatty(unsafe { stdin() });
     let _raw_tty = if is_tty {
-        Some(RawTty::new(stdin())?)
+        Some(RawTty::new(unsafe { stdin() })?)
     } else {
         None
     };
@@ -237,8 +237,8 @@ pub(crate) fn forward<T: AsFd>(pty: &T) -> Result<(), PtyError> {
     let dup_fd = |what, fd: BorrowedFd| -> Result<OwnedFd, PtyError> {
         dup(fd).map_err(|source| PtyError::Dup { what, source })
     };
-    let stdin_file = dup_fd("stdin", stdin())?;
-    let stdout_file = dup_fd("stdout", stdout())?;
+    let stdin_file = dup_fd("stdin", unsafe { stdin() })?;
+    let stdout_file = dup_fd("stdout", unsafe { stdout() })?;
     let pty_file = dup_fd("pty master", pty.as_fd())?;
 
     shovel(
@@ -302,7 +302,7 @@ pub(crate) fn forward_pty_and_wait<T: AsFd>(
 }
 
 fn get_winsize() -> Winsize {
-    tcgetwinsize(stdout()).unwrap_or(Winsize {
+    tcgetwinsize(unsafe { stdout() }).unwrap_or(Winsize {
         ws_row: 80,
         ws_col: 25,
         ws_xpixel: 0,

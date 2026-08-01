@@ -18,10 +18,10 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 name = "cntr"
 version = "2.0.0"
 dependencies = [
- "cntr",
  "hashbrown",
- "linux-raw-sys",
+ "linux-raw-sys 0.12.1",
  "log",
+ "origin",
  "rustix",
  "rustix-dlmalloc",
  "syscalls",
@@ -62,6 +62,12 @@ checksum = "3eaf3ede3fee6db1a4c2ee091bf8a8b4dccdc6d17f656fb07896ee72867612f2"
 
 [[package]]
 name = "linux-raw-sys"
+version = "0.9.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cd945864f07fe9f5371a27ad7b52a172b4b499999f1d97574c9fa68373937e12"
+
+[[package]]
+name = "linux-raw-sys"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
@@ -80,6 +86,17 @@ name = "log"
 version = "0.4.30"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "616ec5685824bcc94416c6d4a7a446eea774a31efd7062c8480ba6fd06d7a6e5"
+
+[[package]]
+name = "origin"
+version = "0.26.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "692d98a33ca8355280e87c3dea4f62e3361c0fb64a76557d8d3988f070cd3c30"
+dependencies = [
+ "bitflags",
+ "linux-raw-sys 0.9.4",
+ "rustix",
+]
 
 [[package]]
 name = "proc-macro2"
@@ -102,14 +119,13 @@ dependencies = [
 [[package]]
 name = "rustix"
 version = "1.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b6fe4565b9518b83ef4f91bb47ce29620ca828bd32cb7e408f0062e9930ba190"
+source = "git+https://github.com/Mic92/rustix?branch=errno-core-error#d7e2c4b093e69d003841ebc03669809948842d19"
 dependencies = [
  "bitflags",
  "errno",
  "libc",
- "linux-raw-sys",
- "windows-sys 0.61.2",
+ "linux-raw-sys 0.12.1",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

@@ -1,13 +1,14 @@
 //! Common test utilities for integration tests
 
+use rustix::fd::OwnedFd;
 use rustix::pipe::pipe;
 use rustix::process::{Pid, Signal, WaitOptions, kill_process, waitpid};
 use std::io::Read;
-use std::os::fd::OwnedFd;
 use std::{env, path::Path, path::PathBuf};
 
 // Re-export from library
-pub(crate) use cntr::test_utils::run_in_userns;
+mod userns;
+pub(crate) use userns::run_in_userns;
 
 /// Result of a successful [`fork`].
 enum Fork {
@@ -130,8 +131,9 @@ pub(crate) fn start_fake_container() -> FakeContainer {
             drop(write_fd);
 
             // Wait for child to signal readiness by closing its write end
-            // Transfer ownership from OwnedFd to File
-            let mut read_file = std::fs::File::from(read_fd);
+            let raw_fd = rustix::fd::IntoRawFd::into_raw_fd(read_fd);
+            let mut read_file =
+                unsafe { <std::fs::File as std::os::fd::FromRawFd>::from_raw_fd(raw_fd) };
             let mut buf = [0u8; 1];
 
             // This blocks until child closes write_fd (returns 0 bytes = EOF)
@@ -233,7 +235,7 @@ fn fake_container_process_with_sync(sync_fd: OwnedFd, temp_dir: &std::path::Path
     }
 
     // Chroot to temp directory
-    if let Err(e) = rustix::process::chroot(temp_dir) {
+    if let Err(e) = rustix::process::chroot(temp_dir.as_os_str().as_encoded_bytes()) {
         eprintln!("Failed to chroot: {}", e);
         exit(1);
     }

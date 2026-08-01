@@ -1,15 +1,12 @@
-#![cfg_attr(not(any(test, feature = "std")), no_std)]
+#![cfg_attr(not(test), no_std)]
 
 extern crate alloc;
 
-#[cfg(any(test, feature = "std"))]
+#[cfg(test)]
 extern crate std;
 
 pub(crate) mod container_pid;
 pub(crate) use container_pid::lookup_container_type;
-
-#[cfg(any(test, feature = "std"))]
-pub mod test_utils;
 
 mod attach;
 mod capabilities;
