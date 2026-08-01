@@ -5,9 +5,11 @@
 //! file access does not go through libc. They intentionally only cover what
 //! callers use; grow them only when a caller needs it.
 
+use alloc::string::String;
+use alloc::vec::Vec;
+use rustix::fd::{AsFd, OwnedFd};
 use rustix::fs::{Mode, OFlags};
 use rustix::io::Errno;
-use std::os::unix::io::{AsFd, OwnedFd};
 use typed_path::{UnixPath, UnixPathBuf};
 
 fn open(path: &UnixPath, flags: OFlags, mode: Mode) -> Result<OwnedFd, Errno> {

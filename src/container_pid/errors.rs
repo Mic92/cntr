@@ -1,3 +1,4 @@
+use alloc::string::String;
 use rustix::io::Errno;
 use thiserror::Error;
 use typed_path::UnixPathBuf;
@@ -37,7 +38,7 @@ pub enum Error {
         runtime: &'static str,
         container: String,
         #[source]
-        source: std::num::ParseIntError,
+        source: core::num::ParseIntError,
     },
     /// The container exists but is not running.
     #[error("container '{0}' is not running")]
@@ -54,7 +55,7 @@ pub enum Error {
     },
     /// The given container ID is not a valid process ID.
     #[error("'{0}' is not a valid PID (process ID)")]
-    InvalidProcessId(String, #[source] std::num::ParseIntError),
+    InvalidProcessId(String, #[source] core::num::ParseIntError),
     /// No process with the given PID exists.
     #[error("no process with PID {0} found")]
     NoSuchProcess(RawPid),

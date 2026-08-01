@@ -1,5 +1,10 @@
 use crate::errors::format_chain;
 use crate::passwd::{self, User};
+use alloc::boxed::Box;
+use alloc::format;
+use alloc::string::{String, ToString};
+use alloc::vec;
+use alloc::vec::Vec;
 
 use crate::{ApparmorMode, AttachOptions, attach, exec};
 
@@ -118,7 +123,7 @@ fn print_help() {
 }
 
 /// Parse attach command arguments
-fn parse_attach_args<I>(mut args: I) -> Result<std::process::ExitCode, Box<dyn std::error::Error>>
+fn parse_attach_args<I>(mut args: I) -> Result<u8, Box<dyn core::error::Error>>
 where
     I: Iterator<Item = String>,
 {
@@ -138,11 +143,11 @@ where
         match arg.as_str() {
             "-h" | "--help" => {
                 print_attach_help();
-                return Ok(std::process::ExitCode::SUCCESS);
+                return Ok(EXIT_SUCCESS);
             }
             "-V" | "--version" => {
                 crate::stderrln!("cntr {}", VERSION);
-                return Ok(std::process::ExitCode::SUCCESS);
+                return Ok(EXIT_SUCCESS);
             }
             "-t" | "--type" => {
                 let types_str = args.next().ok_or("--type requires an argument")?;
@@ -214,11 +219,11 @@ where
             format_chain(&e)
         )
     })?;
-    Ok(std::process::ExitCode::SUCCESS)
+    Ok(EXIT_SUCCESS)
 }
 
 /// Parse exec command arguments
-fn parse_exec_args<I>(mut args: I) -> Result<std::process::ExitCode, Box<dyn std::error::Error>>
+fn parse_exec_args<I>(mut args: I) -> Result<u8, Box<dyn core::error::Error>>
 where
     I: Iterator<Item = String>,
 {
@@ -237,11 +242,11 @@ where
         match arg.as_str() {
             "-h" | "--help" => {
                 print_exec_help();
-                return Ok(std::process::ExitCode::SUCCESS);
+                return Ok(EXIT_SUCCESS);
             }
             "-V" | "--version" => {
                 crate::stderrln!("cntr {}", VERSION);
-                return Ok(std::process::ExitCode::SUCCESS);
+                return Ok(EXIT_SUCCESS);
             }
             "-t" | "--type" => {
                 let types_str = args.next().ok_or("--type requires an argument")?;
@@ -297,7 +302,7 @@ where
         )
     })?;
 
-    Ok(std::process::ExitCode::SUCCESS)
+    Ok(EXIT_SUCCESS)
 }
 
 /// Enable dumpable mode if CNTR_ALLOW_SETCAP=1 is set.
@@ -318,29 +323,20 @@ fn maybe_set_dumpable() {
     }
 }
 
-pub fn run_with_args<I, T>(args: I) -> Result<std::process::ExitCode, Box<dyn std::error::Error>>
-where
-    I: IntoIterator<Item = T>,
-    T: Into<std::ffi::OsString> + Clone,
-{
-    crate::env::init();
+/// Successful process exit code returned by `run_with_args`.
+pub const EXIT_SUCCESS: u8 = 0;
+
+/// Run the cntr CLI. `args` are the command-line arguments (including the
+/// program name), `environ` the raw environment as key/value byte pairs.
+pub fn run_with_args(
+    args: Vec<String>,
+    environ: Vec<(Vec<u8>, Vec<u8>)>,
+) -> Result<u8, Box<dyn core::error::Error>> {
+    crate::env::init(environ);
     crate::logging::init();
 
     // Must be called early, before any /proc/self access
     maybe_set_dumpable();
-
-    let args: Vec<String> = args
-        .into_iter()
-        .map(|s| {
-            let os_string: std::ffi::OsString = s.into();
-            os_string.into_string().map_err(|invalid| {
-                format!(
-                    "argument contains invalid UTF-8: {}",
-                    invalid.to_string_lossy()
-                )
-            })
-        })
-        .collect::<Result<Vec<_>, _>>()?;
 
     let mut args_iter = args.into_iter();
 
@@ -360,11 +356,11 @@ where
         "exec" => parse_exec_args(args_iter),
         "help" | "-h" | "--help" => {
             print_help();
-            Ok(std::process::ExitCode::SUCCESS)
+            Ok(EXIT_SUCCESS)
         }
         "version" | "-V" | "--version" => {
             crate::stderrln!("cntr {}", VERSION);
-            Ok(std::process::ExitCode::SUCCESS)
+            Ok(EXIT_SUCCESS)
         }
         _ => Err(format!("unknown subcommand: {}", subcommand).into()),
     }

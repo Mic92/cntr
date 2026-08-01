@@ -1,12 +1,14 @@
+use alloc::vec;
+use alloc::vec::Vec;
+use core::mem::MaybeUninit;
 use rustix::cmsg_space;
+use rustix::fd::{AsFd, BorrowedFd, OwnedFd};
 use rustix::io::Errno;
+use rustix::io::{IoSlice, IoSliceMut};
 use rustix::net::{
     AddressFamily, RecvAncillaryBuffer, RecvAncillaryMessage, RecvFlags, SendAncillaryBuffer,
     SendAncillaryMessage, SendFlags, SocketFlags, SocketType, recvmsg, sendmsg, socketpair,
 };
-use std::io::{IoSlice, IoSliceMut};
-use std::mem::MaybeUninit;
-use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
 use thiserror::Error;
 
 #[derive(Debug, Error)]

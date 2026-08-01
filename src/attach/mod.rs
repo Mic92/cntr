@@ -10,6 +10,9 @@ use crate::passwd::User;
 use crate::pty::PtyError;
 use crate::syscalls::capability;
 use crate::syscalls::process::{Fork, fork};
+use alloc::boxed::Box;
+use alloc::string::String;
+use alloc::vec::Vec;
 use idmap_helper::IdmapError;
 use rustix::io::Errno;
 use rustix::process::{getgid, getuid};
@@ -95,7 +98,7 @@ pub(crate) struct AttachOptions {
     pub(crate) apparmor_mode: ApparmorMode,
 }
 
-pub(crate) fn attach(opts: &AttachOptions) -> Result<std::convert::Infallible, AttachError> {
+pub(crate) fn attach(opts: &AttachOptions) -> Result<core::convert::Infallible, AttachError> {
     // Verify mount API capability - REQUIRED (no FUSE fallback)
     if !capability::has_mount_api() {
         return Err(AttachError::MountApiUnavailable);

@@ -7,9 +7,9 @@
 //! 2. Syscall numbers may vary by architecture
 //! 3. SELinux/seccomp policies may block syscalls
 
+use core::sync::atomic::{AtomicU8, Ordering};
 use rustix::io::Errno;
 use rustix::mount::{FsOpenFlags, fsopen};
-use std::sync::atomic::{AtomicU8, Ordering};
 
 // 0 = not probed yet, 1 = unavailable, 2 = available
 static MOUNT_API_AVAILABLE: AtomicU8 = AtomicU8::new(0);

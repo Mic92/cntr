@@ -1,3 +1,7 @@
+use alloc::borrow::ToOwned;
+use alloc::format;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 use rustix::io::Errno;
 use rustix::process::Pid;
 use thiserror::Error;

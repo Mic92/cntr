@@ -1,3 +1,4 @@
+use alloc::string::ToString;
 use rustix::io::Errno;
 
 use crate::container_pid::Container;

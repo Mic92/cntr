@@ -1,3 +1,5 @@
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 use rustix::io::Errno;
 use rustix::process::{Gid, Pid, Uid};
 use thiserror::Error;
@@ -21,7 +23,7 @@ pub(crate) enum ProcfsError {
         path: UnixPathBuf,
         value: String,
         #[source]
-        source: std::num::ParseIntError,
+        source: core::num::ParseIntError,
     },
     #[error(
         "integer overflow computing inner ID in {}: {inner_start} + {offset} would overflow",

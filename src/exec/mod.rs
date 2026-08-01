@@ -1,7 +1,11 @@
 
+
 use crate::syscalls::process::{Fork, exit_group, fork};
 use rustix::io::Errno;
-use std::os::fd::OwnedFd;
+use alloc::boxed::Box;
+use alloc::string::String;
+use alloc::vec::Vec;
+use rustix::fd::OwnedFd;
 use thiserror::Error;
 
 use crate::ApparmorMode;
@@ -45,7 +49,7 @@ pub(crate) struct ExecOptions {
 /// Execute a command in a container
 ///
 /// Directly accesses container by ID/name with PTY.
-pub(crate) fn exec(opts: &ExecOptions) -> Result<std::convert::Infallible, ExecError> {
+pub(crate) fn exec(opts: &ExecOptions) -> Result<core::convert::Infallible, ExecError> {
     // Verify mount API capability
     if !capability::has_mount_api() {
         return Err(ExecError::MountApiUnavailable);
@@ -93,7 +97,7 @@ fn exec_child(
     exe: Option<String>,
     args: Vec<String>,
     pty_master: &OwnedFd,
-) -> Result<std::convert::Infallible, ExecError> {
+) -> Result<core::convert::Infallible, ExecError> {
     // Attach PTY slave
     pty::attach_pts(pty_master)?;
 

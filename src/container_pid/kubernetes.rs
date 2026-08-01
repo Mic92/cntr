@@ -11,10 +11,13 @@ use crate::container_pid::Container;
 use crate::container_pid::Error;
 use crate::container_pid::RawPid;
 use crate::container_pid::cmd;
+use alloc::format;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 
 use crate::fsutil;
-use std::str::FromStr;
-use std::str::from_utf8;
+use core::str::FromStr;
+use core::str::from_utf8;
 use typed_path::{UnixPath, UnixPathBuf};
 
 #[derive(Clone, Debug)]

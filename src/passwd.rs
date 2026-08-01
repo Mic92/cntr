@@ -6,6 +6,8 @@
 //!    systemd-userdb, resolved in a separate process)
 //! 3. a numeric `uid[:gid]` spec as an escape hatch
 
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 use rustix::io::Errno;
 use rustix::process::{Gid, Uid};
 use thiserror::Error;
@@ -18,14 +20,14 @@ pub(crate) enum PasswdError {
     #[error("failed to read /etc/passwd")]
     ReadPasswd(#[source] Errno),
     #[error("getent returned invalid UTF-8")]
-    GetentUtf8(#[source] std::string::FromUtf8Error),
+    GetentUtf8(#[source] alloc::string::FromUtf8Error),
     #[error("invalid {field} '{value}' in passwd entry for {user}")]
     InvalidId {
         field: &'static str,
         value: String,
         user: String,
         #[source]
-        source: std::num::ParseIntError,
+        source: core::num::ParseIntError,
     },
     #[error("invalid uid/gid (-1) in passwd entry for {user}")]
     NegativeId { user: String },

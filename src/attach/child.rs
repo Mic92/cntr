@@ -1,4 +1,9 @@
+use alloc::borrow::ToOwned;
+use alloc::format;
+use alloc::string::String;
+use alloc::vec::Vec;
 use log::{debug, warn};
+use rustix::fd::{AsFd, BorrowedFd, OwnedFd};
 use rustix::fs::{AtFlags, CWD, Dir, FileType, statat};
 use rustix::io::Errno;
 use rustix::mount::{
@@ -7,7 +12,6 @@ use rustix::mount::{
 };
 use rustix::process::{Pid, chdir, getpid};
 use rustix::thread::{UnshareFlags, unshare_unsafe};
-use std::os::unix::io::{AsFd, BorrowedFd, OwnedFd};
 use typed_path::{UnixPath, UnixPathBuf};
 
 use crate::attach::AttachError;
@@ -241,7 +245,7 @@ fn capture_and_attach_container_trees(
 /// 8. Execute the command
 ///
 /// This function never returns on success - it replaces the current process.
-pub(crate) fn run(options: &mut ChildOptions) -> Result<std::convert::Infallible, AttachError> {
+pub(crate) fn run(options: &mut ChildOptions) -> Result<core::convert::Infallible, AttachError> {
     // Step 1: Move to container's cgroup
     cgroup::move_to(getpid(), options.process_status.global_pid)?;
 
@@ -331,7 +335,7 @@ pub(crate) fn run(options: &mut ChildOptions) -> Result<std::convert::Infallible
         base_dir.as_bytes(),
         "tmpfs",
         MountFlags::empty(),
-        None::<&std::ffi::CStr>,
+        None::<&core::ffi::CStr>,
     )
     .map_err(|source| AttachError::MountTmpfs {
         path: base_dir.clone(),

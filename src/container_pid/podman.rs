@@ -3,6 +3,7 @@ use crate::container_pid::Error;
 use crate::container_pid::RawPid;
 use crate::container_pid::cmd;
 use crate::container_pid::docker::parse_docker_output;
+use alloc::vec;
 
 #[derive(Clone, Debug)]
 pub(crate) struct Podman {}

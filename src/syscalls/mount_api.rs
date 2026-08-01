@@ -7,7 +7,7 @@
 //! from the syscalls crate.
 
 use linux_raw_sys::general::{AT_EMPTY_PATH, AT_RECURSIVE, MOUNT_ATTR_IDMAP, mount_attr};
-use std::os::unix::io::{AsRawFd, BorrowedFd};
+use rustix::fd::{AsRawFd, BorrowedFd};
 use syscalls::{Sysno, syscall};
 
 /// Turn a detached mount tree (from open_tree()) into an idmapped mount.

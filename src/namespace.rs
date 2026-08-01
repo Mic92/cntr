@@ -1,8 +1,9 @@
+use alloc::string::{String, ToString};
 use hashbrown::HashSet;
+use rustix::fd::{AsFd, OwnedFd};
 use rustix::io::Errno;
 use rustix::process::Pid;
 use rustix::thread::{LinkNameSpaceType, move_into_link_name_space};
-use std::os::unix::prelude::*;
 use thiserror::Error;
 use typed_path::UnixPathBuf;
 

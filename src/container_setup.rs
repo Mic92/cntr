@@ -3,6 +3,7 @@
 //! This module provides common functionality for entering container namespaces
 //! and setting up security context (LSM, cgroups, capabilities).
 
+use alloc::vec::Vec;
 use rustix::io::Errno;
 use rustix::process::{Pid, getpid};
 use rustix::thread::{set_thread_gid, set_thread_groups, set_thread_uid};

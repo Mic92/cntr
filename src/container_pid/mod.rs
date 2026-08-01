@@ -1,5 +1,9 @@
+use alloc::boxed::Box;
+use alloc::string::{String, ToString};
+use alloc::vec;
+use alloc::vec::Vec;
+use core::fmt::Debug;
 use core::fmt::Write;
-use std::fmt::Debug;
 
 /// A raw process ID as used by the kernel.
 pub type RawPid = i32;

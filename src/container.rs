@@ -5,6 +5,8 @@
 
 use crate::ApparmorMode;
 use crate::procfs::{self, ProcfsError};
+use alloc::boxed::Box;
+use alloc::string::{String, ToString};
 use rustix::process::Pid;
 use thiserror::Error;
 

@@ -9,6 +9,10 @@ categories = ["development-tools::debugging", "os::unix-apis"]
 repository = "https://github.com/Mic92/cntr"
 license = "MIT"
 
+[features]
+default = []
+std = []
+
 [dependencies]
 log = "0.4.30"
 thiserror = "2"
@@ -34,3 +38,7 @@ hashbrown = { version = "0.17.1", default-features = false, features = ["default
 [[bin]]
 name = "cntr"
 path = "src/bin/main.rs"
+
+[dev-dependencies]
+# Enable the std feature (test_utils) when building the test crates.
+cntr = { path = ".", features = ["std"] }

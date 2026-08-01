@@ -1,5 +1,6 @@
 //! Helpers for reporting errors to the user.
 
+use alloc::string::{String, ToString};
 use core::error::Error;
 use core::fmt::Write;
 

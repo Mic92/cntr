@@ -2,6 +2,7 @@ use crate::container_pid::Container;
 use crate::container_pid::Error;
 use crate::container_pid::RawPid;
 use crate::container_pid::cmd;
+use alloc::string::{String, ToString};
 
 #[derive(Clone, Debug)]
 pub(crate) struct Lxc {}

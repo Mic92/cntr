@@ -3,6 +3,7 @@
 //! Keeps all terminal output in one place so that neither the `log` macros
 //! nor error reporting need std's stdio machinery.
 
+use alloc::string::ToString;
 use log::{LevelFilter, Log, Metadata, Record};
 
 /// Write a formatted line to stderr, ignoring errors (like eprintln!).

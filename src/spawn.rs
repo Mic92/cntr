@@ -5,17 +5,21 @@
 //! cntr has: capturing the output of a helper CLI (`run`) and replacing the
 //! current process with the container command (`exec`).
 
+use alloc::ffi::CString;
+use alloc::format;
+use alloc::string::String;
+use alloc::vec;
+use alloc::vec::Vec;
+use core::convert::Infallible;
 use hashbrown::HashMap;
 use rustix::event::{PollFd, PollFlags, poll};
+use rustix::fd::OwnedFd;
 use rustix::fs::{Access, Mode, OFlags, access, fcntl_setfl, open};
 use rustix::io::Errno;
 use rustix::pipe::pipe;
 use rustix::process::{WaitOptions, WaitStatus, waitpid};
 use rustix::runtime::{Fork, execve, exit_group, kernel_fork};
 use rustix::stdio::{dup2_stderr, dup2_stdin, dup2_stdout};
-use std::convert::Infallible;
-use std::ffi::CString;
-use std::os::fd::OwnedFd;
 use typed_path::UnixPath;
 
 use crate::container_pid::cmd::which;
@@ -60,7 +64,7 @@ impl ExecArgs {
     fn exec(&self) -> Errno {
         let null_terminated = |strings: &[CString]| -> Vec<*const u8> {
             let mut ptrs: Vec<*const u8> = strings.iter().map(|s| s.as_ptr().cast()).collect();
-            ptrs.push(std::ptr::null());
+            ptrs.push(core::ptr::null());
             ptrs
         };
         let argv = null_terminated(&self.argv);
@@ -73,7 +77,7 @@ impl ExecArgs {
 fn resolve_program(program: &str, path_var: Option<&Vec<u8>>) -> Result<CString, Errno> {
     // No let-chain here to stay compatible with Rust < 1.88 (Debian).
     if !program.contains('/') {
-        if let Some(paths) = path_var.and_then(|p| std::str::from_utf8(p).ok()) {
+        if let Some(paths) = path_var.and_then(|p| core::str::from_utf8(p).ok()) {
             for dir in env::split_paths(paths) {
                 let candidate = UnixPath::new(dir).join(program);
                 if access(candidate.as_bytes(), Access::EXEC_OK).is_ok() {

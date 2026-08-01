@@ -1,5 +1,9 @@
+use alloc::format;
+use alloc::string::String;
+use alloc::vec::Vec;
 use log::warn;
 use rustix::event::{PollFd, PollFlags, Timespec, poll};
+use rustix::fd::{AsFd, BorrowedFd, OwnedFd};
 use rustix::fs::{Mode, OFlags, open};
 use rustix::io::{Errno, dup};
 use rustix::process::{
@@ -12,7 +16,6 @@ use rustix::termios::{
     ControlModes, InputModes, LocalModes, OptionalActions, OutputModes, SpecialCodeIndex, Termios,
     Winsize, isatty, tcgetattr, tcgetwinsize, tcsetattr, tcsetwinsize,
 };
-use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -264,7 +267,7 @@ pub(crate) fn forward<T: AsFd>(pty: &T) -> Result<(), PtyError> {
 pub(crate) fn forward_pty_and_wait<T: AsFd>(
     pty: &T,
     child_pid: Pid,
-) -> Result<std::convert::Infallible, PtyError> {
+) -> Result<core::convert::Infallible, PtyError> {
     // Forward PTY I/O between stdin/stdout and the PTY
     // This will block until child exits or PTY closes
     let _ = forward(pty);
