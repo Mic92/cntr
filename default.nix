@@ -25,7 +25,7 @@ let
     cargoLock = {
       lockFile = ./Cargo.lock;
       outputHashes = {
-        "rustix-1.1.4" = "sha256-OTCU9ZVzcQ3pHVeQgsUTA5BOYD4/LxISn5YFfw0ciQI=";
+        "rustix-1.1.4" = "sha256-wmGRtJhfEgRz8vz2rhy1hQdqjA6ypULrsAeeujtv/U4=";
       };
     };
 
