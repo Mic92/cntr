@@ -1,20 +1,13 @@
-use std::env;
-use std::ffi::OsString;
 use std::io::ErrorKind;
-use std::path::PathBuf;
 
 use crate::container_pid::Container;
 use crate::container_pid::Error;
 use crate::container_pid::RawPid;
 use crate::fsutil;
+use crate::procfs::get_path;
 
 #[derive(Clone, Debug)]
 pub(crate) struct ProcessId {}
-
-/// TODO make this configureable?
-fn get_path() -> PathBuf {
-    PathBuf::from(&env::var_os("CNTR_PROC").unwrap_or_else(|| OsString::from("/proc")))
-}
 
 impl Container for ProcessId {
     fn lookup(&self, container_id: &str) -> Result<RawPid, Error> {

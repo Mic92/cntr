@@ -11,7 +11,6 @@ use crate::container_pid::Container;
 use crate::container_pid::Error;
 use crate::container_pid::RawPid;
 use crate::container_pid::cmd;
-use rustix::fs::FileType;
 use std::ffi::OsString;
 
 use crate::fsutil;
@@ -157,13 +156,9 @@ fn visit_dirs(dir: &Path, containerdid: &OsString) -> Option<PathBuf> {
         if &name == containerdid {
             return Some(path);
         }
-        let is_dir = fsutil::metadata(&path)
-            .map(|stat| FileType::from_raw_mode(stat.st_mode) == FileType::Directory)
-            .unwrap_or(false);
-        if is_dir {
-            if let Some(path) = visit_dirs(&path, containerdid) {
-                return Some(path);
-            }
+        // read_dir_names() fails fast on non-directories, so no stat is needed
+        if let Some(path) = visit_dirs(&path, containerdid) {
+            return Some(path);
         }
     }
     None

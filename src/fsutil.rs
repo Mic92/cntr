@@ -106,9 +106,8 @@ pub(crate) fn read_dir_names<P: AsRef<Path>>(path: P) -> io::Result<Vec<OsString
         OFlags::RDONLY | OFlags::DIRECTORY,
         Mode::empty(),
     )?;
-    let mut dir = rustix::fs::Dir::read_from(fd.as_fd())?;
+    let dir = rustix::fs::Dir::read_from(fd.as_fd())?;
     let mut names = Vec::new();
-    dir.rewind();
     for entry in dir {
         let entry = entry?;
         let name = entry.file_name().to_bytes();

@@ -1,4 +1,3 @@
-use std::fmt::Write;
 use std::path::PathBuf;
 use thiserror::Error;
 
@@ -62,15 +61,4 @@ pub enum Error {
     /// None of the tried container runtimes could resolve the container.
     #[error("failed to find container '{container}' - tried the following runtimes:{tried}")]
     NoRuntimeMatched { container: String, tried: String },
-}
-
-/// Format an error together with its full source chain.
-pub(crate) fn format_chain(err: &dyn std::error::Error) -> String {
-    let mut msg = err.to_string();
-    let mut source = err.source();
-    while let Some(cause) = source {
-        let _ = write!(msg, ": {}", cause);
-        source = cause.source();
-    }
-    msg
 }

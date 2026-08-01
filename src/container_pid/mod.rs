@@ -74,7 +74,7 @@ pub fn lookup_container_pid(
         match t.lookup(container_id) {
             Ok(pid) => return Ok(pid),
             Err(e) => {
-                let _ = write!(tried, "\n  - {:?}: {}", t, errors::format_chain(&e));
+                let _ = write!(tried, "\n  - {:?}: {}", t, crate::errors::format_chain(&e));
             }
         };
     }
