@@ -2,10 +2,8 @@ use log::warn;
 use rustix::process::{Pid, chdir, chroot};
 use std::collections::HashMap;
 use std::convert::Infallible;
-use std::ffi::{OsStr, OsString};
-use std::os::unix::ffi::OsStringExt;
-use std::path::{Path, PathBuf};
 use thiserror::Error;
+use typed_path::{UnixPath, UnixPathBuf};
 
 use crate::env;
 use crate::fsutil;
@@ -14,9 +12,9 @@ use crate::spawn;
 
 #[derive(Debug, Error)]
 pub(crate) enum CmdError {
-    #[error("failed to read environment file {path}")]
+    #[error("failed to read environment file {}", path.display())]
     OpenEnviron {
-        path: PathBuf,
+        path: UnixPathBuf,
         #[source]
         source: std::io::Error,
     },
@@ -35,27 +33,24 @@ pub(crate) enum CmdError {
 }
 
 pub(crate) struct Cmd {
-    environment: HashMap<OsString, OsString>,
+    environment: HashMap<Vec<u8>, Vec<u8>>,
     command: String,
     arguments: Vec<String>,
-    home: Option<PathBuf>,
-    container_root: PathBuf,
+    home: Option<UnixPathBuf>,
+    container_root: UnixPathBuf,
 }
 
-fn read_environment(pid: Pid) -> Result<HashMap<OsString, OsString>, CmdError> {
+fn read_environment(pid: Pid) -> Result<HashMap<Vec<u8>, Vec<u8>>, CmdError> {
     let path = procfs::get_path().join(pid.to_string()).join("environ");
     let contents = fsutil::read(&path).map_err(|source| CmdError::OpenEnviron { path, source })?;
-    let res: HashMap<OsString, OsString> = contents
+    let res: HashMap<Vec<u8>, Vec<u8>> = contents
         .split(|b| *b == b'\0')
         .filter_map(|var| {
             let tuple: Vec<&[u8]> = var.splitn(2, |b| *b == b'=').collect();
             if tuple.len() != 2 {
                 return None;
             }
-            Some((
-                OsString::from_vec(Vec::from(tuple[0])),
-                OsString::from_vec(Vec::from(tuple[1])),
-            ))
+            Some((Vec::from(tuple[0]), Vec::from(tuple[1])))
         })
         .collect();
     Ok(res)
@@ -65,7 +60,7 @@ fn read_environment(pid: Pid) -> Result<HashMap<OsString, OsString>, CmdError> {
 ///
 /// Attempts to extract PATH from /etc/environment under the container root.
 /// Returns None if the file cannot be read or PATH is not found.
-fn read_container_path(container_root: &Path) -> Option<OsString> {
+fn read_container_path(container_root: &UnixPath) -> Option<Vec<u8>> {
     let etc_environment = container_root.join("etc/environment");
     let contents = fsutil::read_to_string(&etc_environment).ok()?;
 
@@ -75,7 +70,7 @@ fn read_container_path(container_root: &Path) -> Option<OsString> {
         if let Some(path_value) = trimmed.strip_prefix("PATH=") {
             let path_value = path_value.trim_matches('"').trim_matches('\'');
             if !path_value.is_empty() {
-                return Some(OsString::from(path_value));
+                return Some(path_value.as_bytes().to_vec());
             }
         }
     }
@@ -88,7 +83,7 @@ impl Cmd {
         command: Option<String>,
         args: Vec<String>,
         pid: Pid,
-        home: Option<PathBuf>,
+        home: Option<UnixPathBuf>,
     ) -> Result<Cmd, CmdError> {
         let arguments = if command.is_none() {
             vec![String::from("-l")]
@@ -96,8 +91,7 @@ impl Cmd {
             args
         };
 
-        let command =
-            command.unwrap_or_else(|| env::var("SHELL").unwrap_or("sh").to_string());
+        let command = command.unwrap_or_else(|| env::var("SHELL").unwrap_or("sh").to_string());
 
         let variables = read_environment(pid)?;
 
@@ -127,17 +121,16 @@ impl Cmd {
     /// This function never returns on success - it replaces the current process.
     pub(crate) fn exec_in_overlay(mut self) -> Result<Infallible, CmdError> {
         // Set PATH if not already set (use cntr's PATH or default)
-        let default_path =
-            OsString::from("/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin");
+        let default_path = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
         self.environment.insert(
-            OsString::from("PATH"),
-            env::var("PATH").map(OsString::from).unwrap_or(default_path),
+            b"PATH".to_vec(),
+            env::var("PATH").unwrap_or(default_path).into(),
         );
 
         // Set HOME if effective user was specified
         if let Some(home_path) = self.home {
             self.environment
-                .insert(OsString::from("HOME"), home_path.into_os_string());
+                .insert(b"HOME".to_vec(), home_path.into_vec());
         }
 
         // Execute without chroot - we're already in the overlay
@@ -157,15 +150,15 @@ impl Cmd {
     /// This function never returns on success - it replaces the current process.
     pub(crate) fn exec_in_container(
         mut self,
-        lsm_profile: Option<(PathBuf, String)>,
+        lsm_profile: Option<(UnixPathBuf, String)>,
     ) -> Result<Infallible, CmdError> {
         // Set PATH only if not already present in container environment
         // Avoid using host's PATH which may point to binaries not present after chroot
-        if !self.environment.contains_key(OsStr::new("PATH")) {
+        if !self.environment.contains_key(b"PATH".as_slice()) {
             let default_path =
-                OsString::from("/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin");
+                b"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin".to_vec();
             let path = read_container_path(&self.container_root).unwrap_or(default_path);
-            self.environment.insert(OsString::from("PATH"), path);
+            self.environment.insert(b"PATH".to_vec(), path);
         }
 
         // Chroot to container's root and exec. We are already the process
@@ -173,7 +166,7 @@ impl Cmd {
         // container_root was already resolved in new() before entering namespaces
         let container_root = self.container_root;
         let err = (|| -> std::io::Error {
-            if let Err(e) = chroot(&container_root) {
+            if let Err(e) = chroot(container_root.as_bytes()) {
                 warn!("failed to chroot to {}: {}", container_root.display(), e);
                 return e.into();
             }

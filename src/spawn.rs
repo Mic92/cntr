@@ -14,10 +14,10 @@ use rustix::runtime::{Fork, execve, exit_group, kernel_fork};
 use rustix::stdio::{dup2_stderr, dup2_stdin, dup2_stdout};
 use std::collections::HashMap;
 use std::convert::Infallible;
-use std::ffi::{CString, OsStr, OsString};
+use std::ffi::CString;
 use std::io;
 use std::os::fd::OwnedFd;
-use std::os::unix::ffi::OsStrExt;
+use typed_path::UnixPath;
 
 use crate::container_pid::cmd::which;
 use crate::env;
@@ -44,8 +44,8 @@ impl Output {
     }
 }
 
-fn cstring(s: &OsStr) -> io::Result<CString> {
-    CString::new(s.as_bytes()).map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))
+fn cstring<S: AsRef<[u8]>>(s: S) -> io::Result<CString> {
+    CString::new(s.as_ref()).map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))
 }
 
 /// Argv/envp marshalled into CStrings, so that no allocation is needed
@@ -71,14 +71,14 @@ impl ExecArgs {
 }
 
 /// Look up `program` in the given PATH value unless it already contains a slash.
-fn resolve_program(program: &OsStr, path_var: Option<&OsString>) -> io::Result<CString> {
+fn resolve_program(program: &str, path_var: Option<&Vec<u8>>) -> io::Result<CString> {
     // No let-chain here to stay compatible with Rust < 1.88 (Debian).
-    if !program.as_bytes().contains(&b'/') {
-        if let Some(paths) = path_var.and_then(|p| p.to_str()) {
+    if !program.contains('/') {
+        if let Some(paths) = path_var.and_then(|p| std::str::from_utf8(p).ok()) {
             for dir in env::split_paths(paths) {
-                let candidate = std::path::Path::new(dir).join(program);
-                if access(&candidate, Access::EXEC_OK).is_ok() {
-                    return cstring(candidate.as_os_str());
+                let candidate = UnixPath::new(dir).join(program);
+                if access(candidate.as_bytes(), Access::EXEC_OK).is_ok() {
+                    return cstring(candidate.as_bytes());
                 }
             }
         }
@@ -93,22 +93,21 @@ fn resolve_program(program: &OsStr, path_var: Option<&OsString>) -> io::Result<C
 pub(crate) fn exec(
     program: &str,
     args: &[String],
-    env: &HashMap<OsString, OsString>,
+    env: &HashMap<Vec<u8>, Vec<u8>>,
 ) -> Result<Infallible, io::Error> {
-    let program = OsStr::new(program);
     let mut argv = vec![cstring(program)?];
     for arg in args {
-        argv.push(cstring(OsStr::new(arg))?);
+        argv.push(cstring(arg)?);
     }
     let mut envp = Vec::with_capacity(env.len());
     for (key, value) in env {
         let mut entry = key.clone();
-        entry.push("=");
-        entry.push(value);
-        envp.push(cstring(&entry)?);
+        entry.push(b'=');
+        entry.extend_from_slice(value);
+        envp.push(cstring(entry)?);
     }
     let exec_args = ExecArgs {
-        path: resolve_program(program, env.get(OsStr::new("PATH")))?,
+        path: resolve_program(program, env.get(b"PATH".as_slice()))?,
         argv,
         envp,
     };
@@ -121,9 +120,9 @@ pub(crate) fn run(program: &str, args: &[&str]) -> io::Result<Output> {
     let Some(path) = which(program) else {
         return Err(io::Error::from(io::ErrorKind::NotFound));
     };
-    let mut argv = vec![cstring(OsStr::new(program))?];
+    let mut argv = vec![cstring(program)?];
     for arg in args {
-        argv.push(cstring(OsStr::new(arg))?);
+        argv.push(cstring(arg)?);
     }
     let envp = env::vars()
         .iter()
@@ -131,11 +130,11 @@ pub(crate) fn run(program: &str, args: &[&str]) -> io::Result<Output> {
             let mut entry = key.clone();
             entry.push(b'=');
             entry.extend_from_slice(value);
-            CString::new(entry).map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))
+            cstring(entry)
         })
         .collect::<io::Result<Vec<CString>>>()?;
     let exec_args = ExecArgs {
-        path: cstring(path.as_os_str())?,
+        path: cstring(path.as_bytes())?,
         argv,
         envp,
     };

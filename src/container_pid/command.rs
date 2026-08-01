@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use typed_path::{UnixPath, UnixPathBuf};
 
 use crate::fsutil;
 
@@ -13,14 +13,14 @@ impl Container for Command {
     fn lookup(&self, container_id: &str) -> Result<RawPid, Error> {
         let needle = container_id.as_bytes();
         let names = fsutil::read_dir_names("/proc").map_err(|source| Error::Io {
-            path: PathBuf::from("/proc"),
+            path: UnixPathBuf::from("/proc"),
             source,
         })?;
         let own_pid = std::process::id() as RawPid;
 
         for name in names {
-            let cmdline = Path::new("/proc").join(&name).join("cmdline");
-            let pid = match name.to_string_lossy().parse::<RawPid>() {
+            let cmdline = UnixPath::new("/proc").join(&name).join("cmdline");
+            let pid = match String::from_utf8_lossy(&name).parse::<RawPid>() {
                 Ok(pid) => pid,
                 _ => {
                     continue;

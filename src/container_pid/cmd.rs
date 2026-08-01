@@ -1,5 +1,5 @@
 use rustix::fs::{Access, access};
-use std::path::{Path, PathBuf};
+use typed_path::{UnixPath, UnixPathBuf};
 
 use crate::container_pid::Error;
 use crate::env;
@@ -23,13 +23,13 @@ pub(crate) fn output(program: &str, args: &[&str]) -> Result<Vec<u8>, Error> {
     Ok(output.stdout)
 }
 
-pub(crate) fn which<P>(exe_name: P) -> Option<PathBuf>
+pub(crate) fn which<P>(exe_name: P) -> Option<UnixPathBuf>
 where
-    P: AsRef<Path>,
+    P: AsRef<UnixPath>,
 {
     env::split_paths(env::var("PATH")?).find_map(|dir| {
-        let full_path = Path::new(dir).join(&exe_name);
-        if access(&full_path, Access::EXEC_OK).is_ok() {
+        let full_path = UnixPath::new(dir).join(&exe_name);
+        if access(full_path.as_bytes(), Access::EXEC_OK).is_ok() {
             Some(full_path)
         } else {
             None

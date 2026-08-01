@@ -11,12 +11,11 @@ use crate::container_pid::Container;
 use crate::container_pid::Error;
 use crate::container_pid::RawPid;
 use crate::container_pid::cmd;
-use std::ffi::OsString;
 
 use crate::fsutil;
-use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::str::from_utf8;
+use typed_path::{UnixPath, UnixPathBuf};
 
 #[derive(Clone, Debug)]
 pub(crate) struct Kubernetes {}
@@ -116,23 +115,22 @@ pub(crate) fn get_containerd_id(
     Ok(String::from(containerid))
 }
 
-pub(crate) fn find_cgroup(containerdid: String) -> Result<PathBuf, Error> {
-    let root = PathBuf::from("/sys/fs/cgroup");
-    let containerdid = OsString::from(containerdid);
+pub(crate) fn find_cgroup(containerdid: String) -> Result<UnixPathBuf, Error> {
+    let root = UnixPathBuf::from("/sys/fs/cgroup");
     match visit_dirs(&root, &containerdid) {
         Some(path) => Ok(path),
         None => Err(Error::ContainerNotFound {
-            container: containerdid.to_string_lossy().into_owned(),
+            container: containerdid,
             message: "cgroup not found in /sys/fs/cgroup".to_string(),
         }),
     }
 }
 
 /// Recursively search a directory tree for an entry with the given name.
-fn visit_dirs(dir: &Path, containerdid: &OsString) -> Option<PathBuf> {
+fn visit_dirs(dir: &UnixPath, containerdid: &str) -> Option<UnixPathBuf> {
     for name in fsutil::read_dir_names(dir).ok()? {
         let path = dir.join(&name);
-        if &name == containerdid {
+        if name == containerdid.as_bytes() {
             return Some(path);
         }
         // read_dir_names() fails fast on non-directories, so no stat is needed
@@ -144,7 +142,7 @@ fn visit_dirs(dir: &Path, containerdid: &OsString) -> Option<PathBuf> {
 }
 
 /// return any pid part of this cgroup
-pub(crate) fn get_cgroup_pid(cgroup: &Path) -> Result<RawPid, Error> {
+pub(crate) fn get_cgroup_pid(cgroup: &UnixPath) -> Result<RawPid, Error> {
     let path = cgroup.join("cgroup.procs");
     let bytes = fsutil::read(&path).map_err(|source| Error::Io {
         path: path.clone(),

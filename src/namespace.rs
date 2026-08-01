@@ -3,8 +3,8 @@ use rustix::process::Pid;
 use rustix::thread::{LinkNameSpaceType, move_into_link_name_space};
 use std::collections::HashSet;
 use std::os::unix::prelude::*;
-use std::path::PathBuf;
 use thiserror::Error;
+use typed_path::UnixPathBuf;
 
 use crate::fsutil;
 use crate::procfs;
@@ -13,9 +13,9 @@ use crate::procfs;
 pub(crate) enum NamespaceError {
     #[error("failed to read directory /proc/self/ns")]
     ListNamespaces(#[source] std::io::Error),
-    #[error("failed to open namespace file '{path}'")]
+    #[error("failed to open namespace file '{}'", path.display())]
     OpenNamespaceFile {
-        path: PathBuf,
+        path: UnixPathBuf,
         #[source]
         source: std::io::Error,
     },
@@ -43,7 +43,7 @@ pub(crate) fn supported_namespaces() -> Result<HashSet<String>, NamespaceError> 
     let mut namespaces = HashSet::new();
     let names = fsutil::read_dir_names("/proc/self/ns").map_err(NamespaceError::ListNamespaces)?;
     for name in names {
-        if let Ok(name) = name.into_string() {
+        if let Ok(name) = String::from_utf8(name) {
             namespaces.insert(name);
         }
     }
@@ -68,15 +68,15 @@ impl Kind {
             _ => false,
         }
     }
-    fn path(&self, pid: Pid) -> PathBuf {
+    fn path(&self, pid: Pid) -> UnixPathBuf {
         procfs::get_path()
             .join(pid.to_string())
             .join("ns")
             .join(self.name)
     }
 
-    fn own_path(&self) -> PathBuf {
-        PathBuf::from("/proc/self/ns").join(self.name)
+    fn own_path(&self) -> UnixPathBuf {
+        UnixPathBuf::from("/proc/self/ns").join(self.name)
     }
 }
 

@@ -1,7 +1,7 @@
 use rustix::process::Pid;
 use std::io::ErrorKind;
-use std::path::PathBuf;
 use thiserror::Error;
+use typed_path::UnixPathBuf;
 
 use crate::ApparmorMode;
 use crate::fsutil;
@@ -17,9 +17,9 @@ pub(crate) enum LsmError {
         #[source]
         source: std::io::Error,
     },
-    #[error("failed to read AppArmor profile from {path}")]
+    #[error("failed to read AppArmor profile from {}", path.display())]
     ReadProfile {
-        path: PathBuf,
+        path: UnixPathBuf,
         #[source]
         source: std::io::Error,
     },
@@ -33,7 +33,7 @@ pub(crate) enum LsmError {
 
 pub(crate) struct LSMProfile {
     pub(crate) label: String,
-    pub(crate) own_path: PathBuf,
+    pub(crate) own_path: UnixPathBuf,
 }
 
 fn is_apparmor_enabled() -> Result<bool, LsmError> {
@@ -48,14 +48,14 @@ fn is_apparmor_enabled() -> Result<bool, LsmError> {
     }
 }
 
-fn apparmor_profile_path(pid: Option<Pid>) -> PathBuf {
+fn apparmor_profile_path(pid: Option<Pid>) -> UnixPathBuf {
     let process = pid.map_or(String::from("self"), |p| p.to_string());
     procfs::get_path()
         .join(process)
         .join("attr/apparmor/current")
 }
 
-fn read_apparmor_label(path: &PathBuf) -> Result<String, LsmError> {
+fn read_apparmor_label(path: &UnixPathBuf) -> Result<String, LsmError> {
     let attr = fsutil::read_to_string(path).map_err(|source| LsmError::ReadProfile {
         path: path.clone(),
         source,

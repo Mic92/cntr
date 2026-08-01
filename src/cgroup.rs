@@ -1,8 +1,8 @@
 use log::{debug, warn};
 use rustix::process::Pid;
 use std::collections::HashMap;
-use std::path::PathBuf;
 use thiserror::Error;
+use typed_path::UnixPathBuf;
 
 use crate::errors::format_chain;
 use crate::fsutil;
@@ -10,9 +10,9 @@ use crate::procfs;
 
 #[derive(Debug, Error)]
 pub(crate) enum CgroupError {
-    #[error("failed to read {path}")]
+    #[error("failed to read {}", path.display())]
     Read {
-        path: PathBuf,
+        path: UnixPathBuf,
         #[source]
         source: std::io::Error,
     },
@@ -26,13 +26,13 @@ trait CgroupManager {
 
 /// Cgroup v1 (legacy) manager
 struct CgroupV1Manager {
-    procfs_path: PathBuf,
+    procfs_path: UnixPathBuf,
 }
 
 /// Cgroup v2 (unified) manager
 struct CgroupV2Manager {
-    mount_path: PathBuf,
-    procfs_path: PathBuf,
+    mount_path: UnixPathBuf,
+    procfs_path: UnixPathBuf,
 }
 
 /// Hybrid manager that supports both v1 and v2
@@ -49,7 +49,7 @@ struct NullCgroupManager;
 fn get_subsystems() -> Result<Vec<String>, CgroupError> {
     let path = "/proc/cgroups";
     let contents = fsutil::read_to_string(path).map_err(|source| CgroupError::Read {
-        path: PathBuf::from(path),
+        path: UnixPathBuf::from(path),
         source,
     })?;
     let mut subsystems: Vec<String> = Vec::new();
@@ -73,7 +73,7 @@ fn get_mounts() -> Result<HashMap<String, String>, CgroupError> {
     // 36 35 98:0 /mnt1 /mnt2 rw,noatime master:1 - ext3 /dev/root rw,errors=continue
     // (1)(2)(3)   (4)   (5)      (6)      (7)   (8) (9)   (10)         (11)
     let contents = fsutil::read_to_string(path).map_err(|source| CgroupError::Read {
-        path: PathBuf::from(path),
+        path: UnixPathBuf::from(path),
         source,
     })?;
     let mut mountpoints: HashMap<String, String> = HashMap::new();
@@ -93,11 +93,11 @@ fn get_mounts() -> Result<HashMap<String, String>, CgroupError> {
     Ok(mountpoints)
 }
 
-fn cgroup_v1_path(cgroup: &str, mountpoints: &HashMap<String, String>) -> Option<PathBuf> {
+fn cgroup_v1_path(cgroup: &str, mountpoints: &HashMap<String, String>) -> Option<UnixPathBuf> {
     for c in cgroup.split(',') {
         let m = mountpoints.get(c);
         if let Some(path) = m {
-            let mut tasks_path = PathBuf::from(path);
+            let mut tasks_path = UnixPathBuf::from(path);
             tasks_path.push(cgroup);
             tasks_path.push("tasks");
             return Some(tasks_path);
@@ -219,12 +219,12 @@ impl CgroupManager for NullCgroupManager {
 fn create_manager() -> Result<Box<dyn CgroupManager>, CgroupError> {
     let path = "/proc/self/mountinfo";
     let contents = fsutil::read_to_string(path).map_err(|source| CgroupError::Read {
-        path: PathBuf::from(path),
+        path: UnixPathBuf::from(path),
         source,
     })?;
 
     let mut has_v1 = false;
-    let mut v2_mount: Option<PathBuf> = None;
+    let mut v2_mount: Option<UnixPathBuf> = None;
 
     for line in contents.lines() {
         let fields: Vec<&str> = line.split(' ').collect();
@@ -234,7 +234,7 @@ fn create_manager() -> Result<Box<dyn CgroupManager>, CgroupError> {
         if fields[9] == "cgroup" {
             has_v1 = true;
         } else if fields[9] == "cgroup2" {
-            v2_mount = Some(PathBuf::from(fields[4]));
+            v2_mount = Some(UnixPathBuf::from(fields[4]));
         }
     }
 
@@ -291,7 +291,10 @@ mod tests {
 
         // Test single controller
         let result = cgroup_v1_path("cpu", &mountpoints);
-        assert_eq!(result, Some(PathBuf::from("/sys/fs/cgroup/cpu/cpu/tasks")));
+        assert_eq!(
+            result,
+            Some(UnixPathBuf::from("/sys/fs/cgroup/cpu/cpu/tasks"))
+        );
 
         // Test non-existent controller
         let result = cgroup_v1_path("blkio", &mountpoints);
@@ -312,8 +315,8 @@ mod tests {
 
         // Create manager with mock procfs path
         let manager = CgroupV2Manager {
-            mount_path: PathBuf::from("/sys/fs/cgroup"),
-            procfs_path: temp_dir.clone(),
+            mount_path: UnixPathBuf::from("/sys/fs/cgroup"),
+            procfs_path: UnixPathBuf::from(temp_dir.to_str().unwrap()),
         };
 
         let result = manager
@@ -343,8 +346,8 @@ mod tests {
         writeln!(file, "2:cpu,cpuacct:/user.slice").unwrap();
 
         let manager = CgroupV2Manager {
-            mount_path: PathBuf::from("/sys/fs/cgroup"),
-            procfs_path: temp_dir.clone(),
+            mount_path: UnixPathBuf::from("/sys/fs/cgroup"),
+            procfs_path: UnixPathBuf::from(temp_dir.to_str().unwrap()),
         };
 
         let result = manager

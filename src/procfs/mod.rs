@@ -1,6 +1,6 @@
 use rustix::process::{Gid, Pid, Uid};
-use std::path::{Path, PathBuf};
 use thiserror::Error;
+use typed_path::{UnixPath, UnixPathBuf};
 
 use crate::ApparmorMode;
 use crate::fsutil;
@@ -8,41 +8,43 @@ use crate::lsm::{LSMProfile, LsmError};
 
 #[derive(Debug, Error)]
 pub(crate) enum ProcfsError {
-    #[error("failed to read {path}")]
+    #[error("failed to read {}", path.display())]
     Read {
-        path: PathBuf,
+        path: UnixPathBuf,
         #[source]
         source: std::io::Error,
     },
-    #[error("failed to parse {what} in {path}: '{value}'")]
+    #[error("failed to parse {what} in {}: '{value}'", path.display())]
     Parse {
         what: &'static str,
-        path: PathBuf,
+        path: UnixPathBuf,
         value: String,
         #[source]
         source: std::num::ParseIntError,
     },
     #[error(
-        "integer overflow computing inner ID in {path}: {inner_start} + {offset} would overflow"
+        "integer overflow computing inner ID in {}: {inner_start} + {offset} would overflow",
+        path.display()
     )]
     IdOverflow {
-        path: PathBuf,
+        path: UnixPathBuf,
         inner_start: u32,
         offset: u32,
     },
     #[error(
-        "malformed line in {path} (expected at least 2 tab-separated columns, found {columns}): '{line}'"
+        "malformed line in {} (expected at least 2 tab-separated columns, found {columns}): '{line}'",
+        path.display()
     )]
     MalformedStatusLine {
-        path: PathBuf,
+        path: UnixPathBuf,
         columns: usize,
         line: String,
     },
-    #[error("could not find effective capabilities (CapEff) in {path}")]
-    MissingCapEff { path: PathBuf },
-    #[error("failed to get metadata for {path}")]
+    #[error("could not find effective capabilities (CapEff) in {}", path.display())]
+    MissingCapEff { path: UnixPathBuf },
+    #[error("failed to get metadata for {}", path.display())]
     Metadata {
-        path: PathBuf,
+        path: UnixPathBuf,
         #[source]
         source: std::io::Error,
     },
@@ -50,15 +52,15 @@ pub(crate) enum ProcfsError {
     Lsm(#[from] LsmError),
 }
 
-pub(crate) fn get_path() -> PathBuf {
-    PathBuf::from(crate::env::var("CNTR_PROC").unwrap_or("/proc"))
+pub(crate) fn get_path() -> UnixPathBuf {
+    UnixPathBuf::from(crate::env::var("CNTR_PROC").unwrap_or("/proc"))
 }
 
 /// Parse a uid_map or gid_map file and translate an outer ID to inner ID
 ///
 /// Format: `id-inside id-outside length`
 /// Example: `0 100000 65536` means container ID 0 maps to host ID 100000
-fn translate_id(map_path: &Path, outer_id: u32) -> Result<u32, ProcfsError> {
+fn translate_id(map_path: &UnixPath, outer_id: u32) -> Result<u32, ProcfsError> {
     let contents = fsutil::read_to_string(map_path).map_err(|source| ProcfsError::Read {
         path: map_path.to_path_buf(),
         source,

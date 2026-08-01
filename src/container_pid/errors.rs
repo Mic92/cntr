@@ -1,5 +1,5 @@
-use std::path::PathBuf;
 use thiserror::Error;
+use typed_path::UnixPathBuf;
 
 use crate::container_pid::RawPid;
 
@@ -45,9 +45,9 @@ pub enum Error {
     #[error("container '{container}' not found: {message}")]
     ContainerNotFound { container: String, message: String },
     /// Reading a file or directory failed.
-    #[error("failed to read {path}")]
+    #[error("failed to read {}", path.display())]
     Io {
-        path: PathBuf,
+        path: UnixPathBuf,
         #[source]
         source: std::io::Error,
     },

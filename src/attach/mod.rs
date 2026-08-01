@@ -13,9 +13,9 @@ use crate::syscalls::process::{Fork, fork};
 use idmap_helper::IdmapError;
 use rustix::io::Errno;
 use rustix::process::{getgid, getuid};
-use std::path::PathBuf;
 use std::process;
 use thiserror::Error;
+use typed_path::UnixPathBuf;
 
 mod child;
 mod idmap_helper;
@@ -54,9 +54,9 @@ pub(crate) enum AttachError {
     Namespace(#[from] NamespaceError),
     #[error("the system has no support for mount namespaces")]
     MountNamespaceUnsupported,
-    #[error("failed to create {path}")]
+    #[error("failed to create {}", path.display())]
     CreateBaseDir {
-        path: PathBuf,
+        path: UnixPathBuf,
         #[source]
         source: std::io::Error,
     },
@@ -72,9 +72,9 @@ pub(crate) enum AttachError {
     MakeMountsPrivate(#[source] Errno),
     #[error("failed to read /proc/mounts")]
     OpenProcMounts(#[source] std::io::Error),
-    #[error("failed to mount tmpfs at {path}")]
+    #[error("failed to mount tmpfs at {}", path.display())]
     MountTmpfs {
-        path: PathBuf,
+        path: UnixPathBuf,
         #[source]
         source: Errno,
     },

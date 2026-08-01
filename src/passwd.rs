@@ -7,8 +7,8 @@
 //! 3. a numeric `uid[:gid]` spec as an escape hatch
 
 use rustix::process::{Gid, Uid};
-use std::path::PathBuf;
 use thiserror::Error;
+use typed_path::UnixPathBuf;
 
 use crate::spawn;
 
@@ -36,7 +36,7 @@ pub(crate) struct User {
     pub(crate) uid: Uid,
     pub(crate) gid: Gid,
     /// Home directory
-    pub(crate) dir: PathBuf,
+    pub(crate) dir: UnixPathBuf,
 }
 
 /// Look up a user by name or numeric `uid[:gid]` spec.
@@ -87,7 +87,7 @@ fn parse_numeric(spec: &str) -> Result<Option<User>, PasswdError> {
     Ok(Some(User {
         uid: Uid::from_raw(uid),
         gid: Gid::from_raw(gid),
-        dir: PathBuf::from("/"),
+        dir: UnixPathBuf::from("/"),
     }))
 }
 
@@ -122,7 +122,7 @@ fn parse_passwd(contents: &str, username: &str) -> Result<Option<User>, PasswdEr
         return Ok(Some(User {
             uid: Uid::from_raw(uid),
             gid: Gid::from_raw(gid),
-            dir: PathBuf::from(fields[5]),
+            dir: UnixPathBuf::from(fields[5]),
         }));
     }
     Ok(None)
@@ -139,7 +139,7 @@ mod tests {
         let user = parse_passwd(passwd, "joerg").unwrap().unwrap();
         assert_eq!(user.uid.as_raw(), 1000);
         assert_eq!(user.gid.as_raw(), 100);
-        assert_eq!(user.dir, PathBuf::from("/home/joerg"));
+        assert_eq!(user.dir, UnixPathBuf::from("/home/joerg"));
         assert!(parse_passwd(passwd, "nobody").unwrap().is_none());
         let root = parse_passwd(passwd, "root").unwrap().unwrap();
         assert!(root.uid.is_root());
@@ -150,7 +150,7 @@ mod tests {
         let user = parse_numeric("1000:100").unwrap().unwrap();
         assert_eq!(user.uid.as_raw(), 1000);
         assert_eq!(user.gid.as_raw(), 100);
-        assert_eq!(user.dir, PathBuf::from("/"));
+        assert_eq!(user.dir, UnixPathBuf::from("/"));
 
         let user = parse_numeric("1000").unwrap().unwrap();
         assert_eq!(user.gid.as_raw(), 1000);

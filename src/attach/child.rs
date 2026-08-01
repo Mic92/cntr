@@ -8,8 +8,7 @@ use rustix::mount::{
 use rustix::process::{Pid, chdir, getpid};
 use rustix::thread::{UnshareFlags, unshare_unsafe};
 use std::os::unix::io::{AsFd, BorrowedFd, OwnedFd};
-use std::os::unix::prelude::*;
-use std::path::{Path, PathBuf};
+use typed_path::{UnixPath, UnixPathBuf};
 
 use crate::attach::AttachError;
 use crate::cgroup;
@@ -43,14 +42,14 @@ pub(crate) struct ChildOptions<'a> {
     pub(crate) process_status: ProcStatus,
     pub(crate) socket: &'a ipc::Socket,
     pub(crate) userns_fd: Option<BorrowedFd<'a>>,
-    pub(crate) effective_home: Option<PathBuf>,
+    pub(crate) effective_home: Option<UnixPathBuf>,
 }
 
 /// Apply idmapped mounts to all supported filesystems
 ///
 /// This makes all files created on the host appear as owned by the effective user.
 /// Requires kernel 5.12+ and --effective-user option.
-fn apply_idmapped_mounts(userns_fd: BorrowedFd, base_dir: &Path) -> Result<(), AttachError> {
+fn apply_idmapped_mounts(userns_fd: BorrowedFd, base_dir: &UnixPath) -> Result<(), AttachError> {
     // Read /proc/mounts to get all mount points
     let mounts = fsutil::read_to_string("/proc/mounts").map_err(AttachError::OpenProcMounts)?;
 
@@ -93,7 +92,7 @@ fn apply_idmapped_mounts(userns_fd: BorrowedFd, base_dir: &Path) -> Result<(), A
         }
 
         // Skip the base_dir itself (we'll mount container stuff there)
-        if Path::new(mount_point).starts_with(base_dir) {
+        if UnixPath::new(mount_point).starts_with(base_dir) {
             continue;
         }
 
@@ -138,7 +137,7 @@ fn capture_and_attach_container_trees(
     container_root_fd: OwnedFd,
     container_pid: Pid,
     our_mount_ns: namespace::Namespace,
-    base_dir: &Path,
+    base_dir: &UnixPath,
 ) -> Result<(), AttachError> {
     // Enter container's mount namespace to capture trees with submounts
     namespace::MOUNT.open(container_pid)?.apply()?;
@@ -177,10 +176,7 @@ fn capture_and_attach_container_trees(
 
             // Capture tree
             match open_tree(dir_fd, name, RECURSIVE_CLONE) {
-                Ok(tree) => {
-                    let name_os = std::ffi::OsStr::from_bytes(name.as_bytes()).to_owned();
-                    Some((name_os, tree, is_dir))
-                }
+                Ok(tree) => Some((name.to_bytes().to_vec(), tree, is_dir)),
                 Err(e) => {
                     warn!("Failed to capture tree for {:?}: {}", name, e);
                     None
@@ -212,7 +208,7 @@ fn capture_and_attach_container_trees(
             continue;
         }
 
-        if let Err(e) = attach_tree(tree, &target) {
+        if let Err(e) = attach_tree(tree, target.as_bytes()) {
             warn!("Failed to attach tree to {:?}: {}", target, e);
         }
     }
@@ -332,7 +328,7 @@ pub(crate) fn run(options: &mut ChildOptions) -> Result<std::convert::Infallible
     // Note: base_dir was already created earlier before entering the namespace
     mount(
         "tmpfs",
-        base_dir.as_path(),
+        base_dir.as_bytes(),
         "tmpfs",
         MountFlags::empty(),
         None::<&std::ffi::CStr>,
@@ -373,7 +369,7 @@ pub(crate) fn run(options: &mut ChildOptions) -> Result<std::convert::Infallible
     options.socket.send(&[ready_msg], &[&pty_fd])?;
 
     // Step 10: Change to base_dir
-    if let Err(e) = chdir(&base_dir) {
+    if let Err(e) = chdir(base_dir.as_bytes()) {
         warn!(
             "failed to change directory to {}: {}",
             base_dir.display(),

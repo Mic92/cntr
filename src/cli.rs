@@ -1,4 +1,3 @@
-
 use crate::errors::format_chain;
 use crate::passwd::{self, User};
 
