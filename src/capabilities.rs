@@ -1,12 +1,11 @@
 use libc::c_ulong;
 
-use crate::result::Result;
 use crate::syscalls::prctl;
 
 pub(crate) const CAP_SYS_CHROOT: u32 = 18;
 pub(crate) const CAP_SYS_PTRACE: u32 = 19;
 
-pub(crate) fn drop(inheritable_capabilities: c_ulong, last_cap: c_ulong) -> Result<()> {
+pub(crate) fn drop(inheritable_capabilities: c_ulong, last_cap: c_ulong) {
     // Ensure last_cap won't cause shift overflow
     let max_cap = (std::mem::size_of::<c_ulong>() * 8 - 1) as c_ulong;
     assert!(
@@ -28,5 +27,4 @@ pub(crate) fn drop(inheritable_capabilities: c_ulong, last_cap: c_ulong) -> Resu
             let _ = prctl(libc::PR_CAPBSET_DROP, cap, 0, 0, 0);
         }
     }
-    Ok(())
 }

@@ -1,4 +1,3 @@
-use anyhow::Context;
 use log::{debug, warn};
 use rustix::process::Pid;
 use std::collections::HashMap;
@@ -6,14 +5,37 @@ use std::fs::File;
 use std::io::Write;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
+use thiserror::Error;
 
+use crate::errors::format_chain;
 use crate::procfs;
-use crate::result::Result;
+
+#[derive(Debug, Error)]
+pub(crate) enum CgroupError {
+    #[error("failed to open {path}")]
+    Open {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("failed to read line from {path}")]
+    Read {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("failed to write PID to cgroup {path}")]
+    WritePid {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+}
 
 /// Trait for cgroup operations, supporting both v1 and v2
 trait CgroupManager {
     /// Move a process into the cgroup of another process
-    fn move_to(&self, pid: Pid, target_pid: Pid) -> Result<()>;
+    fn move_to(&self, pid: Pid, target_pid: Pid) -> Result<(), CgroupError>;
 }
 
 /// Cgroup v1 (legacy) manager
@@ -38,13 +60,19 @@ struct NullCgroupManager;
 
 // Helper functions for cgroup v1
 
-fn get_subsystems() -> Result<Vec<String>> {
+fn get_subsystems() -> Result<Vec<String>, CgroupError> {
     let path = "/proc/cgroups";
-    let f = File::open(path).context("failed to open /proc/cgroups")?;
+    let f = File::open(path).map_err(|source| CgroupError::Open {
+        path: PathBuf::from(path),
+        source,
+    })?;
     let reader = BufReader::new(f);
     let mut subsystems: Vec<String> = Vec::new();
     for l in reader.lines() {
-        let line = l.context("failed to read line from /proc/cgroups")?;
+        let line = l.map_err(|source| CgroupError::Read {
+            path: PathBuf::from(path),
+            source,
+        })?;
         if line.starts_with('#') {
             continue;
         }
@@ -56,19 +84,24 @@ fn get_subsystems() -> Result<Vec<String>> {
     Ok(subsystems)
 }
 
-fn get_mounts() -> Result<HashMap<String, String>> {
-    let subsystems =
-        get_subsystems().context("failed to obtain cgroup subsystems from /proc/cgroups")?;
+fn get_mounts() -> Result<HashMap<String, String>, CgroupError> {
+    let subsystems = get_subsystems()?;
     let path = "/proc/self/mountinfo";
     // example:
     //
     // 36 35 98:0 /mnt1 /mnt2 rw,noatime master:1 - ext3 /dev/root rw,errors=continue
     // (1)(2)(3)   (4)   (5)      (6)      (7)   (8) (9)   (10)         (11)
-    let f = File::open(path).context("failed to open /proc/self/mountinfo")?;
+    let f = File::open(path).map_err(|source| CgroupError::Open {
+        path: PathBuf::from(path),
+        source,
+    })?;
     let reader = BufReader::new(f);
     let mut mountpoints: HashMap<String, String> = HashMap::new();
     for l in reader.lines() {
-        let line = l.with_context(|| format!("failed to read line from {}", path))?;
+        let line = l.map_err(|source| CgroupError::Read {
+            path: PathBuf::from(path),
+            source,
+        })?;
         let fields: Vec<&str> = line.split(' ').collect();
         if fields.len() < 11 || fields[9] != "cgroup" {
             continue;
@@ -99,14 +132,19 @@ fn cgroup_v1_path(cgroup: &str, mountpoints: &HashMap<String, String>) -> Option
 
 // Cgroup v1 implementation
 impl CgroupV1Manager {
-    fn get_cgroups(&self, pid: Pid) -> Result<Vec<String>> {
+    fn get_cgroups(&self, pid: Pid) -> Result<Vec<String>, CgroupError> {
         let path = self.procfs_path.join(format!("{}/cgroup", pid));
-        let f = File::open(&path)
-            .with_context(|| format!("failed to open cgroup file {}", path.display()))?;
+        let f = File::open(&path).map_err(|source| CgroupError::Open {
+            path: path.clone(),
+            source,
+        })?;
         let reader = BufReader::new(f);
         let mut cgroups: Vec<String> = Vec::new();
         for l in reader.lines() {
-            let line = l.with_context(|| format!("failed to read line from {}", path.display()))?;
+            let line = l.map_err(|source| CgroupError::Read {
+                path: path.clone(),
+                source,
+            })?;
             let fields: Vec<&str> = line.split(":/").collect();
             if fields.len() >= 2 {
                 cgroups.push(fields[1].to_string());
@@ -117,19 +155,19 @@ impl CgroupV1Manager {
 }
 
 impl CgroupManager for CgroupV1Manager {
-    fn move_to(&self, pid: Pid, target_pid: Pid) -> Result<()> {
-        let cgroups = self
-            .get_cgroups(target_pid)
-            .with_context(|| format!("failed to get cgroups for PID {}", target_pid))?;
-        let mountpoints = get_mounts().context("failed to get cgroup mountpoints")?;
+    fn move_to(&self, pid: Pid, target_pid: Pid) -> Result<(), CgroupError> {
+        let cgroups = self.get_cgroups(target_pid)?;
+        let mountpoints = get_mounts()?;
 
         for cgroup in cgroups {
             let p = cgroup_v1_path(&cgroup, &mountpoints);
             if let Some(path) = p {
                 match File::create(&path) {
                     Ok(mut buffer) => {
-                        write!(buffer, "{}", pid)
-                            .with_context(|| format!("failed to write PID to cgroup {}", cgroup))?;
+                        write!(buffer, "{}", pid).map_err(|source| CgroupError::WritePid {
+                            path: path.clone(),
+                            source,
+                        })?;
                     }
                     Err(err) => {
                         warn!("failed to enter {} cgroup: {}", cgroup, err);
@@ -143,14 +181,19 @@ impl CgroupManager for CgroupV1Manager {
 
 // Cgroup v2 implementation
 impl CgroupV2Manager {
-    fn get_cgroup_path(&self, pid: Pid) -> Result<Option<String>> {
+    fn get_cgroup_path(&self, pid: Pid) -> Result<Option<String>, CgroupError> {
         let path = self.procfs_path.join(format!("{}/cgroup", pid));
-        let f = File::open(&path)
-            .with_context(|| format!("failed to open cgroup file {}", path.display()))?;
+        let f = File::open(&path).map_err(|source| CgroupError::Open {
+            path: path.clone(),
+            source,
+        })?;
         let reader = BufReader::new(f);
 
         for l in reader.lines() {
-            let line = l.with_context(|| format!("failed to read line from {}", path.display()))?;
+            let line = l.map_err(|source| CgroupError::Read {
+                path: path.clone(),
+                source,
+            })?;
             // cgroup v2 format: "0::/path/to/cgroup"
             if let Some(stripped) = line.strip_prefix("0::") {
                 return Ok(Some(stripped.to_string()));
@@ -161,10 +204,8 @@ impl CgroupV2Manager {
 }
 
 impl CgroupManager for CgroupV2Manager {
-    fn move_to(&self, pid: Pid, target_pid: Pid) -> Result<()> {
-        let target_cgroup = self
-            .get_cgroup_path(target_pid)
-            .with_context(|| format!("failed to get cgroup v2 path for PID {}", target_pid))?;
+    fn move_to(&self, pid: Pid, target_pid: Pid) -> Result<(), CgroupError> {
+        let target_cgroup = self.get_cgroup_path(target_pid)?;
 
         let Some(cgroup_path) = target_cgroup else {
             warn!(
@@ -206,10 +247,13 @@ impl CgroupManager for CgroupV2Manager {
 
 // Hybrid implementation - tries v2 first, falls back to v1
 impl CgroupManager for HybridCgroupManager {
-    fn move_to(&self, pid: Pid, target_pid: Pid) -> Result<()> {
+    fn move_to(&self, pid: Pid, target_pid: Pid) -> Result<(), CgroupError> {
         // Try v2 first
         if let Err(e) = self.v2.move_to(pid, target_pid) {
-            warn!("cgroup v2 migration failed: {}, trying v1", e);
+            warn!(
+                "cgroup v2 migration failed: {}, trying v1",
+                format_chain(&e)
+            );
             self.v1.move_to(pid, target_pid)?;
         }
         Ok(())
@@ -218,23 +262,29 @@ impl CgroupManager for HybridCgroupManager {
 
 // Null implementation - no-op when cgroups are unavailable
 impl CgroupManager for NullCgroupManager {
-    fn move_to(&self, _pid: Pid, _target_pid: Pid) -> Result<()> {
+    fn move_to(&self, _pid: Pid, _target_pid: Pid) -> Result<(), CgroupError> {
         debug!("cgroup support not detected, skipping cgroup migration");
         Ok(())
     }
 }
 
 /// Factory function to create the appropriate CgroupManager
-fn create_manager() -> Result<Box<dyn CgroupManager>> {
+fn create_manager() -> Result<Box<dyn CgroupManager>, CgroupError> {
     let path = "/proc/self/mountinfo";
-    let f = File::open(path).context("failed to open /proc/self/mountinfo")?;
+    let f = File::open(path).map_err(|source| CgroupError::Open {
+        path: PathBuf::from(path),
+        source,
+    })?;
     let reader = BufReader::new(f);
 
     let mut has_v1 = false;
     let mut v2_mount: Option<PathBuf> = None;
 
     for l in reader.lines() {
-        let line = l.with_context(|| format!("failed to read line from {}", path))?;
+        let line = l.map_err(|source| CgroupError::Read {
+            path: PathBuf::from(path),
+            source,
+        })?;
         let fields: Vec<&str> = line.split(' ').collect();
         if fields.len() < 10 {
             continue;
@@ -280,8 +330,8 @@ fn create_manager() -> Result<Box<dyn CgroupManager>> {
 }
 
 /// Move a process into the cgroup of another process
-pub(crate) fn move_to(pid: Pid, target_pid: Pid) -> Result<()> {
-    let manager = create_manager().context("failed to create cgroup manager")?;
+pub(crate) fn move_to(pid: Pid, target_pid: Pid) -> Result<(), CgroupError> {
+    let manager = create_manager()?;
     manager.move_to(pid, target_pid)
 }
 

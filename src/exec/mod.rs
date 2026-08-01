@@ -1,14 +1,38 @@
-use anyhow::{Context, bail};
+use rustix::io::Errno;
 use rustix::runtime::{Fork, kernel_fork};
 use std::os::fd::OwnedFd;
 use std::process;
+use thiserror::Error;
 
 use crate::ApparmorMode;
-use crate::cmd::Cmd;
-use crate::container_setup;
-use crate::pty;
-use crate::result::Result;
+use crate::cmd::{Cmd, CmdError};
+use crate::container::ContainerError;
+use crate::container_setup::{self, SetupError};
+use crate::pty::{self, PtyError};
 use crate::syscalls::capability;
+
+#[derive(Debug, Error)]
+pub(crate) enum ExecError {
+    #[error(
+        "Linux mount API is not available. cntr requires kernel 6.8+ with mount API support.\n\
+         Please upgrade your kernel or use an older version of cntr with FUSE support."
+    )]
+    MountApiUnavailable,
+    #[error("failed to lookup container '{container}'")]
+    LookupContainer {
+        container: String,
+        #[source]
+        source: ContainerError,
+    },
+    #[error("failed to fork")]
+    Fork(#[source] Errno),
+    #[error(transparent)]
+    Pty(#[from] PtyError),
+    #[error(transparent)]
+    Cmd(#[from] CmdError),
+    #[error("failed to enter container")]
+    Setup(#[from] SetupError),
+}
 
 pub(crate) struct ExecOptions {
     pub(crate) command: Option<String>,
@@ -21,13 +45,10 @@ pub(crate) struct ExecOptions {
 /// Execute a command in a container
 ///
 /// Directly accesses container by ID/name with PTY.
-pub(crate) fn exec(opts: &ExecOptions) -> Result<std::convert::Infallible> {
+pub(crate) fn exec(opts: &ExecOptions) -> Result<std::convert::Infallible, ExecError> {
     // Verify mount API capability
     if !capability::has_mount_api() {
-        bail!(
-            "Linux mount API is not available. cntr requires kernel 6.8+ with mount API support.\n\
-             Please upgrade your kernel or use an older version of cntr with FUSE support."
-        );
+        return Err(ExecError::MountApiUnavailable);
     }
 
     // Lookup container and get its process status
@@ -36,18 +57,21 @@ pub(crate) fn exec(opts: &ExecOptions) -> Result<std::convert::Infallible> {
         &opts.container_types,
         opts.apparmor_mode,
     )
-    .with_context(|| format!("failed to lookup container '{}'", opts.container_name))?;
+    .map_err(|source| ExecError::LookupContainer {
+        container: opts.container_name.clone(),
+        source,
+    })?;
 
     // Create PTY for interactive command execution
-    let pty_master = pty::open_ptm().context("failed to open pty master")?;
+    let pty_master = pty::open_ptm()?;
 
     // Fork: child enters container and execs, parent forwards PTY I/O
     // SAFETY: cntr is single-threaded and uses a rustix-based global allocator,
     // so allocating and calling into std in the child is fine.
-    match unsafe { kernel_fork() }.context("failed to fork")? {
+    match unsafe { kernel_fork() }.map_err(ExecError::Fork)? {
         Fork::ParentOf(child) => {
             // Parent: Forward PTY I/O and wait for child
-            pty::forward_pty_and_wait(&pty_master, child)
+            Ok(pty::forward_pty_and_wait(&pty_master, child)?)
         }
         Fork::Child(_) => {
             // Child: Setup PTY slave, enter container, exec command
@@ -57,7 +81,7 @@ pub(crate) fn exec(opts: &ExecOptions) -> Result<std::convert::Infallible> {
                 opts.arguments.clone(),
                 &pty_master,
             );
-            eprintln!("exec child failed: {:?}", e);
+            eprintln!("exec child failed: {}", crate::errors::format_chain(&e));
             process::exit(1);
         }
     }
@@ -71,25 +95,19 @@ fn exec_child(
     exe: Option<String>,
     args: Vec<String>,
     pty_master: &OwnedFd,
-) -> Result<std::convert::Infallible> {
+) -> Result<std::convert::Infallible, ExecError> {
     // Attach PTY slave
-    pty::attach_pts(pty_master).context("failed to setup pty slave")?;
+    pty::attach_pts(pty_master)?;
 
     // Default to /bin/sh if no command specified
     let exe = exe.or(Some(String::from("/bin/sh")));
 
     // Prepare command to execute
-    let cmd = Cmd::new(exe.clone(), args, process_status.global_pid, None)
-        .with_context(|| format!("failed to prepare command {:?}", exe))?;
+    let cmd = Cmd::new(exe.clone(), args, process_status.global_pid, None)?;
 
     // Enter container: cgroup, namespaces, security context (UID/GID, capabilities)
     // Note: AppArmor is NOT applied yet - we do it in pre_exec after chroot
-    container_setup::enter_container(process_status).with_context(|| {
-        format!(
-            "failed to enter container with PID {}",
-            process_status.global_pid
-        )
-    })?;
+    container_setup::enter_container(process_status)?;
 
     // Extract LSM profile info for pre_exec hook
     let lsm_profile = process_status
@@ -100,6 +118,5 @@ fn exec_child(
     // Execute the command in the container (chroots to container root and execs)
     // AppArmor will be applied in pre_exec after chroot
     // This will NOT return on success - it replaces the current process
-    cmd.exec_in_container(lsm_profile)
-        .context("failed to execute command in container")
+    Ok(cmd.exec_in_container(lsm_profile)?)
 }

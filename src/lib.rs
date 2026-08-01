@@ -15,6 +15,7 @@ mod cgroup;
 mod cmd;
 mod container;
 mod container_setup;
+pub(crate) mod errors;
 pub(crate) mod exec;
 mod ipc;
 mod lsm;
@@ -23,7 +24,6 @@ mod passwd;
 pub(crate) mod paths;
 mod procfs;
 mod pty;
-mod result;
 pub mod syscalls;
 pub(crate) use attach::{AttachOptions, attach};
 

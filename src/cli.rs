@@ -1,5 +1,6 @@
 use std::env;
 
+use crate::errors::format_chain;
 use crate::passwd::{self, User};
 
 use crate::{ApparmorMode, AttachOptions, attach, exec};
@@ -163,7 +164,12 @@ where
                         .into());
                     }
                     Err(e) => {
-                        return Err(format!("failed to lookup user '{}': {}", username, e).into());
+                        return Err(format!(
+                            "failed to lookup user '{}': {}",
+                            username,
+                            format_chain(&e)
+                        )
+                        .into());
                     }
                 }
             }
@@ -208,8 +214,13 @@ where
         apparmor_mode,
     };
 
-    attach(&options)
-        .map_err(|e| format!("failed to attach to container '{}': {}", container_name, e))?;
+    attach(&options).map_err(|e| {
+        format!(
+            "failed to attach to container '{}': {}",
+            container_name,
+            format_chain(&e)
+        )
+    })?;
     Ok(std::process::ExitCode::SUCCESS)
 }
 
@@ -285,8 +296,13 @@ where
         apparmor_mode,
     };
 
-    exec::exec(&options)
-        .map_err(|e| format!("failed to exec into container '{}': {}", container_name, e))?;
+    exec::exec(&options).map_err(|e| {
+        format!(
+            "failed to exec into container '{}': {}",
+            container_name,
+            format_chain(&e)
+        )
+    })?;
 
     Ok(std::process::ExitCode::SUCCESS)
 }

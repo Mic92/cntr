@@ -1,4 +1,3 @@
-use anyhow::{Context, bail};
 use log::warn;
 use rustix::event::{PollFd, PollFlags, Timespec, poll};
 use rustix::fs::{Mode, OFlags, open};
@@ -16,8 +15,49 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
 use std::process;
+use thiserror::Error;
 
-use crate::result::Result;
+#[derive(Debug, Error)]
+pub(crate) enum PtyError {
+    #[error("failed to get termios attributes")]
+    GetTermios(#[source] Errno),
+    #[error("failed to set termios attributes")]
+    SetTermios(#[source] Errno),
+    #[error("failed to duplicate {what}")]
+    Dup {
+        what: &'static str,
+        #[source]
+        source: Errno,
+    },
+    #[error("failed to open pty with posix_openpt()")]
+    OpenPtyMaster(#[source] Errno),
+    #[error("failed to grant pty access with grantpt()")]
+    Grantpt(#[source] Errno),
+    #[error("failed to unlock pty with unlockpt()")]
+    Unlockpt(#[source] Errno),
+    #[error("failed to get PTY slave name from master")]
+    Ptsname(#[source] Errno),
+    #[error("PTY slave name is not valid UTF-8")]
+    PtsnameNotUtf8,
+    #[error("failed to create new session for PTY")]
+    Setsid(#[source] Errno),
+    #[error("failed to open PTY slave at {path}")]
+    OpenPtySlave {
+        path: String,
+        #[source]
+        source: Errno,
+    },
+    #[error("failed to redirect {what} to PTY slave")]
+    Dup2 {
+        what: &'static str,
+        #[source]
+        source: Errno,
+    },
+    #[error("waitpid failed")]
+    WaitPid(#[source] Errno),
+    #[error("unexpected wait event: {0}")]
+    UnexpectedWaitEvent(String),
+}
 
 const BUF_SIZE: usize = 8192;
 
@@ -82,8 +122,8 @@ struct RawTty<'a> {
 }
 
 impl<'a> RawTty<'a> {
-    fn new(stdin: BorrowedFd<'a>) -> Result<RawTty<'a>> {
-        let orig_attr = tcgetattr(stdin).context("failed to get termios attributes")?;
+    fn new(stdin: BorrowedFd<'a>) -> Result<RawTty<'a>, PtyError> {
+        let orig_attr = tcgetattr(stdin).map_err(PtyError::GetTermios)?;
 
         let mut attr = orig_attr.clone();
         attr.input_modes.remove(
@@ -110,8 +150,7 @@ impl<'a> RawTty<'a> {
         attr.special_codes[SpecialCodeIndex::VMIN] = 1; // One character-at-a-time input
         attr.special_codes[SpecialCodeIndex::VTIME] = 0; // with blocking read
 
-        tcsetattr(stdin, OptionalActions::Flush, &attr)
-            .context("failed to set termios attributes")?;
+        tcsetattr(stdin, OptionalActions::Flush, &attr).map_err(PtyError::SetTermios)?;
         Ok(RawTty {
             fd: stdin,
             attr: orig_attr,
@@ -187,19 +226,24 @@ fn shovel(pairs: &mut [FilePair], resize: Option<BorrowedFd>) {
     }
 }
 
-pub(crate) fn forward<T: AsFd>(pty: &T) -> Result<()> {
+pub(crate) fn forward<T: AsFd>(pty: &T) -> Result<(), PtyError> {
     let is_tty = isatty(stdin());
     let _raw_tty = if is_tty {
-        Some(RawTty::new(stdin()).context("failed to set stdin tty into raw mode")?)
+        Some(RawTty::new(stdin())?)
     } else {
         None
     };
 
     // Duplicate FDs so each File owns its own FD and can be safely closed
     // This prevents double-close bugs when the original FD owners are dropped
-    let stdin_file: File = dup(stdin()).context("failed to duplicate stdin")?.into();
-    let stdout_file: File = dup(stdout()).context("failed to duplicate stdout")?.into();
-    let pty_file: File = dup(pty).context("failed to duplicate pty master")?.into();
+    let dup_fd = |what, fd: BorrowedFd| -> Result<File, PtyError> {
+        Ok(dup(fd)
+            .map_err(|source| PtyError::Dup { what, source })?
+            .into())
+    };
+    let stdin_file = dup_fd("stdin", stdin())?;
+    let stdout_file = dup_fd("stdout", stdout())?;
+    let pty_file = dup_fd("pty master", pty.as_fd())?;
 
     shovel(
         &mut [
@@ -227,7 +271,7 @@ pub(crate) fn forward<T: AsFd>(pty: &T) -> Result<()> {
 pub(crate) fn forward_pty_and_wait<T: AsFd>(
     pty: &T,
     child_pid: Pid,
-) -> Result<std::convert::Infallible> {
+) -> Result<std::convert::Infallible, PtyError> {
     // Forward PTY I/O between stdin/stdout and the PTY
     // This will block until child exits or PTY closes
     let _ = forward(pty);
@@ -251,12 +295,12 @@ pub(crate) fn forward_pty_and_wait<T: AsFd>(
                     // Child exited normally - exit with same status
                     process::exit(code);
                 } else {
-                    bail!("unexpected wait event: {:?}", status);
+                    return Err(PtyError::UnexpectedWaitEvent(format!("{:?}", status)));
                 }
             }
             // Interrupted or nothing to report yet, continue waiting
             Ok(None) | Err(Errno::INTR) => continue,
-            Err(e) => return Err(e).context("waitpid failed"),
+            Err(e) => return Err(PtyError::WaitPid(e)),
         }
     }
 }
@@ -274,25 +318,29 @@ fn set_winsize(pty_master: BorrowedFd, ws: Winsize) {
     let _ = tcsetwinsize(pty_master, ws);
 }
 
-pub(crate) fn open_ptm() -> Result<OwnedFd> {
-    let pty_master = openpt(OpenptFlags::RDWR).context("failed to open pty with posix_openpt()")?;
+pub(crate) fn open_ptm() -> Result<OwnedFd, PtyError> {
+    let pty_master = openpt(OpenptFlags::RDWR).map_err(PtyError::OpenPtyMaster)?;
 
-    grantpt(&pty_master).context("failed to grant pty access with grantpt()")?;
-    unlockpt(&pty_master).context("failed to unlock pty with unlockpt()")?;
+    grantpt(&pty_master).map_err(PtyError::Grantpt)?;
+    unlockpt(&pty_master).map_err(PtyError::Unlockpt)?;
 
     Ok(pty_master)
 }
 
-pub(crate) fn attach_pts(pty_master: &OwnedFd) -> Result<()> {
+pub(crate) fn attach_pts(pty_master: &OwnedFd) -> Result<(), PtyError> {
     let pts_name = ptsname(pty_master, Vec::new())
-        .context("failed to get PTY slave name from master")?
+        .map_err(PtyError::Ptsname)?
         .into_string()
-        .context("PTY slave name is not valid UTF-8")?;
+        .map_err(|_| PtyError::PtsnameNotUtf8)?;
 
-    setsid().context("failed to create new session for PTY")?;
+    setsid().map_err(PtyError::Setsid)?;
 
-    let pty_slave = open(pts_name.as_str(), OFlags::RDWR, Mode::empty())
-        .with_context(|| format!("failed to open PTY slave at {}", pts_name))?;
+    let pty_slave = open(pts_name.as_str(), OFlags::RDWR, Mode::empty()).map_err(|source| {
+        PtyError::OpenPtySlave {
+            path: pts_name.clone(),
+            source,
+        }
+    })?;
 
     // Set the PTY slave as the controlling terminal for this session
     // This is required for job control to work properly
@@ -302,9 +350,18 @@ pub(crate) fn attach_pts(pty_master: &OwnedFd) -> Result<()> {
         warn!("Failed to set controlling terminal: {}", err);
     }
 
-    dup2_stdin(&pty_slave).context("failed to redirect stdin to PTY slave")?;
-    dup2_stdout(&pty_slave).context("failed to redirect stdout to PTY slave")?;
-    dup2_stderr(&pty_slave).context("failed to redirect stderr to PTY slave")?;
+    dup2_stdin(&pty_slave).map_err(|source| PtyError::Dup2 {
+        what: "stdin",
+        source,
+    })?;
+    dup2_stdout(&pty_slave).map_err(|source| PtyError::Dup2 {
+        what: "stdout",
+        source,
+    })?;
+    dup2_stderr(&pty_slave).map_err(|source| PtyError::Dup2 {
+        what: "stderr",
+        source,
+    })?;
 
     Ok(())
 }

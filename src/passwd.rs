@@ -6,12 +6,28 @@
 //!    systemd-userdb, resolved in a separate process)
 //! 3. a numeric `uid[:gid]` spec as an escape hatch
 
-use anyhow::{Context, bail};
 use rustix::process::{Gid, Uid};
 use std::path::PathBuf;
 use std::process::Command;
+use thiserror::Error;
 
-use crate::result::Result;
+#[derive(Debug, Error)]
+pub(crate) enum PasswdError {
+    #[error("failed to read /etc/passwd")]
+    ReadPasswd(#[source] std::io::Error),
+    #[error("getent returned invalid UTF-8")]
+    GetentUtf8(#[source] std::string::FromUtf8Error),
+    #[error("invalid {field} '{value}' in passwd entry for {user}")]
+    InvalidId {
+        field: &'static str,
+        value: String,
+        user: String,
+        #[source]
+        source: std::num::ParseIntError,
+    },
+    #[error("invalid uid/gid (-1) in passwd entry for {user}")]
+    NegativeId { user: String },
+}
 
 /// A user entry from /etc/passwd
 #[derive(Debug, Clone)]
@@ -25,8 +41,8 @@ pub(crate) struct User {
 /// Look up a user by name or numeric `uid[:gid]` spec.
 ///
 /// Returns Ok(None) if the user does not exist.
-pub(crate) fn lookup(spec: &str) -> Result<Option<User>> {
-    let contents = std::fs::read_to_string("/etc/passwd").context("failed to read /etc/passwd")?;
+pub(crate) fn lookup(spec: &str) -> Result<Option<User>, PasswdError> {
+    let contents = std::fs::read_to_string("/etc/passwd").map_err(PasswdError::ReadPasswd)?;
     if let Some(user) = parse_passwd(&contents, spec)? {
         return Ok(Some(user));
     }
@@ -39,7 +55,7 @@ pub(crate) fn lookup(spec: &str) -> Result<Option<User>> {
 /// Resolve a user via the `getent` binary, which performs the NSS lookup
 /// (sssd/LDAP, systemd-userdb, ...) in its own process so we don't have to
 /// link against libc/NSS ourselves.
-fn getent(username: &str) -> Result<Option<User>> {
+fn getent(username: &str) -> Result<Option<User>, PasswdError> {
     let output = match Command::new("getent").args(["passwd", username]).output() {
         Ok(output) => output,
         // getent not installed - fall through to other lookup methods
@@ -48,13 +64,13 @@ fn getent(username: &str) -> Result<Option<User>> {
     if !output.status.success() {
         return Ok(None);
     }
-    let stdout = String::from_utf8(output.stdout).context("getent returned invalid UTF-8")?;
+    let stdout = String::from_utf8(output.stdout).map_err(PasswdError::GetentUtf8)?;
     parse_passwd(&stdout, username)
 }
 
 /// Parse a numeric `uid[:gid]` spec. The home directory is unknown in this
 /// case, so `/` is used.
-fn parse_numeric(spec: &str) -> Result<Option<User>> {
+fn parse_numeric(spec: &str) -> Result<Option<User>, PasswdError> {
     let (uid, gid) = match spec.split_once(':') {
         Some((uid, gid)) => (uid, gid),
         None => (spec, spec),
@@ -63,7 +79,9 @@ fn parse_numeric(spec: &str) -> Result<Option<User>> {
         return Ok(None);
     };
     if uid == u32::MAX || gid == u32::MAX {
-        bail!("invalid uid/gid (-1): {}", spec);
+        return Err(PasswdError::NegativeId {
+            user: spec.to_string(),
+        });
     }
     Ok(Some(User {
         uid: Uid::from_raw(uid),
@@ -72,7 +90,7 @@ fn parse_numeric(spec: &str) -> Result<Option<User>> {
     }))
 }
 
-fn parse_passwd(contents: &str, username: &str) -> Result<Option<User>> {
+fn parse_passwd(contents: &str, username: &str) -> Result<Option<User>, PasswdError> {
     for line in contents.lines() {
         let line = line.trim();
         if line.is_empty() || line.starts_with('#') {
@@ -83,20 +101,22 @@ fn parse_passwd(contents: &str, username: &str) -> Result<Option<User>> {
         if fields.len() < 6 || fields[0] != username {
             continue;
         }
-        let uid: u32 = fields[2].parse().with_context(|| {
-            format!(
-                "invalid uid '{}' in /etc/passwd for {}",
-                fields[2], username
-            )
+        let uid: u32 = fields[2].parse().map_err(|source| PasswdError::InvalidId {
+            field: "uid",
+            value: fields[2].to_string(),
+            user: username.to_string(),
+            source,
         })?;
-        let gid: u32 = fields[3].parse().with_context(|| {
-            format!(
-                "invalid gid '{}' in /etc/passwd for {}",
-                fields[3], username
-            )
+        let gid: u32 = fields[3].parse().map_err(|source| PasswdError::InvalidId {
+            field: "gid",
+            value: fields[3].to_string(),
+            user: username.to_string(),
+            source,
         })?;
         if uid == u32::MAX || gid == u32::MAX {
-            bail!("invalid uid/gid (-1) in /etc/passwd for {}", username);
+            return Err(PasswdError::NegativeId {
+                user: username.to_string(),
+            });
         }
         return Ok(Some(User {
             uid: Uid::from_raw(uid),

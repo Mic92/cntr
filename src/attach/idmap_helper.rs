@@ -1,4 +1,3 @@
-use anyhow::{Context, Result, bail};
 use log::debug;
 use rustix::io::read;
 use rustix::pipe::pipe;
@@ -8,6 +7,35 @@ use rustix::thread::{UnshareFlags, unshare_unsafe};
 use std::fs::File;
 use std::io::Write;
 use std::os::fd::{AsFd, BorrowedFd};
+use thiserror::Error;
+
+use rustix::io::Errno;
+
+#[derive(Debug, Error)]
+pub(crate) enum IdmapError {
+    #[error("failed to create sync pipe")]
+    CreatePipe(#[source] Errno),
+    #[error("failed to fork idmap helper")]
+    Fork(#[source] Errno),
+    #[error("failed to read from helper")]
+    ReadFromHelper(#[source] Errno),
+    #[error("helper failed during setup (read {0} bytes, expected 1)")]
+    HelperNotReady(usize),
+    #[error("failed to open {path}")]
+    OpenUserns {
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("failed to unshare user namespace")]
+    UnshareUserns(#[source] Errno),
+    #[error("failed to write {path}")]
+    WriteIdMap {
+        path: &'static str,
+        #[source]
+        source: std::io::Error,
+    },
+}
 
 /// Helper process that creates and maintains a user namespace for idmapped mounts
 pub(super) struct IdmapHelper {
@@ -27,32 +55,32 @@ impl IdmapHelper {
         outer_uid: Uid,
         inner_gid: Gid,
         outer_gid: Gid,
-    ) -> Result<Self> {
+    ) -> Result<Self, IdmapError> {
         // Create sync pipe
-        let (read_fd, write_fd) = pipe().context("failed to create sync pipe")?;
+        let (read_fd, write_fd) = pipe().map_err(IdmapError::CreatePipe)?;
 
         // SAFETY: cntr is single-threaded and uses a rustix-based global allocator,
         // so allocating and calling into std in the child is fine.
-        match unsafe { kernel_fork() }.context("failed to fork idmap helper")? {
+        match unsafe { kernel_fork() }.map_err(IdmapError::Fork)? {
             Fork::ParentOf(child) => {
                 // Close write end
                 drop(write_fd);
 
                 // Wait for child to be ready
                 let mut buf = [0u8; 1];
-                let bytes_read = read(&read_fd, &mut buf).context("failed to read from helper")?;
+                let bytes_read = read(&read_fd, &mut buf).map_err(IdmapError::ReadFromHelper)?;
                 if bytes_read != 1 {
-                    bail!(
-                        "helper failed during setup (read {} bytes, expected 1)",
-                        bytes_read
-                    );
+                    return Err(IdmapError::HelperNotReady(bytes_read));
                 }
                 drop(read_fd);
 
                 // Open child's user namespace
                 let userns_path = format!("/proc/{}/ns/user", child);
-                let userns_fd = File::open(&userns_path)
-                    .with_context(|| format!("failed to open {}", userns_path))?;
+                let userns_fd =
+                    File::open(&userns_path).map_err(|source| IdmapError::OpenUserns {
+                        path: userns_path.clone(),
+                        source,
+                    })?;
 
                 debug!(
                     "Created idmap helper (PID {}) mapping {}:{} -> {}:{}",
@@ -74,7 +102,7 @@ impl IdmapHelper {
 
                 // Create user namespace and set up mapping
                 if let Err(e) = Self::setup_userns(inner_uid, outer_uid, inner_gid, outer_gid) {
-                    eprintln!("idmap helper failed: {:?}", e);
+                    eprintln!("idmap helper failed: {}", crate::errors::format_chain(&e));
                     exit_group(1);
                 }
 
@@ -93,23 +121,35 @@ impl IdmapHelper {
         }
     }
 
-    fn setup_userns(inner_uid: Uid, outer_uid: Uid, inner_gid: Gid, outer_gid: Gid) -> Result<()> {
+    fn setup_userns(
+        inner_uid: Uid,
+        outer_uid: Uid,
+        inner_gid: Gid,
+        outer_gid: Gid,
+    ) -> Result<(), IdmapError> {
         // Create user namespace
-        unsafe { unshare_unsafe(UnshareFlags::NEWUSER) }
-            .context("failed to unshare user namespace")?;
+        unsafe { unshare_unsafe(UnshareFlags::NEWUSER) }.map_err(IdmapError::UnshareUserns)?;
 
         // Disable setgroups
         std::fs::write("/proc/self/setgroups", b"deny").ok();
 
         // Write uid_map: inner_uid (inside userns) -> outer_uid (outside userns)
         let uid_map = format!("{} {} 1\n", inner_uid.as_raw(), outer_uid.as_raw());
-        std::fs::write("/proc/self/uid_map", uid_map.as_bytes())
-            .context("failed to write uid_map")?;
+        std::fs::write("/proc/self/uid_map", uid_map.as_bytes()).map_err(|source| {
+            IdmapError::WriteIdMap {
+                path: "/proc/self/uid_map",
+                source,
+            }
+        })?;
 
         // Write gid_map: inner_gid (inside userns) -> outer_gid (outside userns)
         let gid_map = format!("{} {} 1\n", inner_gid.as_raw(), outer_gid.as_raw());
-        std::fs::write("/proc/self/gid_map", gid_map.as_bytes())
-            .context("failed to write gid_map")?;
+        std::fs::write("/proc/self/gid_map", gid_map.as_bytes()).map_err(|source| {
+            IdmapError::WriteIdMap {
+                path: "/proc/self/gid_map",
+                source,
+            }
+        })?;
 
         Ok(())
     }

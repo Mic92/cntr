@@ -1,4 +1,3 @@
-use anyhow::Context;
 use rustix::cmsg_space;
 use rustix::io::Errno;
 use rustix::net::{
@@ -8,8 +7,17 @@ use rustix::net::{
 use std::io::{IoSlice, IoSliceMut};
 use std::mem::MaybeUninit;
 use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
+use thiserror::Error;
 
-use crate::result::Result;
+#[derive(Debug, Error)]
+pub(crate) enum IpcError {
+    #[error("failed to send message via Unix socket")]
+    Send(#[source] Errno),
+    #[error("failed to receive message from Unix socket")]
+    Receive(#[source] Errno),
+    #[error("failed to create socketpair")]
+    SocketPair(#[source] Errno),
+}
 
 pub(crate) struct Socket {
     fd: OwnedFd,
@@ -20,7 +28,7 @@ const MAX_FDS: usize = 2;
 
 impl Socket {
     /// Send file descriptors using SCM_RIGHTS
-    pub(crate) fn send<F: AsFd>(&self, messages: &[&[u8]], files: &[&F]) -> Result<()> {
+    pub(crate) fn send<F: AsFd>(&self, messages: &[&[u8]], files: &[&F]) -> Result<(), IpcError> {
         let iov: Vec<IoSlice> = messages.iter().map(|m| IoSlice::new(m)).collect();
         let fds: Vec<BorrowedFd> = files.iter().map(|f| f.as_fd()).collect();
         assert!(fds.len() <= MAX_FDS);
@@ -31,8 +39,7 @@ impl Socket {
             cmsg_buffer.push(SendAncillaryMessage::ScmRights(&fds));
         }
 
-        sendmsg(&self.fd, &iov, &mut cmsg_buffer, SendFlags::empty())
-            .context("failed to send message via Unix socket")?;
+        sendmsg(&self.fd, &iov, &mut cmsg_buffer, SendFlags::empty()).map_err(IpcError::Send)?;
         Ok(())
     }
 
@@ -42,7 +49,7 @@ impl Socket {
     pub(crate) fn receive<F: From<OwnedFd>>(
         &self,
         message_length: usize,
-    ) -> Result<(Vec<u8>, Vec<F>)> {
+    ) -> Result<(Vec<u8>, Vec<F>), IpcError> {
         let mut msg_buf = vec![0; message_length];
         let mut space = [MaybeUninit::uninit(); cmsg_space!(ScmRights(MAX_FDS))];
         let mut fds: Vec<OwnedFd> = Vec::with_capacity(1);
@@ -53,7 +60,7 @@ impl Socket {
             loop {
                 match recvmsg(&self.fd, &mut iov, &mut cmsg_buffer, RecvFlags::empty()) {
                     Err(Errno::AGAIN) | Err(Errno::INTR) => continue,
-                    Err(e) => return Err(e).context("failed to receive message from Unix socket"),
+                    Err(e) => return Err(IpcError::Receive(e)),
                     Ok(msg) => {
                         for cmsg in cmsg_buffer.drain() {
                             if let RecvAncillaryMessage::ScmRights(received_fds) = cmsg {
@@ -74,13 +81,13 @@ impl Socket {
     }
 }
 
-pub(crate) fn socket_pair() -> Result<(Socket, Socket)> {
+pub(crate) fn socket_pair() -> Result<(Socket, Socket), IpcError> {
     let (parent_fd, child_fd) = socketpair(
         AddressFamily::UNIX,
         SocketType::SEQPACKET, // Use SEQPACKET instead of DGRAM for EOF detection
         SocketFlags::CLOEXEC,
         None,
     )
-    .context("failed to create socketpair")?;
+    .map_err(IpcError::SocketPair)?;
     Ok((Socket { fd: parent_fd }, Socket { fd: child_fd }))
 }
