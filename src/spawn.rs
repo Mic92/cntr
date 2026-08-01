@@ -14,13 +14,13 @@ use rustix::runtime::{Fork, execve, exit_group, kernel_fork};
 use rustix::stdio::{dup2_stderr, dup2_stdin, dup2_stdout};
 use std::collections::HashMap;
 use std::convert::Infallible;
-use std::env;
 use std::ffi::{CString, OsStr, OsString};
 use std::io;
 use std::os::fd::OwnedFd;
 use std::os::unix::ffi::OsStrExt;
 
 use crate::container_pid::cmd::which;
+use crate::env;
 
 /// Captured result of a finished child process.
 pub(crate) struct Output {
@@ -74,9 +74,9 @@ impl ExecArgs {
 fn resolve_program(program: &OsStr, path_var: Option<&OsString>) -> io::Result<CString> {
     // No let-chain here to stay compatible with Rust < 1.88 (Debian).
     if !program.as_bytes().contains(&b'/') {
-        if let Some(paths) = path_var {
+        if let Some(paths) = path_var.and_then(|p| p.to_str()) {
             for dir in env::split_paths(paths) {
-                let candidate = dir.join(program);
+                let candidate = std::path::Path::new(dir).join(program);
                 if access(&candidate, Access::EXEC_OK).is_ok() {
                     return cstring(candidate.as_os_str());
                 }
@@ -125,11 +125,13 @@ pub(crate) fn run(program: &str, args: &[&str]) -> io::Result<Output> {
     for arg in args {
         argv.push(cstring(OsStr::new(arg))?);
     }
-    let envp = env::vars_os()
-        .map(|(mut key, value)| {
-            key.push("=");
-            key.push(value);
-            cstring(&key)
+    let envp = env::vars()
+        .iter()
+        .map(|(key, value)| {
+            let mut entry = key.clone();
+            entry.push(b'=');
+            entry.extend_from_slice(value);
+            CString::new(entry).map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))
         })
         .collect::<io::Result<Vec<CString>>>()?;
     let exec_args = ExecArgs {

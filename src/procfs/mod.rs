@@ -1,6 +1,4 @@
 use rustix::process::{Gid, Pid, Uid};
-use std::env;
-use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
@@ -53,7 +51,7 @@ pub(crate) enum ProcfsError {
 }
 
 pub(crate) fn get_path() -> PathBuf {
-    PathBuf::from(&env::var_os("CNTR_PROC").unwrap_or_else(|| OsString::from("/proc")))
+    PathBuf::from(crate::env::var("CNTR_PROC").unwrap_or("/proc"))
 }
 
 /// Parse a uid_map or gid_map file and translate an outer ID to inner ID

@@ -1,13 +1,13 @@
 use log::warn;
-use rustix::process::{Pid, chroot};
+use rustix::process::{Pid, chdir, chroot};
 use std::collections::HashMap;
 use std::convert::Infallible;
-use std::env;
 use std::ffi::{OsStr, OsString};
 use std::os::unix::ffi::OsStringExt;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
+use crate::env;
 use crate::fsutil;
 use crate::procfs;
 use crate::spawn;
@@ -97,7 +97,7 @@ impl Cmd {
         };
 
         let command =
-            command.unwrap_or_else(|| env::var("SHELL").unwrap_or_else(|_| String::from("sh")));
+            command.unwrap_or_else(|| env::var("SHELL").unwrap_or("sh").to_string());
 
         let variables = read_environment(pid)?;
 
@@ -131,7 +131,7 @@ impl Cmd {
             OsString::from("/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin");
         self.environment.insert(
             OsString::from("PATH"),
-            env::var_os("PATH").unwrap_or(default_path),
+            env::var("PATH").map(OsString::from).unwrap_or(default_path),
         );
 
         // Set HOME if effective user was specified
@@ -178,9 +178,9 @@ impl Cmd {
                 return e.into();
             }
 
-            if let Err(e) = env::set_current_dir("/") {
+            if let Err(e) = chdir("/") {
                 warn!("failed to change directory to /");
-                return e;
+                return e.into();
             }
 
             // Apply AppArmor profile after chroot

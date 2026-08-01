@@ -5,9 +5,8 @@ use rustix::mount::{
     MountFlags, MountPropagationFlags, MoveMountFlags, OpenTreeFlags, mount, mount_change,
     move_mount, open_tree,
 };
-use rustix::process::{Pid, getpid};
+use rustix::process::{Pid, chdir, getpid};
 use rustix::thread::{UnshareFlags, unshare_unsafe};
-use std::env;
 use std::os::unix::io::{AsFd, BorrowedFd, OwnedFd};
 use std::os::unix::prelude::*;
 use std::path::{Path, PathBuf};
@@ -374,7 +373,7 @@ pub(crate) fn run(options: &mut ChildOptions) -> Result<std::convert::Infallible
     options.socket.send(&[ready_msg], &[&pty_fd])?;
 
     // Step 10: Change to base_dir
-    if let Err(e) = env::set_current_dir(&base_dir) {
+    if let Err(e) = chdir(&base_dir) {
         warn!(
             "failed to change directory to {}: {}",
             base_dir.display(),

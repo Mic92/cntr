@@ -1,6 +1,7 @@
 use rustix::process::geteuid;
-use std::env;
 use std::path::PathBuf;
+
+use crate::env;
 
 /// Environment variable to override the default cntr base directory
 const CNTR_BASE_DIR_ENV: &str = "CNTR_BASE_DIR";
@@ -18,7 +19,7 @@ const DEFAULT_CNTR_BASE_DIR: &str = "/var/lib/cntr";
 /// This allows unprivileged users to run cntr without root access.
 pub fn get_base_dir() -> PathBuf {
     // Check environment variable first
-    if let Ok(dir) = env::var(CNTR_BASE_DIR_ENV) {
+    if let Some(dir) = env::var(CNTR_BASE_DIR_ENV) {
         return PathBuf::from(dir);
     }
 
@@ -28,14 +29,14 @@ pub fn get_base_dir() -> PathBuf {
     }
 
     // For non-root users, prefer XDG_RUNTIME_DIR (usually /run/user/<uid>)
-    if let Ok(runtime_dir) = env::var("XDG_RUNTIME_DIR") {
+    if let Some(runtime_dir) = env::var("XDG_RUNTIME_DIR") {
         let mut path = PathBuf::from(runtime_dir);
         path.push("cntr");
         return path;
     }
 
     // Fall back to ~/.local/share/cntr
-    if let Ok(home) = env::var("HOME") {
+    if let Some(home) = env::var("HOME") {
         let mut path = PathBuf::from(home);
         path.push(".local");
         path.push("share");

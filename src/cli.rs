@@ -1,4 +1,3 @@
-use std::env;
 
 use crate::errors::format_chain;
 use crate::passwd::{self, User};
@@ -312,7 +311,7 @@ where
 ///
 /// Only enable this if you understand the security tradeoffs.
 fn maybe_set_dumpable() {
-    if env::var("CNTR_ALLOW_SETCAP").as_deref() == Ok("1") {
+    if crate::env::var("CNTR_ALLOW_SETCAP") == Some("1") {
         use rustix::process::{DumpableBehavior, set_dumpable_behavior};
         if let Err(e) = set_dumpable_behavior(DumpableBehavior::Dumpable) {
             log::warn!("failed to set PR_SET_DUMPABLE: {}", e);
@@ -325,6 +324,8 @@ where
     I: IntoIterator<Item = T>,
     T: Into<std::ffi::OsString> + Clone,
 {
+    crate::env::init();
+
     // Must be called early, before any /proc/self access
     maybe_set_dumpable();
 
