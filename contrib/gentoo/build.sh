@@ -1,9 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
-if [ ! -d /var/db/repos/gentoo/metadata ]; then
-  emerge-webrsync
-fi
+# Refresh the (cached) portage tree; a stale tree does not match the
+# eclasses and toolchain versions expected by the current stage3 image.
+emerge-webrsync
 
 version=$(grep "^version" /src/Cargo.toml | head -1 | cut -d'"' -f2)
 
@@ -22,5 +22,7 @@ cp /src/contrib/gentoo/app-containers/cntr/*.ebuild /var/db/repos/local/app-cont
 cd /var/db/repos/local/app-containers/cntr
 ebuild "cntr-${version}.ebuild" manifest
 
-# Use emerge to handle BDEPEND (rust, scdoc) automatically
+# The stage3 container resolves the package without scheduling its BDEPEND,
+# so install the build tools explicitly before building the package.
+emerge --oneshot dev-lang/rust-bin app-text/scdoc
 emerge --oneshot =app-containers/cntr-${version}
