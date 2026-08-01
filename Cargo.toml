@@ -12,7 +12,7 @@ license = "MIT"
 [dependencies]
 log = "0.4.30"
 libc = "0.2.186"
-container-pid = "1.0"
+container-pid = "2.0"
 thiserror = "2"
 rustix = { version = "1.1.4", features = [
   "event",

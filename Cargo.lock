@@ -3,12 +3,6 @@
 version = 4
 
 [[package]]
-name = "anyhow"
-version = "1.0.104"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
-
-[[package]]
 name = "bitflags"
 version = "2.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -34,12 +28,12 @@ dependencies = [
 
 [[package]]
 name = "container-pid"
-version = "1.0.0"
+version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1319e851f1af5faa83f9733d489e786a8338bda91c96f0367b98e3ff81d12ea2"
+checksum = "0356ab50217636ae093d26528a94650122d9a8995f108d5a9dbb30447a227704"
 dependencies = [
- "anyhow",
- "libc",
+ "rustix",
+ "thiserror",
 ]
 
 [[package]]
