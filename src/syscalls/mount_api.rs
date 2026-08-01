@@ -1,28 +1,14 @@
 // SPDX-License-Identifier: MIT
 //! mount_setattr() wrapper for idmapped mounts
 //!
-//! rustix has no wrapper for mount_setattr() (kernel 5.12+) yet, so this is
-//! the one remaining raw syscall made through libc::syscall().
+//! rustix has no wrapper for mount_setattr() (kernel 5.12+) yet, so the
+//! syscall is made directly: the number and struct come from linux-raw-sys
+//! (the kernel UAPI bindings rustix itself uses) and the syscall instruction
+//! from the syscalls crate.
 
+use linux_raw_sys::general::{AT_EMPTY_PATH, AT_RECURSIVE, MOUNT_ATTR_IDMAP, mount_attr};
 use std::os::unix::io::{AsRawFd, BorrowedFd};
-
-const AT_EMPTY_PATH: u32 = 0x00001000;
-const AT_RECURSIVE: u32 = 0x00008000;
-const MOUNT_ATTR_IDMAP: u64 = 0x00100000;
-
-// asm-generic syscall number, used by all architectures except MIPS.
-#[cfg(any(target_arch = "mips", target_arch = "mips64"))]
-compile_error!("mount_setattr syscall number for MIPS is not defined");
-const SYS_MOUNT_SETATTR: libc::c_long = 442;
-
-/// Kernel struct for mount_setattr
-#[repr(C)]
-struct MountAttr {
-    attr_set: u64,
-    attr_clr: u64,
-    propagation: u64,
-    userns_fd: u64,
-}
+use syscalls::{Sysno, syscall};
 
 /// Turn a detached mount tree (from open_tree()) into an idmapped mount.
 ///
@@ -32,25 +18,24 @@ pub(crate) fn make_mount_idmapped(
     mount_fd: BorrowedFd,
     userns_fd: BorrowedFd,
 ) -> std::io::Result<()> {
-    let attr = MountAttr {
-        attr_set: MOUNT_ATTR_IDMAP,
+    let attr = mount_attr {
+        attr_set: u64::from(MOUNT_ATTR_IDMAP),
         attr_clr: 0,
         propagation: 0,
         userns_fd: userns_fd.as_raw_fd() as u64,
     };
 
-    let ret = unsafe {
-        libc::syscall(
-            SYS_MOUNT_SETATTR,
+    // SAFETY: attr points to a properly initialized mount_attr struct and the
+    // empty path C string outlives the call.
+    let res = unsafe {
+        syscall!(
+            Sysno::mount_setattr,
             mount_fd.as_raw_fd(),
             c"".as_ptr(),
             AT_EMPTY_PATH | AT_RECURSIVE,
-            &attr as *const MountAttr,
-            std::mem::size_of::<MountAttr>(),
+            &raw const attr,
+            size_of::<mount_attr>()
         )
     };
-    if ret < 0 {
-        return Err(std::io::Error::last_os_error());
-    }
-    Ok(())
+    res.map(|_| ()).map_err(std::io::Error::from)
 }
