@@ -5,7 +5,7 @@ use rustix::process::{Pid, Signal, WaitOptions, kill_process, waitpid};
 use rustix::runtime::{Fork, exit_group, kernel_fork};
 use std::io::Read;
 use std::os::fd::OwnedFd;
-use std::{env, ffi::OsString, os::unix::ffi::OsStringExt, path::Path, path::PathBuf};
+use std::{env, path::Path, path::PathBuf};
 
 // Re-export from library
 pub(crate) use cntr::test_utils::run_in_userns;
@@ -16,22 +16,29 @@ pub(crate) struct TempDir {
 }
 
 impl TempDir {
-    /// Create a new temporary directory using mkdtemp
+    /// Create a new unique temporary directory
     pub(crate) fn new() -> std::io::Result<Self> {
-        let mut template = env::temp_dir();
-        template.push("cntr-test.XXXXXX");
-        let mut bytes = template.into_os_string().into_vec();
-        // null byte
-        bytes.push(0);
-        let res = unsafe { libc::mkdtemp(bytes.as_mut_ptr().cast()) };
-        if res.is_null() {
-            Err(std::io::Error::last_os_error())
-        } else {
-            // remove null byte
-            bytes.pop();
-            let path = PathBuf::from(OsString::from_vec(bytes));
-            Ok(TempDir { path: Some(path) })
+        let base = env::temp_dir();
+        for attempt in 0.. {
+            let nanos = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .subsec_nanos();
+            let path = base.join(format!(
+                "cntr-test.{}.{}.{}",
+                std::process::id(),
+                nanos,
+                attempt
+            ));
+            match std::fs::create_dir(&path) {
+                Ok(()) => return Ok(TempDir { path: Some(path) }),
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists && attempt < 100 => {
+                    continue;
+                }
+                Err(e) => return Err(e),
+            }
         }
+        unreachable!()
     }
 
     /// Get the path to the temporary directory
