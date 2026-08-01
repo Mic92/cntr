@@ -14,6 +14,7 @@ pub(crate) mod errors;
 pub(crate) mod exec;
 mod fsutil;
 mod ipc;
+pub mod logging;
 mod lsm;
 pub(crate) mod namespace;
 mod passwd;

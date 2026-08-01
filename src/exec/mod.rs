@@ -79,7 +79,7 @@ pub(crate) fn exec(opts: &ExecOptions) -> Result<std::convert::Infallible, ExecE
                 opts.arguments.clone(),
                 &pty_master,
             );
-            eprintln!("exec child failed: {}", crate::errors::format_chain(&e));
+            crate::stderrln!("exec child failed: {}", crate::errors::format_chain(&e));
             process::exit(1);
         }
     }

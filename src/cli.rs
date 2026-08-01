@@ -44,77 +44,77 @@ fn parse_apparmor_mode(s: &str) -> Result<ApparmorMode, String> {
 
 /// Print help for attach command
 fn print_attach_help() {
-    eprintln!("cntr-attach {}", VERSION);
-    eprintln!("by {}", AUTHORS);
-    eprintln!();
-    eprintln!("USAGE:");
-    eprintln!("    cntr attach [OPTIONS] <CONTAINER_ID> [-- <COMMAND>...]");
-    eprintln!();
-    eprintln!("ARGS:");
-    eprintln!("    <CONTAINER_ID>    Container ID, name, or process ID");
-    eprintln!();
-    eprintln!("OPTIONS:");
-    eprintln!("    -t, --type <TYPES>           Container types to try (comma-separated)");
-    eprintln!(
+    crate::stderrln!("cntr-attach {}", VERSION);
+    crate::stderrln!("by {}", AUTHORS);
+    crate::stderrln!();
+    crate::stderrln!("USAGE:");
+    crate::stderrln!("    cntr attach [OPTIONS] <CONTAINER_ID> [-- <COMMAND>...]");
+    crate::stderrln!();
+    crate::stderrln!("ARGS:");
+    crate::stderrln!("    <CONTAINER_ID>    Container ID, name, or process ID");
+    crate::stderrln!();
+    crate::stderrln!("OPTIONS:");
+    crate::stderrln!("    -t, --type <TYPES>           Container types to try (comma-separated)");
+    crate::stderrln!(
         "                                 [possible: process_id,podman,docker,nspawn,lxc,lxd,containerd,command,kubernetes]"
     );
-    eprintln!("                                 [default: all but command]");
-    eprintln!("    --effective-user <USER>      Effective user for new files on host");
-    eprintln!("                                 (username or numeric uid[:gid])");
-    eprintln!("    --apparmor <MODE>            AppArmor profile mode");
-    eprintln!("                                 [possible: auto, off]");
-    eprintln!("                                 [default: auto]");
-    eprintln!("    -h, --help                   Print help");
-    eprintln!("    -V, --version                Print version");
-    eprintln!();
-    eprintln!("COMMAND:");
-    eprintln!("    Command and arguments to execute [default: $SHELL]");
-    eprintln!("    Use '--' to separate command from options");
+    crate::stderrln!("                                 [default: all but command]");
+    crate::stderrln!("    --effective-user <USER>      Effective user for new files on host");
+    crate::stderrln!("                                 (username or numeric uid[:gid])");
+    crate::stderrln!("    --apparmor <MODE>            AppArmor profile mode");
+    crate::stderrln!("                                 [possible: auto, off]");
+    crate::stderrln!("                                 [default: auto]");
+    crate::stderrln!("    -h, --help                   Print help");
+    crate::stderrln!("    -V, --version                Print version");
+    crate::stderrln!();
+    crate::stderrln!("COMMAND:");
+    crate::stderrln!("    Command and arguments to execute [default: $SHELL]");
+    crate::stderrln!("    Use '--' to separate command from options");
 }
 
 /// Print help for exec command
 fn print_exec_help() {
-    eprintln!("cntr-exec {}", VERSION);
-    eprintln!("by {}", AUTHORS);
-    eprintln!();
-    eprintln!("USAGE:");
-    eprintln!("    cntr exec [OPTIONS] <CONTAINER_ID> [-- <COMMAND>...]");
-    eprintln!();
-    eprintln!("ARGS:");
-    eprintln!("    <CONTAINER_ID>    Container ID, name, or process ID (required)");
-    eprintln!();
-    eprintln!("OPTIONS:");
-    eprintln!("    -t, --type <TYPES>           Container types to try (comma-separated)");
-    eprintln!(
+    crate::stderrln!("cntr-exec {}", VERSION);
+    crate::stderrln!("by {}", AUTHORS);
+    crate::stderrln!();
+    crate::stderrln!("USAGE:");
+    crate::stderrln!("    cntr exec [OPTIONS] <CONTAINER_ID> [-- <COMMAND>...]");
+    crate::stderrln!();
+    crate::stderrln!("ARGS:");
+    crate::stderrln!("    <CONTAINER_ID>    Container ID, name, or process ID (required)");
+    crate::stderrln!();
+    crate::stderrln!("OPTIONS:");
+    crate::stderrln!("    -t, --type <TYPES>           Container types to try (comma-separated)");
+    crate::stderrln!(
         "                                 [possible: process_id,podman,docker,nspawn,lxc,lxd,containerd,command,kubernetes]"
     );
-    eprintln!("                                 [default: all but command]");
-    eprintln!("    --apparmor <MODE>            AppArmor profile mode");
-    eprintln!("                                 [possible: auto, off]");
-    eprintln!("                                 [default: auto]");
-    eprintln!("    -h, --help                   Print help");
-    eprintln!("    -V, --version                Print version");
-    eprintln!();
-    eprintln!("COMMAND:");
-    eprintln!("    Command and arguments to execute [default: /bin/sh]");
-    eprintln!("    Use '--' to separate command from options");
+    crate::stderrln!("                                 [default: all but command]");
+    crate::stderrln!("    --apparmor <MODE>            AppArmor profile mode");
+    crate::stderrln!("                                 [possible: auto, off]");
+    crate::stderrln!("                                 [default: auto]");
+    crate::stderrln!("    -h, --help                   Print help");
+    crate::stderrln!("    -V, --version                Print version");
+    crate::stderrln!();
+    crate::stderrln!("COMMAND:");
+    crate::stderrln!("    Command and arguments to execute [default: /bin/sh]");
+    crate::stderrln!("    Use '--' to separate command from options");
 }
 
 /// Print main help
 fn print_help() {
-    eprintln!("cntr {}", VERSION);
-    eprintln!("by {}", AUTHORS);
-    eprintln!();
-    eprintln!("Enter or execute in container");
-    eprintln!();
-    eprintln!("USAGE:");
-    eprintln!("    cntr <SUBCOMMAND>");
-    eprintln!();
-    eprintln!("SUBCOMMANDS:");
-    eprintln!("    attach    Enter container with mount overlay");
-    eprintln!("    exec      Execute command in container");
-    eprintln!("    help      Print help");
-    eprintln!("    version   Print version");
+    crate::stderrln!("cntr {}", VERSION);
+    crate::stderrln!("by {}", AUTHORS);
+    crate::stderrln!();
+    crate::stderrln!("Enter or execute in container");
+    crate::stderrln!();
+    crate::stderrln!("USAGE:");
+    crate::stderrln!("    cntr <SUBCOMMAND>");
+    crate::stderrln!();
+    crate::stderrln!("SUBCOMMANDS:");
+    crate::stderrln!("    attach    Enter container with mount overlay");
+    crate::stderrln!("    exec      Execute command in container");
+    crate::stderrln!("    help      Print help");
+    crate::stderrln!("    version   Print version");
 }
 
 /// Parse attach command arguments
@@ -141,7 +141,7 @@ where
                 return Ok(std::process::ExitCode::SUCCESS);
             }
             "-V" | "--version" => {
-                eprintln!("cntr {}", VERSION);
+                crate::stderrln!("cntr {}", VERSION);
                 return Ok(std::process::ExitCode::SUCCESS);
             }
             "-t" | "--type" => {
@@ -240,7 +240,7 @@ where
                 return Ok(std::process::ExitCode::SUCCESS);
             }
             "-V" | "--version" => {
-                eprintln!("cntr {}", VERSION);
+                crate::stderrln!("cntr {}", VERSION);
                 return Ok(std::process::ExitCode::SUCCESS);
             }
             "-t" | "--type" => {
@@ -324,6 +324,7 @@ where
     T: Into<std::ffi::OsString> + Clone,
 {
     crate::env::init();
+    crate::logging::init();
 
     // Must be called early, before any /proc/self access
     maybe_set_dumpable();
@@ -362,7 +363,7 @@ where
             Ok(std::process::ExitCode::SUCCESS)
         }
         "version" | "-V" | "--version" => {
-            eprintln!("cntr {}", VERSION);
+            crate::stderrln!("cntr {}", VERSION);
             Ok(std::process::ExitCode::SUCCESS)
         }
         _ => Err(format!("unknown subcommand: {}", subcommand).into()),

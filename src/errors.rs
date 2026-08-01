@@ -1,7 +1,7 @@
 //! Helpers for reporting errors to the user.
 
 use core::error::Error;
-use std::fmt::Write;
+use core::fmt::Write;
 
 /// Format an error together with its full source chain, e.g.
 /// `failed to attach: failed to open pty master: Permission denied`.

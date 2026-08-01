@@ -100,13 +100,13 @@ impl IdmapHelper {
 
                 // Create user namespace and set up mapping
                 if let Err(e) = Self::setup_userns(inner_uid, outer_uid, inner_gid, outer_gid) {
-                    eprintln!("idmap helper failed: {}", crate::errors::format_chain(&e));
+                    crate::stderrln!("idmap helper failed: {}", crate::errors::format_chain(&e));
                     exit(1);
                 }
 
                 // Signal parent we're ready
                 if let Err(e) = rustix::io::write(&write_fd, b"R") {
-                    eprintln!("idmap helper failed to signal parent: {:?}", e);
+                    crate::stderrln!("idmap helper failed to signal parent: {:?}", e);
                     exit(1);
                 }
 

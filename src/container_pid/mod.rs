@@ -1,5 +1,5 @@
+use core::fmt::Write;
 use std::fmt::Debug;
-use std::fmt::Write;
 
 /// A raw process ID as used by the kernel.
 pub type RawPid = i32;

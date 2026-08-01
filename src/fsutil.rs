@@ -39,7 +39,9 @@ pub(crate) fn read_to_string<P: AsRef<UnixPath>>(path: P) -> Result<String, Errn
     String::from_utf8(read(path)?).map_err(|_| Errno::ILSEQ)
 }
 
-fn write_all(fd: &OwnedFd, mut data: &[u8]) -> Result<(), Errno> {
+/// Write the whole buffer to the given file descriptor, retrying on partial
+/// writes and EINTR.
+pub(crate) fn write_all<Fd: AsFd>(fd: Fd, mut data: &[u8]) -> Result<(), Errno> {
     while !data.is_empty() {
         match rustix::io::write(fd.as_fd(), data) {
             Ok(0) => return Err(Errno::IO),
