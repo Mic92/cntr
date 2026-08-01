@@ -318,9 +318,8 @@ where
 /// Only enable this if you understand the security tradeoffs.
 fn maybe_set_dumpable() {
     if env::var("CNTR_ALLOW_SETCAP").as_deref() == Ok("1") {
-        use crate::syscalls::prctl::prctl;
-        // PR_SET_DUMPABLE = 4, SUID_DUMP_USER = 1
-        if let Err(e) = prctl(4, 1, 0, 0, 0) {
+        use rustix::process::{DumpableBehavior, set_dumpable_behavior};
+        if let Err(e) = set_dumpable_behavior(DumpableBehavior::Dumpable) {
             log::warn!("failed to set PR_SET_DUMPABLE: {}", e);
         }
     }
