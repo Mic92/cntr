@@ -13,7 +13,7 @@ use crate::syscalls::process::{Fork, fork};
 use idmap_helper::IdmapError;
 use rustix::io::Errno;
 use rustix::process::{getgid, getuid};
-use std::process;
+use rustix::runtime::exit_group;
 use thiserror::Error;
 use typed_path::UnixPathBuf;
 
@@ -162,7 +162,7 @@ pub(crate) fn attach(opts: &AttachOptions) -> Result<std::convert::Infallible, A
             // child::run returns Result<Infallible>, so can only return Err
             let Err(e) = child::run(&mut child_opts);
             crate::stderrln!("attach child failed: {}", crate::errors::format_chain(&e));
-            process::exit(1);
+            exit_group(1);
         }
     }
 }

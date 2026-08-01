@@ -6,13 +6,13 @@ use rustix::process::{
     Pid, Signal, WaitOptions, getpid, ioctl_tiocsctty, kill_process, setsid, waitpid,
 };
 use rustix::pty::{OpenptFlags, grantpt, openpt, ptsname, unlockpt};
+use rustix::runtime::exit_group;
 use rustix::stdio::{dup2_stderr, dup2_stdin, dup2_stdout, stdin, stdout};
 use rustix::termios::{
     ControlModes, InputModes, LocalModes, OptionalActions, OutputModes, SpecialCodeIndex, Termios,
     Winsize, isatty, tcgetattr, tcgetwinsize, tcsetattr, tcsetwinsize,
 };
 use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
-use std::process;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -283,10 +283,10 @@ pub(crate) fn forward_pty_and_wait<T: AsFd>(
                     if let Some(signal) = Signal::from_named_raw(sig) {
                         let _ = kill_process(getpid(), signal);
                     }
-                    process::exit(128 + sig);
+                    exit_group(128 + sig);
                 } else if let Some(code) = status.exit_status() {
                     // Child exited normally - exit with same status
-                    process::exit(code);
+                    exit_group(code);
                 } else {
                     return Err(PtyError::UnexpectedWaitEvent(format!("{:?}", status)));
                 }

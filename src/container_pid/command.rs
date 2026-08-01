@@ -16,7 +16,7 @@ impl Container for Command {
             path: UnixPathBuf::from("/proc"),
             source,
         })?;
-        let own_pid = std::process::id() as RawPid;
+        let own_pid = rustix::process::getpid().as_raw_nonzero().get();
 
         for name in names {
             let cmdline = UnixPath::new("/proc").join(&name).join("cmdline");

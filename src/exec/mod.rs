@@ -1,7 +1,7 @@
-use crate::syscalls::process::{Fork, fork};
+
+use crate::syscalls::process::{Fork, exit_group, fork};
 use rustix::io::Errno;
 use std::os::fd::OwnedFd;
-use std::process;
 use thiserror::Error;
 
 use crate::ApparmorMode;
@@ -80,7 +80,7 @@ pub(crate) fn exec(opts: &ExecOptions) -> Result<std::convert::Infallible, ExecE
                 &pty_master,
             );
             crate::stderrln!("exec child failed: {}", crate::errors::format_chain(&e));
-            process::exit(1);
+            exit_group(1);
         }
     }
 }
