@@ -112,7 +112,10 @@ impl IdmapHelper {
 
                 // Keep running (parent holds FD, but this is safer)
                 loop {
-                    std::thread::sleep(std::time::Duration::from_secs(3600));
+                    let _ = rustix::thread::nanosleep(&rustix::thread::Timespec {
+                        tv_sec: 3600,
+                        tv_nsec: 0,
+                    });
                 }
             }
         }

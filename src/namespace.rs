@@ -1,7 +1,7 @@
+use hashbrown::HashSet;
 use rustix::io::Errno;
 use rustix::process::Pid;
 use rustix::thread::{LinkNameSpaceType, move_into_link_name_space};
-use std::collections::HashSet;
 use std::os::unix::prelude::*;
 use thiserror::Error;
 use typed_path::UnixPathBuf;

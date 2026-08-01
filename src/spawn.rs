@@ -5,6 +5,7 @@
 //! cntr has: capturing the output of a helper CLI (`run`) and replacing the
 //! current process with the container command (`exec`).
 
+use hashbrown::HashMap;
 use rustix::event::{PollFd, PollFlags, poll};
 use rustix::fs::{Access, Mode, OFlags, access, fcntl_setfl, open};
 use rustix::io::Errno;
@@ -12,7 +13,6 @@ use rustix::pipe::pipe;
 use rustix::process::{WaitOptions, WaitStatus, waitpid};
 use rustix::runtime::{Fork, execve, exit_group, kernel_fork};
 use rustix::stdio::{dup2_stderr, dup2_stdin, dup2_stdout};
-use std::collections::HashMap;
 use std::convert::Infallible;
 use std::ffi::CString;
 use std::io;

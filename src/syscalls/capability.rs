@@ -9,9 +9,10 @@
 
 use rustix::io::Errno;
 use rustix::mount::{FsOpenFlags, fsopen};
-use std::sync::OnceLock;
+use std::sync::atomic::{AtomicU8, Ordering};
 
-static MOUNT_API_AVAILABLE: OnceLock<bool> = OnceLock::new();
+// 0 = not probed yet, 1 = unavailable, 2 = available
+static MOUNT_API_AVAILABLE: AtomicU8 = AtomicU8::new(0);
 
 /// Checks if the mount API syscalls are available on this system
 ///
@@ -25,7 +26,15 @@ static MOUNT_API_AVAILABLE: OnceLock<bool> = OnceLock::new();
 /// * `true` if mount API syscalls are available
 /// * `false` if not available (ENOSYS)
 pub fn has_mount_api() -> bool {
-    *MOUNT_API_AVAILABLE.get_or_init(probe_mount_api)
+    match MOUNT_API_AVAILABLE.load(Ordering::Relaxed) {
+        0 => {
+            let available = probe_mount_api();
+            MOUNT_API_AVAILABLE.store(if available { 2 } else { 1 }, Ordering::Relaxed);
+            available
+        }
+        1 => false,
+        _ => true,
+    }
 }
 
 /// Probe the kernel for mount API support

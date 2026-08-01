@@ -1,6 +1,6 @@
+use hashbrown::HashMap;
 use log::{debug, warn};
 use rustix::process::Pid;
-use std::collections::HashMap;
 use thiserror::Error;
 use typed_path::UnixPathBuf;
 
