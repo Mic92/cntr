@@ -18,15 +18,16 @@ jobs:
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-24.04-arm
             rust: stable
-          - target: armv7-unknown-linux-gnueabihf
-            os: ubuntu-latest
-            rust: stable
-            cross: true
           - target: i686-unknown-linux-gnu
             os: ubuntu-latest
             rust: stable
             cross: true
           - target: riscv64gc-unknown-linux-gnu
+            os: ubuntu-latest
+            rust: stable
+            cross: true
+          # Falls back to a std/libc start since origin has no arm start code.
+          - target: armv7-unknown-linux-gnueabihf
             os: ubuntu-latest
             rust: stable
             cross: true

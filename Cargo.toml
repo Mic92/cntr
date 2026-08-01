@@ -28,9 +28,11 @@ rustix = { version = "1.1.4", default-features = false, features = [
   "thread",
 ] }
 rustix-dlmalloc = { version = "0.2.2", default-features = false, features = ["global"] }
-origin = { version = "0.26.2", default-features = false, features = ["origin-start"] }
 typed-path = { version = "0.12.3", default-features = false }
 hashbrown = { version = "0.17.1", default-features = false, features = ["default-hasher", "inline-more"] }
+
+[target.'cfg(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "x86", target_arch = "riscv64"))'.dependencies]
+origin = { version = "0.26.2", default-features = false, features = ["origin-start"] }
 
 [[bin]]
 name = "cntr"

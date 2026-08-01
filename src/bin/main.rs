@@ -1,17 +1,20 @@
-#![no_std]
-#![no_main]
+#![cfg_attr(origin_start, no_std)]
+#![cfg_attr(origin_start, no_main)]
 
 extern crate alloc;
 
 use alloc::string::String;
 use alloc::vec::Vec;
+#[cfg(origin_start)]
 use core::ffi::CStr;
+#[cfg(origin_start)]
 use origin::program;
 
 /// Entry point called by origin after program startup.
 ///
 /// SAFETY: `argv` and `envp` are the NULL-terminated argument and environment
 /// arrays provided by the kernel.
+#[cfg(origin_start)]
 #[unsafe(no_mangle)]
 unsafe fn origin_main(argc: usize, argv: *mut *mut u8, envp: *mut *mut u8) -> i32 {
     let mut args = Vec::with_capacity(argc);
@@ -40,7 +43,7 @@ unsafe fn origin_main(argc: usize, argv: *mut *mut u8, envp: *mut *mut u8) -> i3
     program::exit(status)
 }
 
-#[cfg(not(test))]
+#[cfg(all(origin_start, not(test)))]
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
     cntr::stderrln!("panic: {}", info);
@@ -48,19 +51,37 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
 }
 
 // Referenced by the precompiled alloc rlib; unused with panic = "abort".
-#[cfg(not(test))]
+#[cfg(all(origin_start, not(test)))]
 #[unsafe(no_mangle)]
 extern "C" fn rust_eh_personality() {}
 
 // compiler_builtins' aarch64 outline-atomics helpers are built with stack
 // protector enabled; provide the guard symbols normally supplied by libc.
-#[cfg(all(not(test), target_arch = "aarch64"))]
+#[cfg(all(origin_start, not(test), target_arch = "aarch64"))]
 #[allow(non_upper_case_globals)]
 #[unsafe(no_mangle)]
 static __stack_chk_guard: usize = 0xdead_beef_0bad_cafe;
 
-#[cfg(all(not(test), target_arch = "aarch64"))]
+#[cfg(all(origin_start, not(test), target_arch = "aarch64"))]
 #[unsafe(no_mangle)]
 extern "C" fn __stack_chk_fail() -> ! {
     program::trap()
+}
+
+/// Fallback for architectures without origin start code: normal std startup.
+#[cfg(not(origin_start))]
+fn main() -> std::process::ExitCode {
+    use std::os::unix::ffi::OsStringExt;
+
+    let args: Vec<String> = std::env::args().collect();
+    let environ: Vec<(Vec<u8>, Vec<u8>)> = std::env::vars_os()
+        .map(|(key, value)| (key.into_vec(), value.into_vec()))
+        .collect();
+    match cntr::cli::run_with_args(args, environ) {
+        Ok(code) => std::process::ExitCode::from(code),
+        Err(e) => {
+            cntr::stderrln!("{}", e);
+            std::process::ExitCode::FAILURE
+        }
+    }
 }
