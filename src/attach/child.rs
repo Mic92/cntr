@@ -1,11 +1,14 @@
 use log::{debug, warn};
-use rustix::fs::{AtFlags, Dir, FileType, statat};
-use rustix::mount::{MountFlags, MountPropagationFlags, mount, mount_change};
+use rustix::fs::{AtFlags, CWD, Dir, FileType, statat};
+use rustix::io::Errno;
+use rustix::mount::{
+    MountFlags, MountPropagationFlags, MoveMountFlags, OpenTreeFlags, mount, mount_change,
+    move_mount, open_tree,
+};
 use rustix::process::{Pid, getpid};
 use rustix::thread::{UnshareFlags, unshare_unsafe};
 use std::env;
-use std::ffi::CString;
-use std::os::unix::io::{AsFd, BorrowedFd};
+use std::os::unix::io::{AsFd, BorrowedFd, OwnedFd};
 use std::os::unix::prelude::*;
 use std::path::{Path, PathBuf};
 
@@ -17,7 +20,21 @@ use crate::namespace;
 use crate::paths;
 use crate::procfs::ProcStatus;
 use crate::pty;
-use crate::syscalls::mount_api::MountFd;
+use crate::syscalls::mount_api::make_mount_idmapped;
+
+const RECURSIVE_CLONE: OpenTreeFlags =
+    OpenTreeFlags::OPEN_TREE_CLONE.union(OpenTreeFlags::AT_RECURSIVE);
+
+/// Attach a detached mount tree (from open_tree()) at the given path.
+fn attach_tree<P: rustix::path::Arg>(tree: OwnedFd, target: P) -> Result<(), Errno> {
+    move_mount(
+        tree.as_fd(),
+        c"",
+        CWD,
+        target,
+        MoveMountFlags::MOVE_MOUNT_F_EMPTY_PATH,
+    )
+}
 
 /// Options for child process
 pub(crate) struct ChildOptions<'a> {
@@ -88,14 +105,8 @@ fn apply_idmapped_mounts(userns_fd: BorrowedFd, base_dir: &Path) -> Result<(), A
             continue;
         }
 
-        // Try to apply idmap to this mount
-        let mount_cstr = match CString::new(mount_point) {
-            Ok(c) => c,
-            Err(_) => continue,
-        };
-
         // Clone the mount with open_tree
-        let tree = match MountFd::open_tree_at(None, &mount_cstr) {
+        let tree = match open_tree(CWD, mount_point, RECURSIVE_CLONE) {
             Ok(t) => t,
             Err(e) => {
                 warn!("Failed to open_tree {}: {}", mount_point, e);
@@ -104,7 +115,7 @@ fn apply_idmapped_mounts(userns_fd: BorrowedFd, base_dir: &Path) -> Result<(), A
         };
 
         // Apply idmap
-        if let Err(e) = tree.apply_idmap(userns_fd) {
+        if let Err(e) = make_mount_idmapped(tree.as_fd(), userns_fd) {
             warn!(
                 "Failed to apply idmap to {} ({}): {}",
                 mount_point, fstype, e
@@ -113,7 +124,7 @@ fn apply_idmapped_mounts(userns_fd: BorrowedFd, base_dir: &Path) -> Result<(), A
         }
 
         // Move back to original location
-        if let Err(e) = tree.attach_to(None, &mount_cstr) {
+        if let Err(e) = attach_tree(tree, mount_point) {
             warn!("Failed to attach idmapped {} back: {}", mount_point, e);
             continue;
         }
@@ -173,7 +184,7 @@ fn capture_and_attach_container_trees(
             };
 
             // Capture tree
-            match MountFd::open_tree_at(Some(dir_fd), name) {
+            match open_tree(dir_fd, name, RECURSIVE_CLONE) {
                 Ok(tree) => {
                     let name_os = std::ffi::OsStr::from_bytes(name.as_bytes()).to_owned();
                     Some((name_os, tree, is_dir))
@@ -209,14 +220,7 @@ fn capture_and_attach_container_trees(
             continue;
         }
 
-        let target_cstr = CString::new(target.as_os_str().as_bytes()).map_err(|source| {
-            AttachError::InvalidMountPointPath {
-                path: target.clone(),
-                source,
-            }
-        })?;
-
-        if let Err(e) = tree.attach_to(None, &target_cstr) {
+        if let Err(e) = attach_tree(tree, &target) {
             warn!("Failed to attach tree to {:?}: {}", target, e);
         }
     }

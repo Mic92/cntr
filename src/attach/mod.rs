@@ -80,12 +80,6 @@ pub(crate) enum AttachError {
     },
     #[error("failed to read container root directory")]
     ReadContainerRootDir(#[source] Errno),
-    #[error("failed to create CString for mount point {path}")]
-    InvalidMountPointPath {
-        path: PathBuf,
-        #[source]
-        source: std::ffi::NulError,
-    },
     #[error(transparent)]
     Setup(#[from] SetupError),
     #[error("failed to inherit AppArmor profile")]
