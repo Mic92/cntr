@@ -22,5 +22,5 @@ cp /src/contrib/gentoo/app-containers/cntr/*.ebuild /var/db/repos/local/app-cont
 cd /var/db/repos/local/app-containers/cntr
 ebuild "cntr-${version}.ebuild" manifest
 
-# Use emerge to handle BDEPEND (rust-bin, scdoc) automatically
+# Use emerge to handle BDEPEND (rust, scdoc) automatically
 emerge --oneshot =app-containers/cntr-${version}
