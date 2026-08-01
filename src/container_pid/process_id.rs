@@ -1,12 +1,12 @@
 use std::env;
 use std::ffi::OsString;
-use std::fs;
 use std::io::ErrorKind;
 use std::path::PathBuf;
 
 use crate::container_pid::Container;
 use crate::container_pid::Error;
 use crate::container_pid::RawPid;
+use crate::fsutil;
 
 #[derive(Clone, Debug)]
 pub(crate) struct ProcessId {}
@@ -23,7 +23,7 @@ impl Container for ProcessId {
             .map_err(|source| Error::InvalidProcessId(container_id.to_string(), source))?;
 
         let proc_path = get_path().join(pid.to_string());
-        match fs::metadata(&proc_path) {
+        match fsutil::metadata(&proc_path) {
             Err(e) => {
                 if e.kind() == ErrorKind::NotFound {
                     Err(Error::NoSuchProcess(pid))

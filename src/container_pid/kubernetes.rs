@@ -11,8 +11,10 @@ use crate::container_pid::Container;
 use crate::container_pid::Error;
 use crate::container_pid::RawPid;
 use crate::container_pid::cmd;
+use rustix::fs::FileType;
 use std::ffi::OsString;
-use std::fs;
+
+use crate::fsutil;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::str::FromStr;
@@ -148,15 +150,17 @@ pub(crate) fn find_cgroup(containerdid: String) -> Result<PathBuf, Error> {
     }
 }
 
-// one possible implementation of walking a directory from
-// https://doc.rust-lang.org/std/fs/fn.read_dir.html
+/// Recursively search a directory tree for an entry with the given name.
 fn visit_dirs(dir: &Path, containerdid: &OsString) -> Option<PathBuf> {
-    for entry in std::fs::read_dir(dir).ok()?.flatten() {
-        if &entry.file_name() == containerdid {
-            return Some(entry.path());
+    for name in fsutil::read_dir_names(dir).ok()? {
+        let path = dir.join(&name);
+        if &name == containerdid {
+            return Some(path);
         }
-        let path = entry.path();
-        if path.is_dir() {
+        let is_dir = fsutil::metadata(&path)
+            .map(|stat| FileType::from_raw_mode(stat.st_mode) == FileType::Directory)
+            .unwrap_or(false);
+        if is_dir {
             if let Some(path) = visit_dirs(&path, containerdid) {
                 return Some(path);
             }
@@ -168,7 +172,7 @@ fn visit_dirs(dir: &Path, containerdid: &OsString) -> Option<PathBuf> {
 /// return any pid part of this cgroup
 pub(crate) fn get_cgroup_pid(cgroup: &Path) -> Result<RawPid, Error> {
     let path = cgroup.join("cgroup.procs");
-    let bytes = fs::read(&path).map_err(|source| Error::Io {
+    let bytes = fsutil::read(&path).map_err(|source| Error::Io {
         path: path.clone(),
         source,
     })?;

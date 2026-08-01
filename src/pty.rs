@@ -11,8 +11,6 @@ use rustix::termios::{
     ControlModes, InputModes, LocalModes, OptionalActions, OutputModes, SpecialCodeIndex, Termios,
     Winsize, isatty, tcgetattr, tcgetwinsize, tcsetattr, tcsetwinsize,
 };
-use std::fs::File;
-use std::io::{Read, Write};
 use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
 use std::process;
 use thiserror::Error;
@@ -67,8 +65,8 @@ enum FilePairState {
 }
 
 struct FilePair<'a> {
-    from: &'a File,
-    to: &'a File,
+    from: &'a OwnedFd,
+    to: &'a OwnedFd,
     buf: [u8; BUF_SIZE],
     read_offset: usize,
     write_offset: usize,
@@ -76,7 +74,7 @@ struct FilePair<'a> {
 }
 
 impl<'a> FilePair<'a> {
-    fn new(from: &'a File, to: &'a File) -> FilePair<'a> {
+    fn new(from: &'a OwnedFd, to: &'a OwnedFd) -> FilePair<'a> {
         FilePair {
             from,
             to,
@@ -87,7 +85,7 @@ impl<'a> FilePair<'a> {
         }
     }
     fn read(&mut self) -> bool {
-        match self.from.read(&mut self.buf) {
+        match rustix::io::read(self.from, &mut self.buf) {
             Ok(read) => {
                 self.read_offset = read;
                 self.write()
@@ -96,10 +94,7 @@ impl<'a> FilePair<'a> {
         }
     }
     fn write(&mut self) -> bool {
-        match self
-            .to
-            .write(&self.buf[self.write_offset..self.read_offset])
-        {
+        match rustix::io::write(self.to, &self.buf[self.write_offset..self.read_offset]) {
             Ok(written) => {
                 self.write_offset += written;
                 if self.write_offset >= self.read_offset {
@@ -234,12 +229,10 @@ pub(crate) fn forward<T: AsFd>(pty: &T) -> Result<(), PtyError> {
         None
     };
 
-    // Duplicate FDs so each File owns its own FD and can be safely closed
+    // Duplicate FDs so each end owns its own FD and can be safely closed
     // This prevents double-close bugs when the original FD owners are dropped
-    let dup_fd = |what, fd: BorrowedFd| -> Result<File, PtyError> {
-        Ok(dup(fd)
-            .map_err(|source| PtyError::Dup { what, source })?
-            .into())
+    let dup_fd = |what, fd: BorrowedFd| -> Result<OwnedFd, PtyError> {
+        dup(fd).map_err(|source| PtyError::Dup { what, source })
     };
     let stdin_file = dup_fd("stdin", stdin())?;
     let stdout_file = dup_fd("stdout", stdout())?;

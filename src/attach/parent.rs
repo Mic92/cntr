@@ -1,4 +1,5 @@
 use rustix::process::Pid;
+use std::os::fd::OwnedFd;
 
 use crate::attach::AttachError;
 use crate::ipc;
@@ -19,7 +20,7 @@ pub(crate) fn run(
 ) -> Result<std::convert::Infallible, AttachError> {
     // Step 1: Wait for child to assemble mount hierarchy and signal completion
     // The child will send: ready signal + PTY fd
-    let (msg_buf, mut fds) = socket.receive::<std::fs::File>(1)?;
+    let (msg_buf, mut fds) = socket.receive::<OwnedFd>(1)?;
 
     if msg_buf.is_empty() || msg_buf[0] != b'R' {
         return Err(AttachError::ChildNotReady);
