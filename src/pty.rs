@@ -276,6 +276,17 @@ pub(crate) fn forward_pty_and_wait<T: AsFd>(
     // This will block until child exits or PTY closes
     let _ = forward(pty);
 
+    wait_for_child(child_pid)
+}
+
+/// Whether both stdin and stdout are terminals; if not, we skip PTY allocation
+/// so that redirected/piped output is passed through unmodified.
+pub(crate) fn stdio_is_tty() -> bool {
+    isatty(stdin()) && isatty(stdout())
+}
+
+/// Wait for child process to exit, propagating exit status and job control.
+pub(crate) fn wait_for_child(child_pid: Pid) -> Result<std::convert::Infallible, PtyError> {
     // Wait for child to exit and propagate exit status
     // Loop to handle job control signals (SIGSTOP, SIGCONT) and EINTR
     loop {

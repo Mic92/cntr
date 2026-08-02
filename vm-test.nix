@@ -53,6 +53,11 @@ in
       server.succeed("date +%Z | grep -q UTC")
       server.succeed("cntr attach busybox -- date +%Z | grep -qE 'CET|CEST'")
       server.succeed("cntr exec busybox -- date +%Z | grep -qE 'CET|CEST'")
+      # No PTY when stdio is not a terminal, so binary output is not mangled (issue #181)
+      server.fail("cntr attach busybox -- test -t 1 </dev/null >/dev/null")
+      server.fail("cntr exec busybox -- test -t 1 </dev/null >/dev/null")
+      server.succeed("test \"$(cntr attach busybox -- printf 'a\\nb' </dev/null | wc -c)\" = 3")
+      server.succeed("test \"$(cntr exec busybox -- printf 'a\\nb' </dev/null | wc -c)\" = 3")
     '';
   };
   podman = testers.nixosTest {

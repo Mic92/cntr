@@ -420,17 +420,29 @@ pub(crate) fn run(options: &mut ChildOptions) -> Result<std::convert::Infallible
         ns.apply()?;
     }
 
-    // Step 7: Setup PTY (before applying AppArmor profile)
-    let pty_master = pty::open_ptm()?;
-    pty::attach_pts(&pty_master)?;
+    // Step 7: Setup PTY (before applying AppArmor profile), unless stdio is
+    // redirected: then we keep the inherited stdio so binary output is not
+    // mangled by a terminal (issue #181)
+    let pty_master = if pty::stdio_is_tty() {
+        let pty_master = pty::open_ptm()?;
+        pty::attach_pts(&pty_master)?;
+        Some(pty_master)
+    } else {
+        None
+    };
 
     // Step 8: Apply security context (UID/GID, capabilities) - NOT AppArmor yet
     crate::container_setup::apply_security_context(&mut options.process_status, in_user_ns)?;
 
-    // Step 9: Send ready signal + PTY fd to parent
+    // Step 9: Send ready signal (+ PTY fd if allocated) to parent
     let ready_msg = b"R";
-    let pty_fd = pty_master.as_fd();
-    options.socket.send(&[ready_msg], &[&pty_fd])?;
+    match &pty_master {
+        Some(pty_master) => {
+            let pty_fd = pty_master.as_fd();
+            options.socket.send(&[ready_msg], &[&pty_fd])?;
+        }
+        None => options.socket.send::<BorrowedFd>(&[ready_msg], &[])?,
+    }
 
     // Step 10: Change to base_dir
     if let Err(e) = env::set_current_dir(&base_dir) {

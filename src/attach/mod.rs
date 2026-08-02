@@ -42,8 +42,6 @@ pub(crate) enum AttachError {
     Fork(#[source] Errno),
     #[error("child did not send ready signal")]
     ChildNotReady,
-    #[error("expected PTY fd from child, got none")]
-    MissingPtyFd,
     #[error(transparent)]
     Pty(#[from] PtyError),
     #[error("failed to change cgroup")]

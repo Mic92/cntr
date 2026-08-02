@@ -62,22 +62,27 @@ pub(crate) fn exec(opts: &ExecOptions) -> Result<std::convert::Infallible, ExecE
         source,
     })?;
 
-    // Create PTY for interactive command execution
-    let pty_master = pty::open_ptm()?;
+    // Create PTY for interactive command execution; skip it when stdio is
+    // redirected so binary output is not mangled by a terminal (issue #181)
+    let pty_master = if pty::stdio_is_tty() {
+        Some(pty::open_ptm()?)
+    } else {
+        None
+    };
 
     // Fork: child enters container and execs, parent forwards PTY I/O
     match fork().map_err(ExecError::Fork)? {
-        Fork::ParentOf(child) => {
-            // Parent: Forward PTY I/O and wait for child
-            Ok(pty::forward_pty_and_wait(&pty_master, child)?)
-        }
+        Fork::ParentOf(child) => match &pty_master {
+            Some(pty_master) => Ok(pty::forward_pty_and_wait(pty_master, child)?),
+            None => Ok(pty::wait_for_child(child)?),
+        },
         Fork::Child => {
             // Child: Setup PTY slave, enter container, exec command
             let Err(e) = exec_child(
                 &mut process_status,
                 opts.command.clone(),
                 opts.arguments.clone(),
-                &pty_master,
+                pty_master.as_ref(),
             );
             eprintln!("exec child failed: {}", crate::errors::format_chain(&e));
             process::exit(1);
@@ -92,10 +97,12 @@ fn exec_child(
     process_status: &mut crate::procfs::ProcStatus,
     exe: Option<String>,
     args: Vec<String>,
-    pty_master: &OwnedFd,
+    pty_master: Option<&OwnedFd>,
 ) -> Result<std::convert::Infallible, ExecError> {
-    // Attach PTY slave
-    pty::attach_pts(pty_master)?;
+    // Attach PTY slave if one was allocated
+    if let Some(pty_master) = pty_master {
+        pty::attach_pts(pty_master)?;
+    }
 
     // Default to /bin/sh if no command specified
     let exe = exe.or(Some(String::from("/bin/sh")));
