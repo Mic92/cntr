@@ -39,6 +39,7 @@ in
     testScript = ''
       start_all()
       server.wait_for_unit("docker-busybox.service")
+      server.wait_until_succeeds("docker inspect --format '{{.State.Running}}' busybox | grep true")
       server.succeed("cntr attach busybox true")
       server.succeed("cntr exec busybox -- /bin/sh -c 'echo exec test passed'")
     '';
