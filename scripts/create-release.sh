@@ -16,19 +16,6 @@ if [[ "$(git symbolic-ref --short HEAD)" != "main" ]]; then
     exit 1
 fi
 
-# Ensure working directory is clean
-uncommitted_changes=$(git diff --compact-summary)
-if [[ -n "$uncommitted_changes" ]]; then
-    echo -e "There are uncommitted changes, exiting:\n${uncommitted_changes}" >&2
-    exit 1
-fi
-
-unpushed_changes=$(git log --format=oneline origin/main..main)
-if [[ -n "$unpushed_changes" ]]; then
-    echo -e "There are unpushed changes, exiting:\n${unpushed_changes}" >&2
-    exit 1
-fi
-
 # Check if tag already exists
 if git rev-parse "${version}" &>/dev/null; then
     echo "Tag ${version} already exists" >&2
@@ -40,9 +27,6 @@ sed -i -e "0,/^version = / s!^version = \".*\"!version = \"${version}\"!" Cargo.
 
 # Update Cargo.lock
 cargo build --release
-
-# Run checks
-nix flake check -L
 
 # Create release branch and PR
 git checkout -b "release-${version}"

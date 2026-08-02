@@ -10,7 +10,7 @@ checksum = "5c8214115b7bf84099f1309324e63141d4c5d7cc26862f97a0a857dbefe165bd"
 
 [[package]]
 name = "cntr"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "container-pid",
  "libc",
