@@ -156,12 +156,7 @@ where
                 match passwd::lookup(&username) {
                     Ok(Some(user)) => effective_user = Some(user),
                     Ok(None) => {
-                        return Err(format!(
-                            "user '{}' not found in /etc/passwd or via getent; \
-                             a numeric uid[:gid] can be used instead",
-                            username
-                        )
-                        .into());
+                        return Err(format!("user '{}' not found", username).into());
                     }
                     Err(e) => {
                         return Err(format!(
