@@ -36,7 +36,7 @@ if git rev-parse "${version}" &>/dev/null; then
 fi
 
 # Update version in Cargo.toml
-sed -i -e "0,/version =/ s!^version = \".*\"!version = \"${version}\"!" Cargo.toml
+sed -i -e "0,/^version = / s!^version = \".*\"!version = \"${version}\"!" Cargo.toml
 
 # Update Cargo.lock
 cargo build --release
