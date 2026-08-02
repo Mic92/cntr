@@ -1,5 +1,5 @@
 Name:           cntr
-Version:        2.0.0
+Version:        2.1.0
 Release:        1%{?dist}
 Summary:        A container debugging tool based on Linux mount API
 
@@ -54,6 +54,10 @@ cargo test --release --locked
 %{_mandir}/man1/cntr.1*
 
 %changelog
+* Sun Aug 02 2026 Jörg Thalheim <joerg@thalheim.io> - 2.1.0-1
+- Show container timezone in attached shell
+- Skip PTY allocation when stdio is not a terminal
+
 * Sun Dec 22 2024 Jörg Thalheim <joerg@thalheim.io> - 2.0.0-1
 - Rewrite to use Linux mount API instead of FUSE
 - Requires Linux kernel 5.2 or later

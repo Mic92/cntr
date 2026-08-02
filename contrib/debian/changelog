@@ -1,3 +1,10 @@
+cntr (2.1.0-1) unstable; urgency=medium
+
+  * Show container timezone in attached shell
+  * Skip PTY allocation when stdio is not a terminal
+
+ -- Jörg Thalheim <joerg@thalheim.io>  Sun, 02 Aug 2026 09:58:24 +0200
+
 cntr (2.0.0-1) unstable; urgency=medium
 
   * Rewrite to use Linux mount API instead of FUSE
