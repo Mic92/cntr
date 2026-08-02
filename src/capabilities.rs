@@ -1,14 +1,11 @@
-use libc::c_ulong;
-
-use crate::result::Result;
-use crate::syscalls::prctl;
+use rustix::thread::{CapabilitySet, remove_capability_from_bounding_set};
 
 pub(crate) const CAP_SYS_CHROOT: u32 = 18;
 pub(crate) const CAP_SYS_PTRACE: u32 = 19;
 
-pub(crate) fn drop(inheritable_capabilities: c_ulong, last_cap: c_ulong) -> Result<()> {
+pub(crate) fn drop(inheritable_capabilities: u64, last_cap: u64) {
     // Ensure last_cap won't cause shift overflow
-    let max_cap = (std::mem::size_of::<c_ulong>() * 8 - 1) as c_ulong;
+    let max_cap = (u64::BITS - 1) as u64;
     assert!(
         last_cap <= max_cap,
         "last_cap ({}) exceeds maximum bit position ({})",
@@ -17,16 +14,15 @@ pub(crate) fn drop(inheritable_capabilities: c_ulong, last_cap: c_ulong) -> Resu
     );
 
     // we need chroot at the moment for `exec` command
-    let inheritable = inheritable_capabilities
-        | ((1 as c_ulong) << CAP_SYS_CHROOT)
-        | ((1 as c_ulong) << CAP_SYS_PTRACE);
+    let inheritable =
+        inheritable_capabilities | (1u64 << CAP_SYS_CHROOT) | (1u64 << CAP_SYS_PTRACE);
 
     for cap in 0..=last_cap {
-        if (inheritable & ((1 as c_ulong) << cap)) == 0 {
+        if (inheritable & (1u64 << cap)) == 0 {
             // Ignore errors - in some contexts we can't drop capabilities (e.g., unprivileged user namespaces)
             // This is expected behavior and should not cause the operation to fail
-            let _ = prctl(libc::PR_CAPBSET_DROP, cap, 0, 0, 0);
+            let _ =
+                remove_capability_from_bounding_set(CapabilitySet::from_bits_retain(1u64 << cap));
         }
     }
-    Ok(())
 }

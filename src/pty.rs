@@ -1,30 +1,65 @@
-use anyhow::{Context, bail};
-use libc::{self, winsize};
 use log::warn;
-use nix::errno::Errno;
-use nix::fcntl::OFlag;
-use nix::pty::*;
-use nix::sys::select;
-use nix::sys::signal::{SIGWINCH, SaFlags, SigAction, SigHandler, SigSet, sigaction};
-use nix::sys::stat;
-use nix::sys::termios::SpecialCharacterIndices::*;
-use nix::sys::termios::{
-    ControlFlags, InputFlags, LocalFlags, OutputFlags, SetArg, Termios, tcgetattr, tcsetattr,
+use rustix::event::{PollFd, PollFlags, Timespec, poll};
+use rustix::fs::{Mode, OFlags, open};
+use rustix::io::{Errno, dup};
+use rustix::process::{
+    Pid, Signal, WaitOptions, getpid, ioctl_tiocsctty, kill_process, setsid, waitpid,
 };
-use nix::{self, fcntl, unistd};
+use rustix::pty::{OpenptFlags, grantpt, openpt, ptsname, unlockpt};
+use rustix::stdio::{dup2_stderr, dup2_stdin, dup2_stdout, stdin, stdout};
+use rustix::termios::{
+    ControlModes, InputModes, LocalModes, OptionalActions, OutputModes, SpecialCodeIndex, Termios,
+    Winsize, isatty, tcgetattr, tcgetwinsize, tcsetattr, tcsetwinsize,
+};
 use std::fs::File;
 use std::io::{Read, Write};
-use std::os::fd::{AsFd, AsRawFd, BorrowedFd};
-use std::os::unix::prelude::*;
-use std::sync::atomic::{AtomicI32, Ordering};
+use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
+use std::process;
+use thiserror::Error;
 
-use crate::result::Result;
-
-// Safe wrapper for the TIOCSCTTY ioctl
-fn tiocsctty(fd: RawFd, arg: libc::c_int) -> nix::Result<libc::c_int> {
-    let res = unsafe { libc::ioctl(fd, libc::TIOCSCTTY, arg) };
-    Errno::result(res)
+#[derive(Debug, Error)]
+pub(crate) enum PtyError {
+    #[error("failed to get termios attributes")]
+    GetTermios(#[source] Errno),
+    #[error("failed to set termios attributes")]
+    SetTermios(#[source] Errno),
+    #[error("failed to duplicate {what}")]
+    Dup {
+        what: &'static str,
+        #[source]
+        source: Errno,
+    },
+    #[error("failed to open pty with posix_openpt()")]
+    OpenPtyMaster(#[source] Errno),
+    #[error("failed to grant pty access with grantpt()")]
+    Grantpt(#[source] Errno),
+    #[error("failed to unlock pty with unlockpt()")]
+    Unlockpt(#[source] Errno),
+    #[error("failed to get PTY slave name from master")]
+    Ptsname(#[source] Errno),
+    #[error("PTY slave name is not valid UTF-8")]
+    PtsnameNotUtf8,
+    #[error("failed to create new session for PTY")]
+    Setsid(#[source] Errno),
+    #[error("failed to open PTY slave at {path}")]
+    OpenPtySlave {
+        path: String,
+        #[source]
+        source: Errno,
+    },
+    #[error("failed to redirect {what} to PTY slave")]
+    Dup2 {
+        what: &'static str,
+        #[source]
+        source: Errno,
+    },
+    #[error("waitpid failed")]
+    WaitPid(#[source] Errno),
+    #[error("unexpected wait event: {0}")]
+    UnexpectedWaitEvent(String),
 }
+
+const BUF_SIZE: usize = 8192;
 
 enum FilePairState {
     Write,
@@ -34,7 +69,7 @@ enum FilePairState {
 struct FilePair<'a> {
     from: &'a File,
     to: &'a File,
-    buf: [u8; libc::BUFSIZ as usize],
+    buf: [u8; BUF_SIZE],
     read_offset: usize,
     write_offset: usize,
     state: FilePairState,
@@ -45,7 +80,7 @@ impl<'a> FilePair<'a> {
         FilePair {
             from,
             to,
-            buf: [8; libc::BUFSIZ as usize],
+            buf: [0; BUF_SIZE],
             write_offset: 0,
             read_offset: 0,
             state: FilePairState::Read,
@@ -87,35 +122,35 @@ struct RawTty<'a> {
 }
 
 impl<'a> RawTty<'a> {
-    fn new(stdin: BorrowedFd<'a>) -> Result<RawTty<'a>> {
-        let orig_attr = tcgetattr(stdin).context("failed to get termios attributes")?;
+    fn new(stdin: BorrowedFd<'a>) -> Result<RawTty<'a>, PtyError> {
+        let orig_attr = tcgetattr(stdin).map_err(PtyError::GetTermios)?;
 
         let mut attr = orig_attr.clone();
-        attr.input_flags.remove(
-            InputFlags::IGNBRK
-                | InputFlags::BRKINT
-                | InputFlags::PARMRK
-                | InputFlags::ISTRIP
-                | InputFlags::INLCR
-                | InputFlags::IGNCR
-                | InputFlags::ICRNL
-                | InputFlags::IXON,
+        attr.input_modes.remove(
+            InputModes::IGNBRK
+                | InputModes::BRKINT
+                | InputModes::PARMRK
+                | InputModes::ISTRIP
+                | InputModes::INLCR
+                | InputModes::IGNCR
+                | InputModes::ICRNL
+                | InputModes::IXON,
         );
-        attr.output_flags.remove(OutputFlags::OPOST);
-        attr.local_flags.remove(
-            LocalFlags::ECHO
-                | LocalFlags::ECHONL
-                | LocalFlags::ICANON
-                | LocalFlags::ISIG
-                | LocalFlags::IEXTEN,
+        attr.output_modes.remove(OutputModes::OPOST);
+        attr.local_modes.remove(
+            LocalModes::ECHO
+                | LocalModes::ECHONL
+                | LocalModes::ICANON
+                | LocalModes::ISIG
+                | LocalModes::IEXTEN,
         );
-        attr.control_flags
-            .remove(ControlFlags::CSIZE | ControlFlags::PARENB);
-        attr.control_flags.insert(ControlFlags::CS8);
-        attr.control_chars[VMIN as usize] = 1; // One character-at-a-time input
-        attr.control_chars[VTIME as usize] = 0; // with blocking read
+        attr.control_modes
+            .remove(ControlModes::CSIZE | ControlModes::PARENB);
+        attr.control_modes.insert(ControlModes::CS8);
+        attr.special_codes[SpecialCodeIndex::VMIN] = 1; // One character-at-a-time input
+        attr.special_codes[SpecialCodeIndex::VTIME] = 0; // with blocking read
 
-        tcsetattr(stdin, SetArg::TCSAFLUSH, &attr).context("failed to set termios attributes")?;
+        tcsetattr(stdin, OptionalActions::Flush, &attr).map_err(PtyError::SetTermios)?;
         Ok(RawTty {
             fd: stdin,
             attr: orig_attr,
@@ -125,133 +160,98 @@ impl<'a> RawTty<'a> {
 
 impl Drop for RawTty<'_> {
     fn drop(&mut self) {
-        let _ = tcsetattr(self.fd, SetArg::TCSANOW, &self.attr);
+        let _ = tcsetattr(self.fd, OptionalActions::Now, &self.attr);
     }
 }
 
-fn shovel(pairs: &mut [FilePair]) {
-    let mut read_set = select::FdSet::new();
-    let mut write_set = select::FdSet::new();
+/// Forward data between the file pairs until one side is closed.
+///
+/// If `resize` is set, the terminal window size is propagated from stdout to
+/// the given PTY master whenever it changes. We poll for size changes instead
+/// of installing a SIGWINCH handler so that no signal handling (which would
+/// require libc or a per-architecture signal trampoline) is needed.
+fn shovel(pairs: &mut [FilePair], resize: Option<BorrowedFd>) {
+    let mut last_winsize = resize.map(|pty| {
+        let ws = get_winsize();
+        set_winsize(pty, ws);
+        ws
+    });
+
+    // Wake up regularly to check for terminal resizes.
+    let poll_timeout = Timespec {
+        tv_sec: 0,
+        tv_nsec: 100_000_000,
+    };
+    let timeout = resize.map(|_| &poll_timeout);
 
     loop {
-        read_set.clear();
-        write_set.clear();
-        let mut highest: Option<BorrowedFd> = None;
+        let revents: Vec<PollFlags> = {
+            let mut poll_fds: Vec<PollFd> = pairs
+                .iter()
+                .map(|pair| match pair.state {
+                    FilePairState::Read => PollFd::new(pair.from, PollFlags::IN),
+                    FilePairState::Write => PollFd::new(pair.to, PollFlags::OUT),
+                })
+                .collect();
 
-        for pair in pairs.iter_mut() {
-            let fd = match pair.state {
-                FilePairState::Read => {
-                    let raw_fd = pair.from.as_fd();
-                    read_set.insert(raw_fd);
-                    raw_fd
-                }
-                FilePairState::Write => {
-                    let raw_fd = pair.to.as_fd();
-                    write_set.insert(raw_fd);
-                    raw_fd
-                }
-            };
-            match highest {
-                Some(highest_fd) => {
-                    if highest_fd.as_raw_fd() < fd.as_raw_fd() {
-                        highest = Some(fd);
-                    }
-                }
-                None => {
-                    highest = Some(fd);
-                }
+            match poll(&mut poll_fds, timeout) {
+                Err(Errno::INTR) => continue,
+                Err(_) => return,
+                Ok(_) => {}
             }
-        }
 
-        let highest = match highest {
-            Some(fd) => fd,
-            None => return,
+            poll_fds.iter().map(PollFd::revents).collect()
         };
 
-        match select::select(
-            highest.as_raw_fd() + 1,
-            Some(&mut read_set),
-            Some(&mut write_set),
-            None,
-            None,
-        ) {
-            Err(Errno::EINTR) => {
+        if let (Some(pty), Some(last)) = (resize, last_winsize.as_mut()) {
+            let current = get_winsize();
+            if current.ws_row != last.ws_row || current.ws_col != last.ws_col {
+                set_winsize(pty, current);
+                *last = current;
+            }
+        }
+
+        for (pair, revents) in pairs.iter_mut().zip(revents) {
+            if revents.is_empty() {
                 continue;
             }
-            Err(_) => {
+            let more = match pair.state {
+                FilePairState::Read => pair.read(),
+                FilePairState::Write => pair.write(),
+            };
+            if !more {
                 return;
             }
-            _ => {}
-        }
-
-        for pair in pairs.iter_mut() {
-            match pair.state {
-                FilePairState::Read => {
-                    if read_set.contains(pair.from.as_fd()) && !pair.read() {
-                        return;
-                    }
-                }
-                FilePairState::Write => {
-                    if write_set.contains(pair.to.as_fd()) && !pair.write() {
-                        return;
-                    }
-                }
-            }
         }
     }
 }
 
-extern "C" fn handle_sigwinch(_: i32) {
-    let fd = PTY_MASTER_FD.load(Ordering::Relaxed);
-    if fd != -1 {
-        resize_pty(fd);
-    }
-}
-
-static PTY_MASTER_FD: AtomicI32 = AtomicI32::new(-1);
-
-pub(crate) fn forward<T: AsRawFd + AsFd>(pty: &T) -> Result<()> {
-    let mut raw_tty = None;
-
-    if unsafe { libc::isatty(libc::STDIN_FILENO) } != 0 {
-        resize_pty(pty.as_raw_fd());
-
-        raw_tty = Some(
-            RawTty::new(unsafe { BorrowedFd::borrow_raw(libc::STDIN_FILENO) })
-                .context("failed to set stdin tty into raw mode")?,
-        )
+pub(crate) fn forward<T: AsFd>(pty: &T) -> Result<(), PtyError> {
+    let is_tty = isatty(stdin());
+    let _raw_tty = if is_tty {
+        Some(RawTty::new(stdin())?)
+    } else {
+        None
     };
-
-    PTY_MASTER_FD.store(pty.as_raw_fd(), Ordering::Relaxed);
-    let sig_action = SigAction::new(
-        SigHandler::Handler(handle_sigwinch),
-        SaFlags::empty(),
-        SigSet::empty(),
-    );
-    unsafe { sigaction(SIGWINCH, &sig_action) }.context("failed to install SIGWINCH handler")?;
 
     // Duplicate FDs so each File owns its own FD and can be safely closed
     // This prevents double-close bugs when the original FD owners are dropped
-    let stdin_dup = unistd::dup(unsafe { BorrowedFd::borrow_raw(libc::STDIN_FILENO) })
-        .context("failed to duplicate stdin")?;
-    let stdout_dup = unistd::dup(unsafe { BorrowedFd::borrow_raw(libc::STDOUT_FILENO) })
-        .context("failed to duplicate stdout")?;
-    let pty_dup = unistd::dup(pty).context("failed to duplicate pty master")?;
+    let dup_fd = |what, fd: BorrowedFd| -> Result<File, PtyError> {
+        Ok(dup(fd)
+            .map_err(|source| PtyError::Dup { what, source })?
+            .into())
+    };
+    let stdin_file = dup_fd("stdin", stdin())?;
+    let stdout_file = dup_fd("stdout", stdout())?;
+    let pty_file = dup_fd("pty master", pty.as_fd())?;
 
-    let stdin: File = unsafe { File::from_raw_fd(stdin_dup.into_raw_fd()) };
-    let stdout: File = unsafe { File::from_raw_fd(stdout_dup.into_raw_fd()) };
-    let pty_file: File = unsafe { File::from_raw_fd(pty_dup.into_raw_fd()) };
-
-    shovel(&mut [
-        FilePair::new(&stdin, &pty_file),
-        FilePair::new(&pty_file, &stdout),
-    ]);
-
-    PTY_MASTER_FD.store(-1, Ordering::Relaxed);
-
-    if let Some(_raw_tty) = raw_tty {
-        drop(_raw_tty)
-    }
+    shovel(
+        &mut [
+            FilePair::new(&stdin_file, &pty_file),
+            FilePair::new(&pty_file, &stdout_file),
+        ],
+        is_tty.then(|| pty.as_fd()),
+    );
 
     Ok(())
 }
@@ -268,15 +268,10 @@ pub(crate) fn forward<T: AsRawFd + AsFd>(pty: &T) -> Result<()> {
 /// - When parent resumes, resumes the child
 ///
 /// This function never returns - it always exits the process.
-pub(crate) fn forward_pty_and_wait<T: AsRawFd + AsFd>(
+pub(crate) fn forward_pty_and_wait<T: AsFd>(
     pty: &T,
-    child_pid: nix::unistd::Pid,
-) -> Result<std::convert::Infallible> {
-    use nix::sys::signal::{self, Signal};
-    use nix::sys::wait::{WaitPidFlag, WaitStatus, waitpid};
-    use nix::unistd;
-    use std::process;
-
+    child_pid: Pid,
+) -> Result<std::convert::Infallible, PtyError> {
     // Forward PTY I/O between stdin/stdout and the PTY
     // This will block until child exits or PTY closes
     let _ = forward(pty);
@@ -284,92 +279,89 @@ pub(crate) fn forward_pty_and_wait<T: AsRawFd + AsFd>(
     // Wait for child to exit and propagate exit status
     // Loop to handle job control signals (SIGSTOP, SIGCONT) and EINTR
     loop {
-        match waitpid(child_pid, Some(WaitPidFlag::WUNTRACED)) {
-            Ok(WaitStatus::Stopped(child, _)) => {
-                // Child was stopped (Ctrl+Z) - stop ourselves and resume child when we resume
-                let _ = signal::kill(unistd::getpid(), Signal::SIGSTOP);
-                let _ = signal::kill(child, Signal::SIGCONT);
+        match waitpid(Some(child_pid), WaitOptions::UNTRACED) {
+            Ok(Some((_, status))) => {
+                if status.stopped() {
+                    // Child was stopped (Ctrl+Z) - stop ourselves and resume child when we resume
+                    let _ = kill_process(getpid(), Signal::STOP);
+                    let _ = kill_process(child_pid, Signal::CONT);
+                } else if let Some(sig) = status.terminating_signal() {
+                    // Child was signaled - propagate signal and exit
+                    if let Some(signal) = Signal::from_named_raw(sig) {
+                        let _ = kill_process(getpid(), signal);
+                    }
+                    process::exit(128 + sig);
+                } else if let Some(code) = status.exit_status() {
+                    // Child exited normally - exit with same status
+                    process::exit(code);
+                } else {
+                    return Err(PtyError::UnexpectedWaitEvent(format!("{:?}", status)));
+                }
             }
-            Ok(WaitStatus::Signaled(_, sig, _)) => {
-                // Child was signaled - propagate signal and exit
-                let _ = signal::kill(unistd::getpid(), sig);
-                process::exit(128 + sig as i32);
-            }
-            Ok(WaitStatus::Exited(_, status)) => {
-                // Child exited normally - exit with same status
-                process::exit(status);
-            }
-            Ok(status) => {
-                bail!("unexpected wait event: {:?}", status);
-            }
-            Err(nix::errno::Errno::EINTR) => {
-                // Interrupted by signal, continue waiting
-                continue;
-            }
-            Err(e) => {
-                return Err(e).context("waitpid failed");
-            }
+            // Interrupted or nothing to report yet, continue waiting
+            Ok(None) | Err(Errno::INTR) => continue,
+            Err(e) => return Err(PtyError::WaitPid(e)),
         }
     }
 }
 
-fn get_winsize(term_fd: RawFd) -> winsize {
-    use std::mem::zeroed;
-    unsafe {
-        let mut ws: winsize = zeroed();
-        match libc::ioctl(term_fd, libc::TIOCGWINSZ, &mut ws) {
-            0 => ws,
-            _ => winsize {
-                ws_row: 80,
-                ws_col: 25,
-                ws_xpixel: 0,
-                ws_ypixel: 0,
-            },
-        }
-    }
+fn get_winsize() -> Winsize {
+    tcgetwinsize(stdout()).unwrap_or(Winsize {
+        ws_row: 80,
+        ws_col: 25,
+        ws_xpixel: 0,
+        ws_ypixel: 0,
+    })
 }
 
-fn resize_pty(pty_master: RawFd) {
-    unsafe {
-        libc::ioctl(
-            pty_master,
-            libc::TIOCSWINSZ,
-            &mut get_winsize(libc::STDOUT_FILENO),
-        );
-    }
+fn set_winsize(pty_master: BorrowedFd, ws: Winsize) {
+    let _ = tcsetwinsize(pty_master, ws);
 }
 
-pub(crate) fn open_ptm() -> Result<PtyMaster> {
-    let pty_master =
-        posix_openpt(OFlag::O_RDWR).context("failed to open pty with posix_openpt()")?;
+pub(crate) fn open_ptm() -> Result<OwnedFd, PtyError> {
+    let pty_master = openpt(OpenptFlags::RDWR).map_err(PtyError::OpenPtyMaster)?;
 
-    grantpt(&pty_master).context("failed to grant pty access with grantpt()")?;
-    unlockpt(&pty_master).context("failed to unlock pty with unlockpt()")?;
+    grantpt(&pty_master).map_err(PtyError::Grantpt)?;
+    unlockpt(&pty_master).map_err(PtyError::Unlockpt)?;
 
     Ok(pty_master)
 }
 
-pub(crate) fn attach_pts(pty_master: &PtyMaster) -> Result<()> {
-    let pts_name = ptsname_r(pty_master).context("failed to get PTY slave name from master")?;
+pub(crate) fn attach_pts(pty_master: &OwnedFd) -> Result<(), PtyError> {
+    let pts_name = ptsname(pty_master, Vec::new())
+        .map_err(PtyError::Ptsname)?
+        .into_string()
+        .map_err(|_| PtyError::PtsnameNotUtf8)?;
 
-    unistd::setsid().context("failed to create new session for PTY")?;
+    setsid().map_err(PtyError::Setsid)?;
 
-    let pty_slave = fcntl::open(pts_name.as_str(), OFlag::O_RDWR, stat::Mode::empty())
-        .with_context(|| format!("failed to open PTY slave at {}", pts_name.as_str()))?;
+    let pty_slave = open(pts_name.as_str(), OFlags::RDWR, Mode::empty()).map_err(|source| {
+        PtyError::OpenPtySlave {
+            path: pts_name.clone(),
+            source,
+        }
+    })?;
 
     // Set the PTY slave as the controlling terminal for this session
     // This is required for job control to work properly
-    if let Err(err) = tiocsctty(pty_slave.as_raw_fd(), 0) {
+    if let Err(err) = ioctl_tiocsctty(&pty_slave) {
         // If TIOCSCTTY fails, just warn but continue - job control may not work
         // but the command will still execute
         warn!("Failed to set controlling terminal: {}", err);
     }
 
-    unistd::dup2_stdin(&pty_slave).context("failed to redirect stdin to PTY slave")?;
-    unistd::dup2_stdout(&pty_slave).context("failed to redirect stdout to PTY slave")?;
-    unistd::dup2_stderr(&pty_slave).context("failed to redirect stderr to PTY slave")?;
-
-    unistd::close(pty_slave).context("failed to close PTY slave after duplication")?;
+    dup2_stdin(&pty_slave).map_err(|source| PtyError::Dup2 {
+        what: "stdin",
+        source,
+    })?;
+    dup2_stdout(&pty_slave).map_err(|source| PtyError::Dup2 {
+        what: "stdout",
+        source,
+    })?;
+    dup2_stderr(&pty_slave).map_err(|source| PtyError::Dup2 {
+        what: "stderr",
+        source,
+    })?;
 
     Ok(())
 }

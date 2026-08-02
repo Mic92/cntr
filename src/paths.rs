@@ -1,4 +1,4 @@
-use nix::unistd;
+use rustix::process::geteuid;
 use std::env;
 use std::path::PathBuf;
 
@@ -23,7 +23,7 @@ pub fn get_base_dir() -> PathBuf {
     }
 
     // For root, use the system directory
-    if unistd::geteuid().is_root() {
+    if geteuid().is_root() {
         return PathBuf::from(DEFAULT_CNTR_BASE_DIR);
     }
 

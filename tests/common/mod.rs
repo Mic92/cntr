@@ -1,15 +1,36 @@
 //! Common test utilities for integration tests
 
-use nix::sys::signal::{Signal, kill};
-use nix::sys::wait::waitpid;
-use nix::unistd::pipe;
-use nix::unistd::{ForkResult, Pid, fork, pause};
+use rustix::pipe::pipe;
+use rustix::process::{Pid, Signal, WaitOptions, kill_process, waitpid};
 use std::io::Read;
-use std::os::fd::IntoRawFd;
-use std::{env, ffi::OsString, os::unix::ffi::OsStringExt, path::Path, path::PathBuf};
+use std::os::fd::OwnedFd;
+use std::{env, path::Path, path::PathBuf};
 
 // Re-export from library
 pub(crate) use cntr::test_utils::run_in_userns;
+
+/// Result of a successful [`fork`].
+enum Fork {
+    Child,
+    ParentOf(Pid),
+}
+
+/// Create a child process.
+fn fork() -> std::io::Result<Fork> {
+    // SAFETY: fork() has no memory-safety preconditions; the tests fork
+    // before spawning any threads.
+    match unsafe { libc::fork() } {
+        -1 => Err(std::io::Error::last_os_error()),
+        0 => Ok(Fork::Child),
+        pid => Ok(Fork::ParentOf(Pid::from_raw(pid).expect("non-zero pid"))),
+    }
+}
+
+/// Terminate the process immediately without running libc/std cleanup.
+fn exit(status: i32) -> ! {
+    // SAFETY: _exit() only takes an exit status and does not return.
+    unsafe { libc::_exit(status) }
+}
 
 /// Simple temporary directory that cleans up on drop
 pub(crate) struct TempDir {
@@ -17,22 +38,29 @@ pub(crate) struct TempDir {
 }
 
 impl TempDir {
-    /// Create a new temporary directory using mkdtemp
+    /// Create a new unique temporary directory
     pub(crate) fn new() -> std::io::Result<Self> {
-        let mut template = env::temp_dir();
-        template.push("cntr-test.XXXXXX");
-        let mut bytes = template.into_os_string().into_vec();
-        // null byte
-        bytes.push(0);
-        let res = unsafe { libc::mkdtemp(bytes.as_mut_ptr().cast()) };
-        if res.is_null() {
-            Err(std::io::Error::last_os_error())
-        } else {
-            // remove null byte
-            bytes.pop();
-            let path = PathBuf::from(OsString::from_vec(bytes));
-            Ok(TempDir { path: Some(path) })
+        let base = env::temp_dir();
+        for attempt in 0.. {
+            let nanos = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .subsec_nanos();
+            let path = base.join(format!(
+                "cntr-test.{}.{}.{}",
+                std::process::id(),
+                nanos,
+                attempt
+            ));
+            match std::fs::create_dir(&path) {
+                Ok(()) => return Ok(TempDir { path: Some(path) }),
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists && attempt < 100 => {
+                    continue;
+                }
+                Err(e) => return Err(e),
+            }
         }
+        unreachable!()
     }
 
     /// Get the path to the temporary directory
@@ -58,7 +86,7 @@ pub(crate) struct FakeContainer {
 impl Drop for FakeContainer {
     fn drop(&mut self) {
         // Kill the child process
-        if let Err(e) = kill(self.pid, Signal::SIGKILL) {
+        if let Err(e) = kill_process(self.pid, Signal::KILL) {
             // Log but don't panic during test teardown
             eprintln!(
                 "Warning: failed to kill fake container process {}: {}",
@@ -67,7 +95,7 @@ impl Drop for FakeContainer {
         }
 
         // Reap the child to avoid zombies
-        if let Err(e) = waitpid(self.pid, None) {
+        if let Err(e) = waitpid(Some(self.pid), WaitOptions::empty()) {
             eprintln!(
                 "Warning: failed to reap fake container process {}: {}",
                 self.pid, e
@@ -88,16 +116,16 @@ pub(crate) fn start_fake_container() -> FakeContainer {
         Err(e) => panic!("Failed to create pipe: {}", e),
     };
 
-    match unsafe { fork() } {
-        Ok(ForkResult::Child) => {
+    match fork() {
+        Ok(Fork::Child) => {
             // Close read end in child
             drop(read_fd);
 
             // Do container setup
             // Transfer ownership of write_fd to the child process (never returns)
-            fake_container_process_with_sync(write_fd.into_raw_fd(), &temp_dir_path);
+            fake_container_process_with_sync(write_fd, &temp_dir_path);
         }
-        Ok(ForkResult::Parent { child }) => {
+        Ok(Fork::ParentOf(child)) => {
             // Close write end in parent
             drop(write_fd);
 
@@ -131,40 +159,37 @@ pub(crate) fn start_fake_container() -> FakeContainer {
 }
 
 /// Helper that does container setup and signals completion
-fn fake_container_process_with_sync(sync_fd: std::os::fd::RawFd, temp_dir: &std::path::Path) -> ! {
+fn fake_container_process_with_sync(sync_fd: OwnedFd, temp_dir: &std::path::Path) -> ! {
     // Get static shell from environment
     let static_shell = match env::var("CNTR_TEST_SHELL") {
         Ok(path) => path,
         Err(_) => {
             eprintln!("CNTR_TEST_SHELL not set in fake_container_process");
-            unsafe { libc::_exit(1) };
+            exit(1);
         }
     };
 
     if !Path::new(&static_shell).exists() {
         eprintln!("CNTR_TEST_SHELL path does not exist: {}", static_shell);
-        unsafe { libc::_exit(1) };
+        exit(1);
     }
 
     // Create mount namespace only
     // The parent test already created a user namespace, so we don't need another
-    use nix::sched::{CloneFlags, unshare};
-    if let Err(e) = unshare(CloneFlags::CLONE_NEWNS) {
+    use rustix::thread::{UnshareFlags, unshare_unsafe};
+    if let Err(e) = unsafe { unshare_unsafe(UnshareFlags::NEWNS) } {
         eprintln!("Failed to create mount namespace: {}", e);
-        unsafe { libc::_exit(1) };
+        exit(1);
     }
 
     // Make all mounts private (MS_REC | MS_PRIVATE)
-    use nix::mount::{MsFlags, mount};
-    if let Err(e) = mount(
-        None::<&str>,
+    use rustix::mount::{MountPropagationFlags, mount_change};
+    if let Err(e) = mount_change(
         "/",
-        None::<&str>,
-        MsFlags::MS_REC | MsFlags::MS_PRIVATE,
-        None::<&str>,
+        MountPropagationFlags::REC | MountPropagationFlags::PRIVATE,
     ) {
         eprintln!("Failed to make mounts private: {}", e);
-        unsafe { libc::_exit(1) };
+        exit(1);
     }
 
     // Create /bin and /tmp in chroot
@@ -173,19 +198,19 @@ fn fake_container_process_with_sync(sync_fd: std::os::fd::RawFd, temp_dir: &std:
 
     if let Err(e) = std::fs::create_dir_all(&bin_dir) {
         eprintln!("Failed to create bin dir: {}", e);
-        unsafe { libc::_exit(1) };
+        exit(1);
     }
 
     if let Err(e) = std::fs::create_dir_all(&tmp_dir) {
         eprintln!("Failed to create tmp dir: {}", e);
-        unsafe { libc::_exit(1) };
+        exit(1);
     }
 
     // Copy static shell to /bin/sh
     let shell_dest = bin_dir.join("sh");
     if let Err(e) = std::fs::copy(&static_shell, &shell_dest) {
         eprintln!("Failed to copy shell: {}", e);
-        unsafe { libc::_exit(1) };
+        exit(1);
     }
 
     // Make shell executable
@@ -196,7 +221,7 @@ fn fake_container_process_with_sync(sync_fd: std::os::fd::RawFd, temp_dir: &std:
             std::fs::set_permissions(&shell_dest, std::fs::Permissions::from_mode(0o755))
         {
             eprintln!("Failed to make shell executable: {}", e);
-            unsafe { libc::_exit(1) };
+            exit(1);
         }
     }
 
@@ -204,26 +229,25 @@ fn fake_container_process_with_sync(sync_fd: std::os::fd::RawFd, temp_dir: &std:
     let marker = tmp_dir.join("container-marker");
     if let Err(e) = std::fs::write(&marker, b"fake-container\n") {
         eprintln!("Failed to create marker: {}", e);
-        unsafe { libc::_exit(1) };
+        exit(1);
     }
 
     // Chroot to temp directory
-    use nix::unistd::chroot;
-    if let Err(e) = chroot(temp_dir) {
+    if let Err(e) = rustix::process::chroot(temp_dir) {
         eprintln!("Failed to chroot: {}", e);
-        unsafe { libc::_exit(1) };
+        exit(1);
     }
 
     if let Err(e) = std::env::set_current_dir("/") {
         eprintln!("Failed to chdir: {}", e);
-        unsafe { libc::_exit(1) };
+        exit(1);
     }
 
     // Signal parent that we're ready by closing the sync pipe
-    let _ = nix::unistd::close(sync_fd);
+    drop(sync_fd);
 
     // Stay alive until killed
     loop {
-        pause();
+        std::thread::sleep(std::time::Duration::from_secs(3600));
     }
 }

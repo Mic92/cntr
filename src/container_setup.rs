@@ -3,32 +3,44 @@
 //! This module provides common functionality for entering container namespaces
 //! and setting up security context (LSM, cgroups, capabilities).
 
-use anyhow::{Context, bail};
-use nix::unistd::{self, Pid};
+use rustix::io::Errno;
+use rustix::process::{Pid, getpid};
+use rustix::thread::{set_thread_gid, set_thread_groups, set_thread_uid};
+use thiserror::Error;
 
 use crate::capabilities;
-use crate::cgroup;
-use crate::namespace;
+use crate::cgroup::{self, CgroupError};
+use crate::namespace::{self, NamespaceError};
 use crate::procfs::ProcStatus;
-use crate::result::Result;
+
+#[derive(Debug, Error)]
+pub(crate) enum SetupError {
+    #[error("the system has no support for mount namespaces")]
+    MountNamespaceUnsupported,
+    #[error("failed to enter container namespace")]
+    Namespace(#[from] NamespaceError),
+    #[error("failed to change cgroup")]
+    Cgroup(#[from] CgroupError),
+    #[error("could not set group id")]
+    SetGid(#[source] Errno),
+    #[error("could not set user id")]
+    SetUid(#[source] Errno),
+}
 
 /// Enter all container namespaces
 ///
 /// Opens and enters mount, UTS, cgroup, PID, net, IPC, and user namespaces.
 /// Returns true if USER namespace was entered.
-fn enter_namespaces(container_pid: Pid) -> Result<bool> {
+fn enter_namespaces(container_pid: Pid) -> Result<bool, SetupError> {
     // Detect supported namespaces
-    let supported_namespaces =
-        namespace::supported_namespaces().context("failed to list namespaces")?;
+    let supported_namespaces = namespace::supported_namespaces()?;
 
     if !supported_namespaces.contains(namespace::MOUNT.name) {
-        bail!("the system has no support for mount namespaces");
+        return Err(SetupError::MountNamespaceUnsupported);
     }
 
     // Open mount namespace
-    let mount_namespace = namespace::MOUNT
-        .open(container_pid)
-        .context("could not access mount namespace")?;
+    let mount_namespace = namespace::MOUNT.open(container_pid)?;
 
     // Open other namespaces
     let mut other_namespaces = Vec::new();
@@ -50,9 +62,7 @@ fn enter_namespaces(container_pid: Pid) -> Result<bool> {
             continue;
         }
 
-        let ns = kind
-            .open(container_pid)
-            .with_context(|| format!("failed to open {} namespace", kind.name))?;
+        let ns = kind.open(container_pid)?;
 
         // Track if USER namespace was successfully opened
         if kind.name == namespace::USER.name {
@@ -63,13 +73,11 @@ fn enter_namespaces(container_pid: Pid) -> Result<bool> {
     }
 
     // Enter mount namespace first
-    mount_namespace
-        .apply()
-        .context("failed to enter mount namespace")?;
+    mount_namespace.apply()?;
 
     // Enter other namespaces
     for ns in other_namespaces {
-        ns.apply().context("failed to apply namespace")?;
+        ns.apply()?;
     }
 
     Ok(user_ns_entered)
@@ -81,22 +89,21 @@ fn enter_namespaces(container_pid: Pid) -> Result<bool> {
 pub(crate) fn apply_security_context(
     process_status: &mut ProcStatus,
     in_user_namespace: bool,
-) -> Result<()> {
+) -> Result<(), SetupError> {
     // Set UID/GID
     if in_user_namespace {
         // Try to clear supplementary groups, but ignore errors as this may fail
         // in some sandboxes even when not explicitly denied
-        let _ = unistd::setgroups(&[]);
-        unistd::setgid(process_status.gid).context("could not set group id")?;
-        unistd::setuid(process_status.uid).context("could not set user id")?;
+        let _ = set_thread_groups(&[]);
+        set_thread_gid(process_status.gid).map_err(SetupError::SetGid)?;
+        set_thread_uid(process_status.uid).map_err(SetupError::SetUid)?;
     }
 
     // Drop capabilities
     capabilities::drop(
         process_status.effective_capabilities,
         process_status.last_cap,
-    )
-    .context("failed to apply capabilities")?;
+    );
 
     Ok(())
 }
@@ -107,26 +114,15 @@ pub(crate) fn apply_security_context(
 /// 1. Moves to container's cgroup
 /// 2. Enters all container namespaces
 /// 3. Applies security context (UID/GID, capabilities, LSM)
-pub(crate) fn enter_container(process_status: &mut ProcStatus) -> Result<()> {
+pub(crate) fn enter_container(process_status: &mut ProcStatus) -> Result<(), SetupError> {
     // Move to container's cgroup
-    cgroup::move_to(unistd::getpid(), process_status.global_pid)
-        .context("failed to change cgroup")?;
+    cgroup::move_to(getpid(), process_status.global_pid)?;
 
     // Enter namespaces
-    let in_user_ns = enter_namespaces(process_status.global_pid).with_context(|| {
-        format!(
-            "failed to enter namespaces for PID {}",
-            process_status.global_pid
-        )
-    })?;
+    let in_user_ns = enter_namespaces(process_status.global_pid)?;
 
     // Apply security context
-    apply_security_context(process_status, in_user_ns).with_context(|| {
-        format!(
-            "failed to apply security context (UID={}, GID={})",
-            process_status.uid, process_status.gid
-        )
-    })?;
+    apply_security_context(process_status, in_user_ns)?;
 
     Ok(())
 }

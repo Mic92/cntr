@@ -1,13 +1,31 @@
-use anyhow::Context;
-use nix::sched;
-use nix::unistd;
+use rustix::io::Errno;
+use rustix::process::Pid;
+use rustix::thread::{LinkNameSpaceType, move_into_link_name_space};
 use std::collections::HashSet;
 use std::fs::{self, File};
 use std::os::unix::prelude::*;
 use std::path::PathBuf;
+use thiserror::Error;
 
 use crate::procfs;
-use crate::result::Result;
+
+#[derive(Debug, Error)]
+pub(crate) enum NamespaceError {
+    #[error("failed to read directory /proc/self/ns")]
+    ListNamespaces(#[source] std::io::Error),
+    #[error("failed to open namespace file '{path}'")]
+    OpenNamespaceFile {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("failed to set namespace '{name}'")]
+    SetNamespace {
+        name: &'static str,
+        #[source]
+        source: Errno,
+    },
+}
 
 pub(crate) const MOUNT: Kind = Kind { name: "mnt" };
 pub(crate) const UTS: Kind = Kind { name: "uts" };
@@ -21,12 +39,12 @@ pub(crate) struct Kind {
     pub(crate) name: &'static str,
 }
 
-pub(crate) fn supported_namespaces() -> Result<HashSet<String>> {
+pub(crate) fn supported_namespaces() -> Result<HashSet<String>, NamespaceError> {
     let mut namespaces = HashSet::new();
-    let entries = fs::read_dir(PathBuf::from("/proc/self/ns"))
-        .context("failed to open directory /proc/self/ns")?;
+    let entries =
+        fs::read_dir(PathBuf::from("/proc/self/ns")).map_err(NamespaceError::ListNamespaces)?;
     for entry in entries {
-        let entry = entry.context("failed to read directory entry in /proc/self/ns")?;
+        let entry = entry.map_err(NamespaceError::ListNamespaces)?;
         if let Ok(name) = entry.file_name().into_string() {
             namespaces.insert(name);
         }
@@ -35,14 +53,14 @@ pub(crate) fn supported_namespaces() -> Result<HashSet<String>> {
 }
 
 impl Kind {
-    pub(crate) fn open(&'static self, pid: unistd::Pid) -> Result<Namespace> {
-        let buf = self.path(pid);
-        let file = File::open(&buf)
-            .with_context(|| format!("failed to open namespace file '{}'", buf.display()))?;
+    pub(crate) fn open(&'static self, pid: Pid) -> Result<Namespace, NamespaceError> {
+        let path = self.path(pid);
+        let file = File::open(&path)
+            .map_err(|source| NamespaceError::OpenNamespaceFile { path, source })?;
         Ok(Namespace { kind: self, file })
     }
 
-    pub(crate) fn is_same(&self, pid: unistd::Pid) -> bool {
+    pub(crate) fn is_same(&self, pid: Pid) -> bool {
         let path = self.path(pid);
         match fs::read_link(path) {
             Ok(dest) => match fs::read_link(self.own_path()) {
@@ -52,7 +70,7 @@ impl Kind {
             _ => false,
         }
     }
-    fn path(&self, pid: unistd::Pid) -> PathBuf {
+    fn path(&self, pid: Pid) -> PathBuf {
         procfs::get_path()
             .join(pid.to_string())
             .join("ns")
@@ -70,9 +88,13 @@ pub(crate) struct Namespace {
 }
 
 impl Namespace {
-    pub(crate) fn apply(&self) -> Result<()> {
-        sched::setns(self.file.as_fd(), sched::CloneFlags::empty())
-            .with_context(|| format!("failed to set namespace '{}'", self.kind.name))?;
+    pub(crate) fn apply(&self) -> Result<(), NamespaceError> {
+        move_into_link_name_space(self.file.as_fd(), None::<LinkNameSpaceType>).map_err(
+            |source| NamespaceError::SetNamespace {
+                name: self.kind.name,
+                source,
+            },
+        )?;
         Ok(())
     }
 }

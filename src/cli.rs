@@ -1,5 +1,7 @@
-use nix::unistd::User;
 use std::env;
+
+use crate::errors::format_chain;
+use crate::passwd::{self, User};
 
 use crate::{ApparmorMode, AttachOptions, attach, exec};
 
@@ -59,7 +61,8 @@ fn print_attach_help() {
         "                                 [possible: process_id,podman,docker,nspawn,lxc,lxd,containerd,command,kubernetes]"
     );
     eprintln!("                                 [default: all but command]");
-    eprintln!("    --effective-user <USER>      Effective username for new files on host");
+    eprintln!("    --effective-user <USER>      Effective user for new files on host");
+    eprintln!("                                 (username or numeric uid[:gid])");
     eprintln!("    --apparmor <MODE>            AppArmor profile mode");
     eprintln!("                                 [possible: auto, off]");
     eprintln!("                                 [default: auto]");
@@ -150,11 +153,18 @@ where
             }
             "--effective-user" => {
                 let username = args.next().ok_or("--effective-user requires an argument")?;
-                match User::from_name(&username) {
+                match passwd::lookup(&username) {
                     Ok(Some(user)) => effective_user = Some(user),
-                    Ok(None) => return Err(format!("user '{}' not found", username).into()),
+                    Ok(None) => {
+                        return Err(format!("user '{}' not found", username).into());
+                    }
                     Err(e) => {
-                        return Err(format!("failed to lookup user '{}': {}", username, e).into());
+                        return Err(format!(
+                            "failed to lookup user '{}': {}",
+                            username,
+                            format_chain(&e)
+                        )
+                        .into());
                     }
                 }
             }
@@ -199,8 +209,13 @@ where
         apparmor_mode,
     };
 
-    attach(&options)
-        .map_err(|e| format!("failed to attach to container '{}': {}", container_name, e))?;
+    attach(&options).map_err(|e| {
+        format!(
+            "failed to attach to container '{}': {}",
+            container_name,
+            format_chain(&e)
+        )
+    })?;
     Ok(std::process::ExitCode::SUCCESS)
 }
 
@@ -276,8 +291,13 @@ where
         apparmor_mode,
     };
 
-    exec::exec(&options)
-        .map_err(|e| format!("failed to exec into container '{}': {}", container_name, e))?;
+    exec::exec(&options).map_err(|e| {
+        format!(
+            "failed to exec into container '{}': {}",
+            container_name,
+            format_chain(&e)
+        )
+    })?;
 
     Ok(std::process::ExitCode::SUCCESS)
 }
@@ -293,9 +313,8 @@ where
 /// Only enable this if you understand the security tradeoffs.
 fn maybe_set_dumpable() {
     if env::var("CNTR_ALLOW_SETCAP").as_deref() == Ok("1") {
-        use crate::syscalls::prctl::prctl;
-        // PR_SET_DUMPABLE = 4, SUID_DUMP_USER = 1
-        if let Err(e) = prctl(4, 1, 0, 0, 0) {
+        use rustix::process::{DumpableBehavior, set_dumpable_behavior};
+        if let Err(e) = set_dumpable_behavior(DumpableBehavior::Dumpable) {
             log::warn!("failed to set PR_SET_DUMPABLE: {}", e);
         }
     }

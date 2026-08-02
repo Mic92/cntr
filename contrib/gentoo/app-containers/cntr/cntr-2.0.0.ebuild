@@ -3,6 +3,8 @@
 
 EAPI=8
 
+RUST_MIN_VER="1.85"
+
 inherit cargo
 
 DESCRIPTION="A container debugging tool based on Linux mount API"
@@ -13,8 +15,7 @@ LICENSE="MIT"
 SLOT="0"
 KEYWORDS="amd64 arm64"
 
-BDEPEND=">=dev-lang/rust-bin-1.85
-	app-text/scdoc"
+BDEPEND+=" app-text/scdoc"
 
 QA_FLAGS_IGNORED="usr/bin/cntr"
 

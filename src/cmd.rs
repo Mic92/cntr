@@ -1,6 +1,5 @@
-use anyhow::Context;
 use log::warn;
-use nix::{self, unistd};
+use rustix::process::{Pid, chroot};
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::env;
@@ -11,9 +10,31 @@ use std::os::unix::ffi::OsStringExt;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use thiserror::Error;
 
 use crate::procfs;
-use crate::result::Result;
+
+#[derive(Debug, Error)]
+pub(crate) enum CmdError {
+    #[error("failed to open environment file {path}")]
+    OpenEnviron {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("failed to read container root from {path}")]
+    ReadContainerRoot {
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("failed to execute command: {command}")]
+    Exec {
+        command: String,
+        #[source]
+        source: std::io::Error,
+    },
+}
 
 pub(crate) struct Cmd {
     environment: HashMap<OsString, OsString>,
@@ -23,10 +44,9 @@ pub(crate) struct Cmd {
     container_root: PathBuf,
 }
 
-fn read_environment(pid: unistd::Pid) -> Result<HashMap<OsString, OsString>> {
+fn read_environment(pid: Pid) -> Result<HashMap<OsString, OsString>, CmdError> {
     let path = procfs::get_path().join(pid.to_string()).join("environ");
-    let f = File::open(&path)
-        .with_context(|| format!("failed to open environment file {}", path.display()))?;
+    let f = File::open(&path).map_err(|source| CmdError::OpenEnviron { path, source })?;
     let reader = BufReader::new(f);
     let res: HashMap<OsString, OsString> = reader
         .split(b'\0')
@@ -75,9 +95,9 @@ impl Cmd {
     pub(crate) fn new(
         command: Option<String>,
         args: Vec<String>,
-        pid: unistd::Pid,
+        pid: Pid,
         home: Option<PathBuf>,
-    ) -> Result<Cmd> {
+    ) -> Result<Cmd, CmdError> {
         let arguments = if command.is_none() {
             vec![String::from("-l")]
         } else {
@@ -87,14 +107,16 @@ impl Cmd {
         let command =
             command.unwrap_or_else(|| env::var("SHELL").unwrap_or_else(|_| String::from("sh")));
 
-        let variables = read_environment(pid)
-            .context("could not inherit environment variables from container")?;
+        let variables = read_environment(pid)?;
 
         // Read container root path before entering namespaces
         // After entering PID namespace, /proc/{container_pid} won't be accessible
         let proc_root_path = format!("/proc/{}/root", pid);
-        let container_root = std::fs::read_link(&proc_root_path)
-            .with_context(|| format!("failed to read container root from {}", proc_root_path))?;
+        let container_root =
+            std::fs::read_link(&proc_root_path).map_err(|source| CmdError::ReadContainerRoot {
+                path: proc_root_path,
+                source,
+            })?;
 
         Ok(Cmd {
             command,
@@ -111,7 +133,7 @@ impl Cmd {
     /// to both host binaries and container filesystem under /var/lib/cntr
     ///
     /// This function never returns on success - it replaces the current process.
-    pub(crate) fn exec_in_overlay(mut self) -> Result<Infallible> {
+    pub(crate) fn exec_in_overlay(mut self) -> Result<Infallible, CmdError> {
         // Set PATH if not already set (use cntr's PATH or default)
         let default_path =
             OsString::from("/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin");
@@ -131,7 +153,10 @@ impl Cmd {
             .args(self.arguments)
             .envs(self.environment)
             .exec();
-        Err(err).with_context(|| format!("failed to execute command: {}", self.command))
+        Err(CmdError::Exec {
+            command: self.command,
+            source: err,
+        })
     }
 
     /// Execute in container - chroot to container root
@@ -143,7 +168,7 @@ impl Cmd {
     pub(crate) fn exec_in_container(
         mut self,
         lsm_profile: Option<(PathBuf, String)>,
-    ) -> Result<Infallible> {
+    ) -> Result<Infallible, CmdError> {
         // Set PATH only if not already present in container environment
         // Avoid using host's PATH which may point to binaries not present after chroot
         if !self.environment.contains_key(OsStr::new("PATH")) {
@@ -162,7 +187,7 @@ impl Cmd {
                 .envs(self.environment)
                 .pre_exec(move || {
                     // First do chroot
-                    if let Err(e) = unistd::chroot(&container_root) {
+                    if let Err(e) = chroot(&container_root) {
                         warn!("failed to chroot to {}: {}", container_root.display(), e);
                         return Err(e.into());
                     }
@@ -185,6 +210,9 @@ impl Cmd {
                 })
                 .exec()
         };
-        Err(err).with_context(|| format!("failed to execute command: {}", self.command))
+        Err(CmdError::Exec {
+            command: self.command,
+            source: err,
+        })
     }
 }
