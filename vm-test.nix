@@ -39,6 +39,7 @@ in
     testScript = ''
       start_all()
       server.wait_for_unit("docker-busybox.service")
+      server.wait_until_succeeds("docker inspect --format '{{.State.Running}}' busybox | grep true")
       server.succeed("cntr attach busybox true")
       server.succeed("cntr exec busybox -- /bin/sh -c 'echo exec test passed'")
     '';
@@ -194,6 +195,7 @@ in
         systemd.tmpfiles.rules = [
           "d /var/lib/machines/testcontainer 0755 root root - -"
           "d /var/lib/machines/testcontainer/bin 0755 root root - -"
+          "d /var/lib/machines/testcontainer/usr 0755 root root - -"
           "d /var/lib/machines/testcontainer/tmp 0755 root root - -"
           "d /var/lib/machines/testcontainer/etc 0755 root root - -"
           "L+ /var/lib/machines/testcontainer/bin/sh - - - - ${pkgs.pkgsStatic.busybox}/bin/sh"
