@@ -2,6 +2,9 @@ name: CI
 on:
   pull_request:
   merge_group:
+  push:
+    branches:
+      - 'gitea-mq/**'
 jobs:
   test:
     runs-on: ${{ matrix.os }}
