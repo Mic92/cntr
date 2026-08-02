@@ -25,12 +25,28 @@ fi
 # Update version in Cargo.toml
 sed -i -e "0,/^version = / s!^version = \".*\"!version = \"${version}\"!" Cargo.toml
 
+# Update distribution packaging in contrib/
+sed -i -e "s/^pkgver=.*/pkgver=${version}/" contrib/arch/PKGBUILD contrib/alpine/APKBUILD
+sed -i -e "s/^Version: .*/Version:        ${version}/" contrib/fedora/cntr.spec
+sed -i -e "/^%changelog/a * $(LC_ALL=C date '+%a %b %d %Y') Jörg Thalheim <joerg@thalheim.io> - ${version}-1\n- Update to ${version}\n" contrib/fedora/cntr.spec
+cat > contrib/debian/changelog.new <<EOF
+cntr (${version}-1) unstable; urgency=medium
+
+  * Update to ${version}
+
+ -- Jörg Thalheim <joerg@thalheim.io>  $(LC_ALL=C date -R)
+
+EOF
+cat contrib/debian/changelog >> contrib/debian/changelog.new
+mv contrib/debian/changelog.new contrib/debian/changelog
+git mv contrib/gentoo/app-containers/cntr/cntr-*.ebuild "contrib/gentoo/app-containers/cntr/cntr-${version}.ebuild"
+
 # Update Cargo.lock
 cargo build --release
 
 # Create release branch and PR
 git checkout -b "release-${version}"
-git add Cargo.toml Cargo.lock
+git add Cargo.toml Cargo.lock contrib
 git commit -m "bump version to ${version}"
 git push --set-upstream origin "release-${version}"
 
