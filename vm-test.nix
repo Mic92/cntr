@@ -194,6 +194,7 @@ in
         systemd.tmpfiles.rules = [
           "d /var/lib/machines/testcontainer 0755 root root - -"
           "d /var/lib/machines/testcontainer/bin 0755 root root - -"
+          "d /var/lib/machines/testcontainer/usr 0755 root root - -"
           "d /var/lib/machines/testcontainer/tmp 0755 root root - -"
           "d /var/lib/machines/testcontainer/etc 0755 root root - -"
           "L+ /var/lib/machines/testcontainer/bin/sh - - - - ${pkgs.pkgsStatic.busybox}/bin/sh"
