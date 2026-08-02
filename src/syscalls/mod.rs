@@ -3,4 +3,3 @@
 
 pub mod capability;
 pub(crate) mod mount_api;
-pub(crate) mod process;

@@ -1,11 +1,11 @@
 //! Test utilities shared between unit and integration tests
 
-use crate::syscalls::process::{Fork, exit, fork};
 use rustix::io::write;
 use rustix::pipe::pipe;
 use rustix::process::{
     Pid, Signal, WaitOptions, WaitStatus, getgid, getuid, kill_process, waitpid,
 };
+use rustix::runtime::{Fork, exit_group, kernel_fork};
 use rustix::thread::{UnshareFlags, unshare_unsafe};
 use std::backtrace::Backtrace;
 use std::fs::File;
@@ -106,8 +106,10 @@ where
     // Create pipe for passing panic messages from child to parent
     let (read_fd, write_fd) = pipe().expect("Failed to create pipe for panic messages");
 
-    match fork() {
-        Ok(Fork::Child) => {
+    // SAFETY: forked child only execs or exits; allocations use the
+    // rustix-based global allocator, not libc malloc.
+    match unsafe { kernel_fork() } {
+        Ok(Fork::Child(_)) => {
             // Close read end - child only writes
             drop(read_fd);
 
@@ -140,7 +142,7 @@ where
             match result {
                 Ok(_) => {
                     drop(write_fd);
-                    exit(0)
+                    exit_group(0)
                 }
                 Err(panic_payload) => {
                     // Extract panic message and backtrace
@@ -164,7 +166,7 @@ where
                     let msg_bytes = full_message.as_bytes();
                     let _ = write(&write_fd, msg_bytes);
                     drop(write_fd);
-                    exit(1)
+                    exit_group(1)
                 }
             }
         }

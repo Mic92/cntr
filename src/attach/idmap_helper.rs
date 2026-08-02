@@ -1,4 +1,3 @@
-use crate::syscalls::process::{Fork, exit, fork};
 use alloc::format;
 use alloc::string::String;
 use log::debug;
@@ -6,6 +5,7 @@ use rustix::fd::{AsFd, BorrowedFd, OwnedFd};
 use rustix::io::{read, write};
 use rustix::pipe::pipe;
 use rustix::process::{Gid, Pid, Signal, Uid, WaitOptions, kill_process, waitpid};
+use rustix::runtime::{Fork, exit_group, kernel_fork};
 use rustix::thread::{Timespec, UnshareFlags, nanosleep, unshare_unsafe};
 use thiserror::Error;
 
@@ -62,7 +62,9 @@ impl IdmapHelper {
         // Create sync pipe
         let (read_fd, write_fd) = pipe().map_err(IdmapError::CreatePipe)?;
 
-        match fork().map_err(IdmapError::Fork)? {
+        // SAFETY: cntr is single-threaded and uses a rustix-based global allocator,
+        // so allocating and calling into std in the child is fine.
+        match unsafe { kernel_fork() }.map_err(IdmapError::Fork)? {
             Fork::ParentOf(child) => {
                 // Close write end
                 drop(write_fd);
@@ -97,20 +99,20 @@ impl IdmapHelper {
                     userns_fd,
                 })
             }
-            Fork::Child => {
+            Fork::Child(_) => {
                 // Close read end
                 drop(read_fd);
 
                 // Create user namespace and set up mapping
                 if let Err(e) = Self::setup_userns(inner_uid, outer_uid, inner_gid, outer_gid) {
                     crate::stderrln!("idmap helper failed: {}", format_chain(&e));
-                    exit(1);
+                    exit_group(1);
                 }
 
                 // Signal parent we're ready
                 if let Err(e) = write(&write_fd, b"R") {
                     crate::stderrln!("idmap helper failed to signal parent: {:?}", e);
-                    exit(1);
+                    exit_group(1);
                 }
 
                 // Keep running (parent holds FD, but this is safer)
