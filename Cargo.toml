@@ -21,14 +21,11 @@ rustix = { version = "1.1.4", features = [
   "pipe",
   "process",
   "pty",
-  "runtime",
   "stdio",
   "termios",
   "thread",
 ] }
-rustix-dlmalloc = { version = "0.2.2", features = ["global"] }
-syscalls = { version = "0.8.1", default-features = false, features = ["std"] }
-linux-raw-sys = { version = "0.12.1", default-features = false, features = ["general", "no_std"] }
+libc = "0.2.189"
 
 [[bin]]
 name = "cntr"
