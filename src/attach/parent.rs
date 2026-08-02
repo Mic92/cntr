@@ -25,13 +25,12 @@ pub(crate) fn run(
         return Err(AttachError::ChildNotReady);
     }
 
-    // Step 2: Receive PTY fd from child
+    // Step 2: Forward PTY I/O (if the child allocated one) and wait for the
+    // child to exit, propagating its exit status
     if fds.is_empty() {
-        return Err(AttachError::MissingPtyFd);
+        Ok(pty::wait_for_child(child_pid)?)
+    } else {
+        let pty_fd = fds.remove(0);
+        Ok(pty::forward_pty_and_wait(&pty_fd, child_pid)?)
     }
-    let pty_fd = fds.remove(0);
-
-    // Step 3: Forward PTY I/O and wait for child to exit
-    // This will block until child exits, then propagate the exit status
-    Ok(pty::forward_pty_and_wait(&pty_fd, child_pid)?)
 }
