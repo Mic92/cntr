@@ -2,8 +2,9 @@ name: Package builds
 
 on:
   pull_request:
+  merge_group:
   push:
-    branches: [main, master]
+    branches: [main, master, 'gitea-mq/**']
     tags: ['*']
 
 env:
