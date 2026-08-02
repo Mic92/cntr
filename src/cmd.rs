@@ -127,6 +127,13 @@ impl Cmd {
         })
     }
 
+    /// Set an environment variable unless the container already defines it
+    pub(crate) fn env_default<K: Into<OsString>, V: Into<OsString>>(&mut self, key: K, value: V) {
+        self.environment
+            .entry(key.into())
+            .or_insert_with(|| value.into());
+    }
+
     /// Execute in attach mode - no chroot, uses overlay
     ///
     /// For attach, we stay in the overlay environment which provides access

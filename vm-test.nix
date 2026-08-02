@@ -10,7 +10,14 @@ let
   busyboxImage = pkgs.dockerTools.buildLayeredImage {
     name = "busybox-test";
     tag = "latest";
-    contents = [ pkgs.busybox ];
+    contents = [
+      pkgs.busybox
+      # timezone differing from the host (UTC) to test issue #106
+      (pkgs.runCommand "container-localtime" { } ''
+        mkdir -p $out/etc
+        ln -s ${pkgs.tzdata}/share/zoneinfo/Europe/Berlin $out/etc/localtime
+      '')
+    ];
     config.Cmd = [
       "${pkgs.busybox}/bin/sleep"
       "infinity"
@@ -42,6 +49,10 @@ in
       server.wait_until_succeeds("docker inspect --format '{{.State.Running}}' busybox | grep true")
       server.succeed("cntr attach busybox true")
       server.succeed("cntr exec busybox -- /bin/sh -c 'echo exec test passed'")
+      # cntr must show the container's timezone, not the host's (issue #106)
+      server.succeed("date +%Z | grep -q UTC")
+      server.succeed("cntr attach busybox -- date +%Z | grep -qE 'CET|CEST'")
+      server.succeed("cntr exec busybox -- date +%Z | grep -qE 'CET|CEST'")
     '';
   };
   podman = testers.nixosTest {

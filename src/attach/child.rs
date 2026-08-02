@@ -1,5 +1,5 @@
 use log::{debug, warn};
-use rustix::fs::{AtFlags, CWD, Dir, FileType, statat};
+use rustix::fs::{AtFlags, CWD, Dir, FileType, Mode, OFlags, ResolveFlags, openat2, statat};
 use rustix::io::Errno;
 use rustix::mount::{
     MountFlags, MountPropagationFlags, MoveMountFlags, OpenTreeFlags, mount, mount_change,
@@ -135,6 +135,51 @@ fn apply_idmapped_mounts(userns_fd: BorrowedFd, base_dir: &Path) -> Result<(), A
     Ok(())
 }
 
+/// Copy the container's /etc/localtime (resolved inside the container root, so
+/// symlinks cannot escape) to the tmpfs and bind-mount it over the host's
+/// /etc/localtime, so the attached shell sees the container's timezone.
+fn setup_container_timezone(container_root_fd: BorrowedFd, base_dir: &Path) -> Option<PathBuf> {
+    let localtime_fd = match openat2(
+        container_root_fd,
+        "etc/localtime",
+        OFlags::RDONLY | OFlags::CLOEXEC,
+        Mode::empty(),
+        ResolveFlags::IN_ROOT,
+    ) {
+        Ok(fd) => fd,
+        Err(e) => {
+            debug!("container has no readable /etc/localtime: {}", e);
+            return None;
+        }
+    };
+
+    let mut contents = Vec::new();
+    if let Err(e) =
+        std::io::Read::read_to_end(&mut std::fs::File::from(localtime_fd), &mut contents)
+    {
+        warn!("failed to read container /etc/localtime: {}", e);
+        return None;
+    }
+
+    let copy_path = base_dir.join(".localtime");
+    if let Err(e) = std::fs::write(&copy_path, &contents) {
+        warn!("failed to write {}: {}", copy_path.display(), e);
+        return None;
+    }
+
+    if let Err(e) = mount(
+        copy_path.as_path(),
+        "/etc/localtime",
+        "",
+        MountFlags::BIND,
+        None::<&std::ffi::CStr>,
+    ) {
+        debug!("failed to bind-mount container localtime: {}", e);
+    }
+
+    Some(copy_path)
+}
+
 /// Capture and attach container filesystem trees
 ///
 /// This function:
@@ -258,7 +303,7 @@ pub(crate) fn run(options: &mut ChildOptions) -> Result<std::convert::Infallible
     cgroup::move_to(getpid(), options.process_status.global_pid)?;
 
     // Step 3: Prepare command to execute
-    let cmd = Cmd::new(
+    let mut cmd = Cmd::new(
         options.command.clone(),
         options.arguments.clone(),
         options.process_status.global_pid,
@@ -350,6 +395,8 @@ pub(crate) fn run(options: &mut ChildOptions) -> Result<std::convert::Infallible
         source,
     })?;
 
+    let localtime_copy = setup_container_timezone(container_root_fd.as_fd(), &base_dir);
+
     // Capture container filesystem and attach to base_dir
     capture_and_attach_container_trees(
         container_root_fd,
@@ -357,6 +404,11 @@ pub(crate) fn run(options: &mut ChildOptions) -> Result<std::convert::Infallible
         our_mount_ns,
         &base_dir,
     )?;
+
+    // TZ fallback for hosts where the /etc/localtime bind-mount was not possible
+    if let Some(path) = localtime_copy {
+        cmd.env_default("TZ", format!(":{}", path.display()));
+    }
 
     // Step 6: Enter other container namespaces and apply security context
     let in_user_ns = other_namespaces.iter().any(|ns| {
