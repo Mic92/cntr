@@ -9,10 +9,10 @@ use crate::namespace::NamespaceError;
 use crate::passwd::User;
 use crate::pty::PtyError;
 use crate::syscalls::capability;
+use crate::syscalls::process::{Fork, fork};
 use idmap_helper::IdmapError;
 use rustix::io::Errno;
 use rustix::process::{getgid, getuid};
-use rustix::runtime::{Fork, kernel_fork};
 use std::path::PathBuf;
 use std::process;
 use thiserror::Error;
@@ -139,9 +139,7 @@ pub(crate) fn attach(opts: &AttachOptions) -> Result<std::convert::Infallible, A
     // Parent stays in host namespace, child assembles mount hierarchy
     let (parent_sock, child_sock) = ipc::socket_pair()?;
 
-    // SAFETY: cntr is single-threaded and uses a rustix-based global allocator,
-    // so allocating and calling into std in the child is fine.
-    match unsafe { kernel_fork() }.map_err(AttachError::Fork)? {
+    match fork().map_err(AttachError::Fork)? {
         Fork::ParentOf(child) => {
             // Close child's socket in parent to ensure proper EOF detection
             drop(child_sock);
@@ -150,7 +148,7 @@ pub(crate) fn attach(opts: &AttachOptions) -> Result<std::convert::Infallible, A
             drop(idmap_helper);
             result
         }
-        Fork::Child(_) => {
+        Fork::Child => {
             // Close parent's socket in child
             drop(parent_sock);
             let mut child_opts = child::ChildOptions {

@@ -1,5 +1,5 @@
+use crate::syscalls::process::{Fork, fork};
 use rustix::io::Errno;
-use rustix::runtime::{Fork, kernel_fork};
 use std::os::fd::OwnedFd;
 use std::process;
 use thiserror::Error;
@@ -66,14 +66,12 @@ pub(crate) fn exec(opts: &ExecOptions) -> Result<std::convert::Infallible, ExecE
     let pty_master = pty::open_ptm()?;
 
     // Fork: child enters container and execs, parent forwards PTY I/O
-    // SAFETY: cntr is single-threaded and uses a rustix-based global allocator,
-    // so allocating and calling into std in the child is fine.
-    match unsafe { kernel_fork() }.map_err(ExecError::Fork)? {
+    match fork().map_err(ExecError::Fork)? {
         Fork::ParentOf(child) => {
             // Parent: Forward PTY I/O and wait for child
             Ok(pty::forward_pty_and_wait(&pty_master, child)?)
         }
-        Fork::Child(_) => {
+        Fork::Child => {
             // Child: Setup PTY slave, enter container, exec command
             let Err(e) = exec_child(
                 &mut process_status,

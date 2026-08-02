@@ -1,8 +1,8 @@
+use crate::syscalls::process::{Fork, exit, fork};
 use log::debug;
 use rustix::io::read;
 use rustix::pipe::pipe;
 use rustix::process::{Gid, Pid, Signal, Uid, WaitOptions, kill_process, waitpid};
-use rustix::runtime::{Fork, exit_group, kernel_fork};
 use rustix::thread::{UnshareFlags, unshare_unsafe};
 use std::fs::File;
 use std::io::Write;
@@ -59,9 +59,7 @@ impl IdmapHelper {
         // Create sync pipe
         let (read_fd, write_fd) = pipe().map_err(IdmapError::CreatePipe)?;
 
-        // SAFETY: cntr is single-threaded and uses a rustix-based global allocator,
-        // so allocating and calling into std in the child is fine.
-        match unsafe { kernel_fork() }.map_err(IdmapError::Fork)? {
+        match fork().map_err(IdmapError::Fork)? {
             Fork::ParentOf(child) => {
                 // Close write end
                 drop(write_fd);
@@ -96,21 +94,21 @@ impl IdmapHelper {
                     userns_fd,
                 })
             }
-            Fork::Child(_) => {
+            Fork::Child => {
                 // Close read end
                 drop(read_fd);
 
                 // Create user namespace and set up mapping
                 if let Err(e) = Self::setup_userns(inner_uid, outer_uid, inner_gid, outer_gid) {
                     eprintln!("idmap helper failed: {}", crate::errors::format_chain(&e));
-                    exit_group(1);
+                    exit(1);
                 }
 
                 // Signal parent we're ready
                 let mut write_file = File::from(write_fd);
                 if let Err(e) = write_file.write_all(b"R") {
                     eprintln!("idmap helper failed to signal parent: {:?}", e);
-                    exit_group(1);
+                    exit(1);
                 }
 
                 // Keep running (parent holds FD, but this is safer)

@@ -2,13 +2,35 @@
 
 use rustix::pipe::pipe;
 use rustix::process::{Pid, Signal, WaitOptions, kill_process, waitpid};
-use rustix::runtime::{Fork, exit_group, kernel_fork};
 use std::io::Read;
 use std::os::fd::OwnedFd;
 use std::{env, path::Path, path::PathBuf};
 
 // Re-export from library
 pub(crate) use cntr::test_utils::run_in_userns;
+
+/// Result of a successful [`fork`].
+enum Fork {
+    Child,
+    ParentOf(Pid),
+}
+
+/// Create a child process.
+fn fork() -> std::io::Result<Fork> {
+    // SAFETY: fork() has no memory-safety preconditions; the tests fork
+    // before spawning any threads.
+    match unsafe { libc::fork() } {
+        -1 => Err(std::io::Error::last_os_error()),
+        0 => Ok(Fork::Child),
+        pid => Ok(Fork::ParentOf(Pid::from_raw(pid).expect("non-zero pid"))),
+    }
+}
+
+/// Terminate the process immediately without running libc/std cleanup.
+fn exit(status: i32) -> ! {
+    // SAFETY: _exit() only takes an exit status and does not return.
+    unsafe { libc::_exit(status) }
+}
 
 /// Simple temporary directory that cleans up on drop
 pub(crate) struct TempDir {
@@ -94,10 +116,8 @@ pub(crate) fn start_fake_container() -> FakeContainer {
         Err(e) => panic!("Failed to create pipe: {}", e),
     };
 
-    // SAFETY: the child only sets up the fake container and sleeps; heap
-    // allocations use the rustix-based global allocator, not libc malloc.
-    match unsafe { kernel_fork() } {
-        Ok(Fork::Child(_)) => {
+    match fork() {
+        Ok(Fork::Child) => {
             // Close read end in child
             drop(read_fd);
 
@@ -145,13 +165,13 @@ fn fake_container_process_with_sync(sync_fd: OwnedFd, temp_dir: &std::path::Path
         Ok(path) => path,
         Err(_) => {
             eprintln!("CNTR_TEST_SHELL not set in fake_container_process");
-            exit_group(1);
+            exit(1);
         }
     };
 
     if !Path::new(&static_shell).exists() {
         eprintln!("CNTR_TEST_SHELL path does not exist: {}", static_shell);
-        exit_group(1);
+        exit(1);
     }
 
     // Create mount namespace only
@@ -159,7 +179,7 @@ fn fake_container_process_with_sync(sync_fd: OwnedFd, temp_dir: &std::path::Path
     use rustix::thread::{UnshareFlags, unshare_unsafe};
     if let Err(e) = unsafe { unshare_unsafe(UnshareFlags::NEWNS) } {
         eprintln!("Failed to create mount namespace: {}", e);
-        exit_group(1);
+        exit(1);
     }
 
     // Make all mounts private (MS_REC | MS_PRIVATE)
@@ -169,7 +189,7 @@ fn fake_container_process_with_sync(sync_fd: OwnedFd, temp_dir: &std::path::Path
         MountPropagationFlags::REC | MountPropagationFlags::PRIVATE,
     ) {
         eprintln!("Failed to make mounts private: {}", e);
-        exit_group(1);
+        exit(1);
     }
 
     // Create /bin and /tmp in chroot
@@ -178,19 +198,19 @@ fn fake_container_process_with_sync(sync_fd: OwnedFd, temp_dir: &std::path::Path
 
     if let Err(e) = std::fs::create_dir_all(&bin_dir) {
         eprintln!("Failed to create bin dir: {}", e);
-        exit_group(1);
+        exit(1);
     }
 
     if let Err(e) = std::fs::create_dir_all(&tmp_dir) {
         eprintln!("Failed to create tmp dir: {}", e);
-        exit_group(1);
+        exit(1);
     }
 
     // Copy static shell to /bin/sh
     let shell_dest = bin_dir.join("sh");
     if let Err(e) = std::fs::copy(&static_shell, &shell_dest) {
         eprintln!("Failed to copy shell: {}", e);
-        exit_group(1);
+        exit(1);
     }
 
     // Make shell executable
@@ -201,7 +221,7 @@ fn fake_container_process_with_sync(sync_fd: OwnedFd, temp_dir: &std::path::Path
             std::fs::set_permissions(&shell_dest, std::fs::Permissions::from_mode(0o755))
         {
             eprintln!("Failed to make shell executable: {}", e);
-            exit_group(1);
+            exit(1);
         }
     }
 
@@ -209,18 +229,18 @@ fn fake_container_process_with_sync(sync_fd: OwnedFd, temp_dir: &std::path::Path
     let marker = tmp_dir.join("container-marker");
     if let Err(e) = std::fs::write(&marker, b"fake-container\n") {
         eprintln!("Failed to create marker: {}", e);
-        exit_group(1);
+        exit(1);
     }
 
     // Chroot to temp directory
     if let Err(e) = rustix::process::chroot(temp_dir) {
         eprintln!("Failed to chroot: {}", e);
-        exit_group(1);
+        exit(1);
     }
 
     if let Err(e) = std::env::set_current_dir("/") {
         eprintln!("Failed to chdir: {}", e);
-        exit_group(1);
+        exit(1);
     }
 
     // Signal parent that we're ready by closing the sync pipe
