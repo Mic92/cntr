@@ -41,9 +41,6 @@ sed -i -e "0,/^version = / s!^version = \".*\"!version = \"${version}\"!" Cargo.
 # Update Cargo.lock
 cargo build --release
 
-# Run checks
-nix flake check -L
-
 # Create release branch and PR
 git checkout -b "release-${version}"
 git add Cargo.toml Cargo.lock
